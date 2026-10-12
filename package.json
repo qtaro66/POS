@@ -1,0 +1,22 @@
+{
+  "name": "pos-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/pos-web",
+    "apps/mobile-pwa",
+    "apps/backoffice"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:pos": "npm run dev --workspace apps/pos-web",
+    "dev:mobile": "npm run dev --workspace apps/mobile-pwa",
+    "dev:backoffice": "npm run dev --workspace apps/backoffice"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
+

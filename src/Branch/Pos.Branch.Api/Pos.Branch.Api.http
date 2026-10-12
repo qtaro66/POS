@@ -1,0 +1,6 @@
+@Pos.Branch.Api_HostAddress = http://localhost:5117
+
+GET {{Pos.Branch.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

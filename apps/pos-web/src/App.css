@@ -1,0 +1,12 @@
+main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 4rem 2rem;
+}
+
+.eyebrow {
+  color: #087f8c;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+

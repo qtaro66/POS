@@ -1,0 +1,29 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Branch/">
+    <Project Path="src/Branch/Pos.Branch.Api/Pos.Branch.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/Pos.Application/Pos.Application.csproj" />
+    <Project Path="src/BuildingBlocks/Pos.Contracts/Pos.Contracts.csproj" />
+    <Project Path="src/BuildingBlocks/Pos.Domain/Pos.Domain.csproj" />
+  </Folder>
+  <Folder Name="/src/Central/">
+    <Project Path="src/Central/Pos.Central.Api/Pos.Central.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Pos.Platform.Linux/Pos.Platform.Linux.csproj" />
+    <Project Path="src/Platform/Pos.Platform.Windows/Pos.Platform.Windows.csproj" />
+  </Folder>
+  <Folder Name="/src/Printing/">
+    <Project Path="src/Printing/Pos.Printing.Abstractions/Pos.Printing.Abstractions.csproj" />
+    <Project Path="src/Printing/Pos.Printing.EscPosTcp/Pos.Printing.EscPosTcp.csproj" />
+    <Project Path="src/Printing/Pos.Printing.Ipp/Pos.Printing.Ipp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pos.Application.Tests/Pos.Application.Tests.csproj" />
+    <Project Path="tests/Pos.Branch.Api.Tests/Pos.Branch.Api.Tests.csproj" />
+    <Project Path="tests/Pos.Domain.Tests/Pos.Domain.Tests.csproj" />
+    <Project Path="tests/Pos.Printing.Tests/Pos.Printing.Tests.csproj" />
+  </Folder>
+</Solution>
