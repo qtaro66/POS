@@ -41,6 +41,8 @@ npm run lint
 npm run build
 ```
 
+GitHub pull requests run the same .NET and frontend checks automatically. Dependency Review rejects newly introduced dependencies with known high or critical severity findings.
+
 ## Safety boundaries
 
 - Automated tests must not contact a physical printer, open a cash drawer, or use production endpoints.
