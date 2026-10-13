@@ -166,14 +166,14 @@ public sealed class TableSessionCommandService
         var transition = session.Transitions[^1];
         await transaction.AddAuditAsync(
             new TableSessionAuditRecord(
-                $"{metadata.RequestId}:audit:1",
+                $"{metadata.BranchId}:{metadata.RequestId}:audit:1",
                 metadata.BranchId,
                 metadata.RequestId,
                 transition),
             cancellationToken);
         await transaction.AddCloudOutboxAsync(
             new CloudSyncOutboxRecord(
-                $"{metadata.RequestId}:cloud:1",
+                $"{metadata.BranchId}:{metadata.RequestId}:cloud:1",
                 metadata.BranchId,
                 metadata.RequestId,
                 session.Id,
