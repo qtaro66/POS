@@ -1,3 +1,4 @@
+using Pos.Application.Printing;
 using Pos.Domain.TableSessions;
 
 namespace Pos.Application.TableSessions;
@@ -35,6 +36,10 @@ public interface ITableSessionCommandTransaction
         TableSessionId tableSessionId,
         CancellationToken cancellationToken);
 
+    Task<BillPreviewContent> CaptureBillPreviewContentAsync(
+        BillPreviewCaptureRequest request,
+        CancellationToken cancellationToken);
+
     Task InsertSessionAsync(
         string branchId,
         TableSession session,
@@ -56,5 +61,13 @@ public interface ITableSessionCommandTransaction
 
     Task AddCloudOutboxAsync(
         CloudSyncOutboxRecord outboxRecord,
+        CancellationToken cancellationToken);
+
+    Task AddBillPreviewSnapshotAsync(
+        BillPreviewSnapshot snapshot,
+        CancellationToken cancellationToken);
+
+    Task AddPrintJobAsync(
+        PersistentPrintJob printJob,
         CancellationToken cancellationToken);
 }

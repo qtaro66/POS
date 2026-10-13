@@ -1,3 +1,4 @@
+using Pos.Application.Printing;
 using Pos.Application.Time;
 using Pos.Domain.TableSessions;
 
@@ -113,6 +114,36 @@ public sealed class TableSessionCommandService
                 command.Metadata.TableSessionId,
                 token);
 
+            if (session.Status != TableSessionStatus.Ordering)
+            {
+                return await PersistRejectionAsync(
+                    transaction,
+                    command.Metadata,
+                    receivedAt,
+                    "InvalidTableSessionState",
+                    token,
+                    session);
+            }
+
+            if (hasOpenCancellation)
+            {
+                return await PersistRejectionAsync(
+                    transaction,
+                    command.Metadata,
+                    receivedAt,
+                    "OpenCancellationRequest",
+                    token,
+                    session);
+            }
+
+            var captureRequest = new BillPreviewCaptureRequest(
+                command.Metadata.BranchId,
+                command.Metadata.RequestId,
+                session.Id,
+                session.CurrentTableId,
+                receivedAt);
+            var previewContent = await transaction.CaptureBillPreviewContentAsync(captureRequest, token);
+
             try
             {
                 session.RequestPayment(
@@ -144,6 +175,30 @@ public sealed class TableSessionCommandService
                 command.Metadata.BranchId,
                 session,
                 command.ExpectedVersion,
+                token);
+
+            var snapshot = new BillPreviewSnapshot(
+                $"{command.Metadata.BranchId}:{command.Metadata.RequestId}:bill-preview:1",
+                command.Metadata.BranchId,
+                command.Metadata.RequestId,
+                session.Id,
+                session.CurrentTableId,
+                "ใบตรวจสอบรายการ / ยังไม่ใช่ใบเสร็จ",
+                previewContent,
+                receivedAt);
+            await transaction.AddBillPreviewSnapshotAsync(snapshot, token);
+            await transaction.AddPrintJobAsync(
+                new PersistentPrintJob(
+                    $"{command.Metadata.BranchId}:{command.Metadata.RequestId}:cashier-print:1",
+                    command.Metadata.BranchId,
+                    command.Metadata.RequestId,
+                    session.Id,
+                    snapshot.SnapshotId,
+                    PrintJobPurpose.BillPreview,
+                    PrintTargetStation.Cashier,
+                    PersistentPrintJobStatus.PrintQueued,
+                    AttemptCount: 0,
+                    receivedAt),
                 token);
             var receipt = Accepted(command.Metadata, session, receivedAt);
             await PersistAcceptedTransitionAsync(

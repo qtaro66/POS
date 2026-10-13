@@ -6,10 +6,15 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
 {
     private readonly SqliteConnectionFactory _connections;
+    private readonly ISqliteBillPreviewContentSource _billPreviewContentSource;
 
-    public SqliteTableSessionCommandStore(string databasePath)
+    public SqliteTableSessionCommandStore(
+        string databasePath,
+        ISqliteBillPreviewContentSource billPreviewContentSource)
     {
         _connections = new SqliteConnectionFactory(databasePath);
+        _billPreviewContentSource = billPreviewContentSource ??
+            throw new ArgumentNullException(nameof(billPreviewContentSource));
     }
 
     public string DatabasePath => _connections.DatabasePath;
@@ -28,7 +33,10 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
 
         await using var connection = await _connections.OpenAsync(cancellationToken);
         await using var transaction = connection.BeginTransaction(deferred: false);
-        var commandTransaction = new SqliteTableSessionCommandTransaction(connection, transaction);
+        var commandTransaction = new SqliteTableSessionCommandTransaction(
+            connection,
+            transaction,
+            _billPreviewContentSource);
 
         try
         {

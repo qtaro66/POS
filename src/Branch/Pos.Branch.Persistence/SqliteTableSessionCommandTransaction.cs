@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
+using Pos.Application.Printing;
 using Pos.Application.TableSessions;
 using Pos.Domain.TableSessions;
 
@@ -9,13 +10,16 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
 {
     private readonly SqliteConnection _connection;
     private readonly SqliteTransaction _transaction;
+    private readonly ISqliteBillPreviewContentSource _billPreviewContentSource;
 
     public SqliteTableSessionCommandTransaction(
         SqliteConnection connection,
-        SqliteTransaction transaction)
+        SqliteTransaction transaction,
+        ISqliteBillPreviewContentSource billPreviewContentSource)
     {
         _connection = connection;
         _transaction = transaction;
+        _billPreviewContentSource = billPreviewContentSource;
     }
 
     public async Task<BranchCommandReceipt?> FindReceiptAsync(
@@ -104,6 +108,17 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         return Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken),
             CultureInfo.InvariantCulture) == 1;
+    }
+
+    public Task<BillPreviewContent> CaptureBillPreviewContentAsync(
+        BillPreviewCaptureRequest request,
+        CancellationToken cancellationToken)
+    {
+        return _billPreviewContentSource.CaptureAsync(
+            _connection,
+            _transaction,
+            request,
+            cancellationToken);
     }
 
     public async Task InsertSessionAsync(
@@ -231,6 +246,60 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         command.Parameters.AddWithValue("$action", outboxRecord.Action.ToString());
         command.Parameters.AddWithValue("$tableVersion", outboxRecord.TableVersion);
         command.Parameters.AddWithValue("$createdAt", FormatTimestamp(outboxRecord.CreatedAt));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task AddBillPreviewSnapshotAsync(
+        BillPreviewSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            INSERT INTO bill_preview_snapshots (
+                snapshot_id, branch_id, request_id, table_session_id, table_id,
+                document_label, content_schema_version, content_json, content_sha256, created_at)
+            VALUES (
+                $snapshotId, $branchId, $requestId, $tableSessionId, $tableId,
+                $documentLabel, $contentSchemaVersion, $contentJson, $contentSha256, $createdAt);
+            """);
+        command.Parameters.AddWithValue("$snapshotId", snapshot.SnapshotId);
+        command.Parameters.AddWithValue("$branchId", snapshot.BranchId);
+        command.Parameters.AddWithValue("$requestId", snapshot.RequestId);
+        command.Parameters.AddWithValue("$tableSessionId", snapshot.TableSessionId.Value);
+        command.Parameters.AddWithValue("$tableId", snapshot.TableId.Value);
+        command.Parameters.AddWithValue("$documentLabel", snapshot.DocumentLabel);
+        command.Parameters.AddWithValue("$contentSchemaVersion", snapshot.Content.SchemaVersion);
+        command.Parameters.AddWithValue("$contentJson", snapshot.Content.Json);
+        command.Parameters.AddWithValue("$contentSha256", snapshot.Content.Sha256);
+        command.Parameters.AddWithValue("$createdAt", FormatTimestamp(snapshot.CreatedAt));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task AddPrintJobAsync(
+        PersistentPrintJob printJob,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            INSERT INTO print_jobs (
+                print_job_id, branch_id, request_id, table_session_id, snapshot_id,
+                purpose, target_station, status, attempt_count, created_at,
+                original_print_job_id, is_reprint)
+            VALUES (
+                $printJobId, $branchId, $requestId, $tableSessionId, $snapshotId,
+                $purpose, $targetStation, $status, $attemptCount, $createdAt,
+                $originalPrintJobId, $isReprint);
+            """);
+        command.Parameters.AddWithValue("$printJobId", printJob.PrintJobId);
+        command.Parameters.AddWithValue("$branchId", printJob.BranchId);
+        command.Parameters.AddWithValue("$requestId", printJob.RequestId);
+        command.Parameters.AddWithValue("$tableSessionId", printJob.TableSessionId.Value);
+        command.Parameters.AddWithValue("$snapshotId", printJob.SnapshotId);
+        command.Parameters.AddWithValue("$purpose", printJob.Purpose.ToString());
+        command.Parameters.AddWithValue("$targetStation", printJob.TargetStation.ToString());
+        command.Parameters.AddWithValue("$status", printJob.Status.ToString());
+        command.Parameters.AddWithValue("$attemptCount", printJob.AttemptCount);
+        command.Parameters.AddWithValue("$createdAt", FormatTimestamp(printJob.CreatedAt));
+        command.Parameters.AddWithValue("$originalPrintJobId", DbValue(printJob.OriginalPrintJobId));
+        command.Parameters.AddWithValue("$isReprint", printJob.IsReprint ? 1 : 0);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
