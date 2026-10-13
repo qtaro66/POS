@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Pos.Application.Printing;
 using Pos.Application.TableSessions;
 using Pos.Application.Time;
 using Pos.Branch.Infrastructure.Sqlite;
@@ -16,7 +17,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
 
-        Assert.Equal(1L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("wal", await database.ScalarAsync<string>("PRAGMA journal_mode;"));
         Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA synchronous;"));
         Assert.Equal(store.DatabasePath, Path.GetFullPath(database.Path));
@@ -61,10 +62,20 @@ public sealed class SqliteTableSessionCommandStoreTests
         Assert.Equal(2L, await database.CountAsync("command_receipts"));
         Assert.Equal(2L, await database.CountAsync("table_session_audit"));
         Assert.Equal(2L, await database.CountAsync("cloud_sync_outbox"));
+        Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
+        Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal("Pending", await database.ScalarAsync<string>(
             "SELECT processing_status FROM cloud_sync_outbox WHERE request_id = 'REQ-2';"));
         Assert.Equal(0L, await database.ScalarAsync<long>(
             "SELECT retry_count FROM cloud_sync_outbox WHERE request_id = 'REQ-2';"));
+        Assert.Equal("Cashier", await database.ScalarAsync<string>(
+            "SELECT target_station FROM print_jobs WHERE request_id = 'REQ-2';"));
+        Assert.Equal("PrintQueued", await database.ScalarAsync<string>(
+            "SELECT status FROM print_jobs WHERE request_id = 'REQ-2';"));
+        Assert.Equal(0L, await database.ScalarAsync<long>(
+            "SELECT attempt_count FROM print_jobs WHERE request_id = 'REQ-2';"));
+        Assert.Equal(64L, await database.ScalarAsync<long>(
+            "SELECT length(content_sha256) FROM bill_preview_snapshots WHERE request_id = 'REQ-2';"));
     }
 
     [Fact]
@@ -78,6 +89,16 @@ public sealed class SqliteTableSessionCommandStoreTests
             TableId.From("A04"),
             new TableSessionTransitionContext("EMPLOYEE-01", "DEVICE-01", Now));
         var transition = session.Transitions.Single();
+        var previewContent = BillPreviewContent.FromJson(1, "{\"items\":[],\"netTotal\":0}");
+        var snapshot = new BillPreviewSnapshot(
+            "SNAPSHOT-ROLLBACK",
+            "BRANCH-01",
+            "REQ-ROLLBACK",
+            session.Id,
+            session.CurrentTableId,
+            "ใบตรวจสอบรายการ / ยังไม่ใช่ใบเสร็จ",
+            previewContent,
+            Now);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             store.ExecuteAtomicallyAsync<int>(async (transaction, token) =>
@@ -96,6 +117,20 @@ public sealed class SqliteTableSessionCommandStoreTests
                         session.Version,
                         Now),
                     token);
+                await transaction.AddBillPreviewSnapshotAsync(snapshot, token);
+                await transaction.AddPrintJobAsync(
+                    new PersistentPrintJob(
+                        "PRINT-ROLLBACK",
+                        "BRANCH-01",
+                        "REQ-ROLLBACK",
+                        session.Id,
+                        snapshot.SnapshotId,
+                        PrintJobPurpose.BillPreview,
+                        PrintTargetStation.Cashier,
+                        PersistentPrintJobStatus.PrintQueued,
+                        0,
+                        Now),
+                    token);
                 await transaction.AddReceiptAsync(receipt, token);
                 throw new InvalidOperationException("Injected failure");
             }, CancellationToken.None));
@@ -105,20 +140,68 @@ public sealed class SqliteTableSessionCommandStoreTests
         Assert.Equal(0L, await database.CountAsync("command_receipts"));
         Assert.Equal(0L, await database.CountAsync("table_session_audit"));
         Assert.Equal(0L, await database.CountAsync("cloud_sync_outbox"));
+        Assert.Equal(0L, await database.CountAsync("bill_preview_snapshots"));
+        Assert.Equal(0L, await database.CountAsync("print_jobs"));
+    }
+
+    [Fact]
+    public async Task Version_one_database_migrates_to_version_two_without_losing_sessions()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await database.ExecuteAsync("""
+            DROP TABLE print_jobs;
+            DROP TABLE bill_preview_snapshots;
+            PRAGMA user_version = 1;
+            """);
+
+        var migratedStore = new SqliteTableSessionCommandStore(
+            database.Path,
+            new StaticBillPreviewContentSource());
+        await migratedStore.InitializeAsync();
+
+        Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(1L, await database.CountAsync("table_sessions"));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_preview_snapshots';"));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'print_jobs';"));
+    }
+
+    [Fact]
+    public async Task Content_capture_failure_leaves_session_ordering_and_creates_no_command_records()
+    {
+        await using var database = new TemporaryDatabase();
+        var initialStore = await database.CreateStoreAsync();
+        await Service(initialStore).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        var failingStore = await database.CreateStoreAsync(new ThrowingBillPreviewContentSource());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Service(failingStore).RequestPaymentAsync(PaymentCommand("REQ-2", "TS-1", 1)));
+
+        Assert.Equal("Bill Preview source unavailable", exception.Message);
+        Assert.Equal("Ordering", await database.ScalarAsync<string>(
+            "SELECT status FROM table_sessions WHERE table_session_id = 'TS-1';"));
+        Assert.Equal(1L, await database.CountAsync("command_receipts"));
+        Assert.Equal(1L, await database.CountAsync("table_session_audit"));
+        Assert.Equal(1L, await database.CountAsync("cloud_sync_outbox"));
+        Assert.Equal(0L, await database.CountAsync("bill_preview_snapshots"));
+        Assert.Equal(0L, await database.CountAsync("print_jobs"));
     }
 
     [Fact]
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 2;");
-        var store = new SqliteTableSessionCommandStore(database.Path);
+        await database.ExecuteAsync("PRAGMA user_version = 3;");
+        var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 2", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 3", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(3L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]
@@ -234,9 +317,12 @@ public sealed class SqliteTableSessionCommandStoreTests
 
         public string Path => System.IO.Path.Combine(_directory, "branch.db");
 
-        public async Task<SqliteTableSessionCommandStore> CreateStoreAsync()
+        public async Task<SqliteTableSessionCommandStore> CreateStoreAsync(
+            ISqliteBillPreviewContentSource? contentSource = null)
         {
-            var store = new SqliteTableSessionCommandStore(Path);
+            var store = new SqliteTableSessionCommandStore(
+                Path,
+                contentSource ?? new StaticBillPreviewContentSource());
             await store.InitializeAsync();
             return store;
         }
@@ -248,7 +334,9 @@ public sealed class SqliteTableSessionCommandStoreTests
                 "table_sessions",
                 "command_receipts",
                 "table_session_audit",
-                "cloud_sync_outbox"
+                "cloud_sync_outbox",
+                "bill_preview_snapshots",
+                "print_jobs"
             };
             if (!allowed.Contains(tableName))
             {
@@ -295,5 +383,34 @@ public sealed class SqliteTableSessionCommandStoreTests
                 Mode = mode,
                 Pooling = false
             }.ToString());
+    }
+
+    private sealed class StaticBillPreviewContentSource : ISqliteBillPreviewContentSource
+    {
+        public Task<BillPreviewContent> CaptureAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            BillPreviewCaptureRequest request,
+            CancellationToken cancellationToken)
+        {
+            Assert.Same(connection, transaction.Connection);
+            return Task.FromResult(BillPreviewContent.FromJson(
+                1,
+                """
+                {"items":[],"discounts":[],"charges":[],"vat":0,"roundingAdjustment":0,"netTotal":0}
+                """));
+        }
+    }
+
+    private sealed class ThrowingBillPreviewContentSource : ISqliteBillPreviewContentSource
+    {
+        public Task<BillPreviewContent> CaptureAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            BillPreviewCaptureRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Bill Preview source unavailable");
+        }
     }
 }

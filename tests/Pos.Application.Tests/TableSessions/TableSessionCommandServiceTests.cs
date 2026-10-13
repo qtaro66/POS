@@ -1,3 +1,4 @@
+using Pos.Application.Printing;
 using Pos.Application.TableSessions;
 using Pos.Application.Time;
 using Pos.Domain.TableSessions;
@@ -26,6 +27,7 @@ public sealed class TableSessionCommandServiceTests
         Assert.Single(store.Receipts);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        Assert.Equal(0, store.BillPreviewCaptureCount);
         Assert.Equal(TableSessionAction.OpenTable, store.Audits[0].Transition.Action);
     }
 
@@ -44,6 +46,7 @@ public sealed class TableSessionCommandServiceTests
         Assert.Single(store.Receipts);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        Assert.Equal(0, store.BillPreviewCaptureCount);
     }
 
     [Fact]
@@ -61,6 +64,7 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(2, store.Receipts.Count);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        Assert.Equal(0, store.BillPreviewCaptureCount);
     }
 
     [Fact]
@@ -79,6 +83,13 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(2, store.Audits.Count);
         Assert.Equal(2, store.Outbox.Count);
         Assert.Equal(TableSessionAction.RequestPayment, store.Audits[^1].Transition.Action);
+        var snapshot = Assert.Single(store.BillPreviewSnapshots);
+        Assert.Equal("ใบตรวจสอบรายการ / ยังไม่ใช่ใบเสร็จ", snapshot.DocumentLabel);
+        Assert.Equal(64, snapshot.Content.Sha256.Length);
+        var printJob = Assert.Single(store.PrintJobs);
+        Assert.Equal(PrintTargetStation.Cashier, printJob.TargetStation);
+        Assert.Equal(PersistentPrintJobStatus.PrintQueued, printJob.Status);
+        Assert.Equal(0, printJob.AttemptCount);
     }
 
     [Fact]
@@ -97,6 +108,9 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(2, store.Audits.Count);
         Assert.Equal(2, store.Outbox.Count);
         Assert.Equal(2, store.Sessions.Single().Version);
+        Assert.Single(store.BillPreviewSnapshots);
+        Assert.Single(store.PrintJobs);
+        Assert.Equal(1, store.BillPreviewCaptureCount);
     }
 
     [Fact]
@@ -114,6 +128,7 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(1, store.Sessions.Single().Version);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        Assert.Equal(0, store.BillPreviewCaptureCount);
     }
 
     [Fact]
@@ -134,6 +149,7 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(TableSessionStatus.Ordering, store.Sessions.Single().Status);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        Assert.Equal(0, store.BillPreviewCaptureCount);
     }
 
     [Fact]
@@ -152,6 +168,7 @@ public sealed class TableSessionCommandServiceTests
         Assert.Single(store.Receipts);
         Assert.Empty(store.Audits);
         Assert.Empty(store.Outbox);
+        Assert.Equal(0, store.BillPreviewCaptureCount);
     }
 
     private static TableSessionCommandService Service(InMemoryTableSessionCommandStore store)
@@ -211,7 +228,13 @@ public sealed class TableSessionCommandServiceTests
 
         public List<CloudSyncOutboxRecord> Outbox { get; } = [];
 
+        public List<BillPreviewSnapshot> BillPreviewSnapshots { get; } = [];
+
+        public List<PersistentPrintJob> PrintJobs { get; } = [];
+
         public HashSet<string> OpenCancellationSessionIds { get; } = [];
+
+        public int BillPreviewCaptureCount { get; private set; }
 
         public async Task<TResult> ExecuteAtomicallyAsync<TResult>(
             Func<ITableSessionCommandTransaction, CancellationToken, Task<TResult>> operation,
@@ -271,6 +294,18 @@ public sealed class TableSessionCommandServiceTests
             return Task.FromResult(OpenCancellationSessionIds.Contains(tableSessionId.Value));
         }
 
+        public Task<BillPreviewContent> CaptureBillPreviewContentAsync(
+            BillPreviewCaptureRequest request,
+            CancellationToken cancellationToken)
+        {
+            BillPreviewCaptureCount++;
+            return Task.FromResult(BillPreviewContent.FromJson(
+                1,
+                """
+                {"items":[],"discounts":[],"charges":[],"vat":0,"roundingAdjustment":0,"netTotal":0}
+                """));
+        }
+
         public Task InsertSessionAsync(
             string branchId,
             TableSession session,
@@ -316,6 +351,22 @@ public sealed class TableSessionCommandServiceTests
             CancellationToken cancellationToken)
         {
             Outbox.Add(outboxRecord);
+            return Task.CompletedTask;
+        }
+
+        public Task AddBillPreviewSnapshotAsync(
+            BillPreviewSnapshot snapshot,
+            CancellationToken cancellationToken)
+        {
+            BillPreviewSnapshots.Add(snapshot);
+            return Task.CompletedTask;
+        }
+
+        public Task AddPrintJobAsync(
+            PersistentPrintJob printJob,
+            CancellationToken cancellationToken)
+        {
+            PrintJobs.Add(printJob);
             return Task.CompletedTask;
         }
     }
