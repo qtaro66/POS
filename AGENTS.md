@@ -9,31 +9,48 @@
 - After sending begins, an uncertain print result is `Unknown` and must not be retried automatically.
 - Never commit secrets, private keys, real device identifiers, customer data, production databases, or local hardware evidence.
 
-## GitHub workflow authorization
+## OpenAI and Antigravity responsibilities
 
-When a user asks to change or develop this project and the work must be published to GitHub, the agent is authorized to complete the standard GitHub workflow without requesting confirmation at each step:
+OpenAI agents are responsible for local development, analysis, and verification:
 
-1. Create a feature branch.
-2. Change code and documentation within the requested scope.
-3. Run the relevant tests, lint, build, and security checks.
-4. Commit and push the feature branch.
-5. Create or update a pull request.
-6. Inspect review comments, mergeability, and required checks.
-7. Fix in-scope failures and push the corrections.
-8. Merge the pull request after all required checks pass, no unresolved objection remains, and branch protection permits the merge.
-9. Update the local `main` branch to match `origin/main`.
-10. Delete the task's feature branch after verifying that its content is present on `main`.
-11. Report the final result with the pull request URL, resulting commit, and verification results.
+1. Analyze requirements, architecture, code, and risks.
+2. Create a local task branch from the correct base commit.
+3. Implement code and documentation within the requested scope.
+4. Add or update automated tests.
+5. Run the relevant tests, lint, build, and local security checks.
+6. Review the complete local diff for correctness, scope, secrets, and production data.
+7. Create one or more local commits after validation succeeds.
+8. Prepare a handoff summary for Antigravity.
 
-Do not pause to request approval during the standard workflow above.
+OpenAI agents may delegate bounded analysis, implementation, test, or review work to subagents. The main OpenAI agent remains responsible for integrating delegated work into the local branch, resolving conflicts, running the combined validation, and preparing the final local commit.
 
-Stop and obtain explicit user approval before any of the following:
+OpenAI agents must stop after the validated local commit and handoff. Unless the user explicitly overrides this policy for a specific task, OpenAI agents must not:
 
-- Force-pushing or rewriting Git history.
-- Bypassing branch protection or required checks.
-- Merging while tests, security checks, or required checks are failing.
-- Deleting a repository, release, tag, or branch not created for the current task.
-- Changing repository visibility, user access, or security settings.
-- Publishing a secret, credential, private key, or real production data.
-- Making a material change outside the original task scope.
+- Push a branch or tag to any remote.
+- Create, update, approve, close, or merge a pull request.
+- Delete a remote branch or tag.
+- Change repository settings, visibility, access, rules, secrets, or security configuration.
+- Trigger a remote publication or deployment workflow.
+
+Antigravity is the sole owner of the final GitHub workflow:
+
+1. Inspect the handed-off local branch, commits, diff, and validation evidence.
+2. Push the task branch.
+3. Create or update the pull request.
+4. Monitor required checks and review comments.
+5. Apply or request corrections when needed.
+6. Merge only after all required checks pass, no unresolved objection remains, and branch protection permits the merge.
+7. Synchronize the local `main` branch and clean up the task branch after verifying the merge.
+
+Every OpenAI-to-Antigravity handoff must include:
+
+- Local branch name.
+- Base commit and final local commit.
+- Requested scope and implemented result.
+- Files changed.
+- Tests, lint, build, and security checks executed with their results.
+- Known risks, limitations, and unresolved issues.
+- Suggested pull request title and body.
+
+Both agents must stop and obtain explicit user approval before force-pushing, rewriting published history, bypassing branch protection, merging with failed required checks, publishing secrets or production data, or making a material change outside the original task scope.
 
