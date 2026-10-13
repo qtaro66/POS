@@ -48,11 +48,30 @@ public sealed class TableSessionCommandService
                 return existingReceipt;
             }
 
+            var activeMasterData = await transaction.FindActiveMasterDataSnapshotAsync(
+                command.Metadata.BranchId,
+                token);
+            if (activeMasterData is null)
+            {
+                return await PersistRejectionAsync(
+                    transaction,
+                    command.Metadata,
+                    receivedAt,
+                    "ActiveMasterDataUnavailable",
+                    token);
+            }
+
             var session = TableSession.Open(
                 command.Metadata.TableSessionId,
                 command.TableId,
                 TransitionContext(command.Metadata, receivedAt));
             await transaction.InsertSessionAsync(command.Metadata.BranchId, session, token);
+            await transaction.AddTableSessionBillingPolicyAsync(
+                command.Metadata.BranchId,
+                session.Id,
+                activeMasterData,
+                receivedAt,
+                token);
 
             var receipt = Accepted(command.Metadata, session, receivedAt);
             await PersistAcceptedTransitionAsync(

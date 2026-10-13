@@ -1,7 +1,9 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
+using Pos.Application.MasterData;
 using Pos.Application.Printing;
 using Pos.Application.TableSessions;
+using Pos.Domain.Billing;
 using Pos.Domain.TableSessions;
 
 namespace Pos.Branch.Infrastructure.Sqlite;
@@ -89,6 +91,60 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         return await ReadSingleSessionAsync(command, cancellationToken);
     }
 
+    public async Task<ActiveMasterDataSnapshot?> FindActiveMasterDataSnapshotAsync(
+        string branchId,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            SELECT package.master_data_version, package.package_schema_version,
+                   package.checksum_sha256, package.published_at, package.activated_at,
+                   policy.calculation_policy_version, policy.vat_rate,
+                   policy.service_charge_rate, policy.currency_scale, policy.midpoint_rounding
+            FROM master_data_packages AS package
+            LEFT JOIN master_data_billing_policy AS policy
+                ON policy.branch_id = package.branch_id
+               AND policy.master_data_version = package.master_data_version
+            WHERE package.branch_id = $branchId
+              AND package.lifecycle_status = 'Active';
+            """);
+        command.Parameters.AddWithValue("$branchId", branchId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        if (reader.IsDBNull(5))
+        {
+            throw new InvalidOperationException(
+                "The active Master Data package has no billing policy.");
+        }
+
+        var masterDataVersion = reader.GetString(0);
+        var snapshot = new ActiveMasterDataSnapshot(
+            masterDataVersion,
+            reader.GetInt32(1),
+            reader.GetString(2),
+            ParseTimestamp(reader.GetString(3)),
+            ParseTimestamp(reader.GetString(4)),
+            new BillPolicySnapshot(
+                masterDataVersion,
+                reader.GetString(5),
+                ParseDecimal(reader.GetString(6), "vat_rate"),
+                ParseDecimal(reader.GetString(7), "service_charge_rate"),
+                reader.GetInt32(8),
+                ParseEnum<MonetaryRoundingMode>(reader.GetString(9))));
+
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "The branch database contains more than one active Master Data package.");
+        }
+
+        return snapshot;
+    }
+
     public async Task<bool> HasOpenCancellationRequestAsync(
         string branchId,
         TableSessionId tableSessionId,
@@ -146,6 +202,41 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
             """);
         command.Parameters.AddWithValue("$branchId", branchId);
         AddSessionParameters(command, session);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task AddTableSessionBillingPolicyAsync(
+        string branchId,
+        TableSessionId tableSessionId,
+        ActiveMasterDataSnapshot masterData,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            INSERT INTO table_session_billing_policy (
+                branch_id, table_session_id, master_data_version, calculation_policy_version,
+                vat_rate, service_charge_rate, currency_scale, midpoint_rounding,
+                bill_discount_kind, bill_discount_requested_value, created_at)
+            VALUES (
+                $branchId, $tableSessionId, $masterDataVersion, $calculationPolicyVersion,
+                $vatRate, $serviceChargeRate, $currencyScale, $midpointRounding,
+                NULL, NULL, $createdAt);
+            """);
+        command.Parameters.AddWithValue("$branchId", branchId);
+        command.Parameters.AddWithValue("$tableSessionId", tableSessionId.Value);
+        command.Parameters.AddWithValue("$masterDataVersion", masterData.MasterDataVersion);
+        command.Parameters.AddWithValue(
+            "$calculationPolicyVersion",
+            masterData.BillingPolicy.CalculationPolicyVersion);
+        command.Parameters.AddWithValue("$vatRate", FormatDecimal(masterData.BillingPolicy.VatRate));
+        command.Parameters.AddWithValue(
+            "$serviceChargeRate",
+            FormatDecimal(masterData.BillingPolicy.ServiceChargeRate));
+        command.Parameters.AddWithValue("$currencyScale", masterData.BillingPolicy.CurrencyScale);
+        command.Parameters.AddWithValue(
+            "$midpointRounding",
+            masterData.BillingPolicy.RoundingMode.ToString());
+        command.Parameters.AddWithValue("$createdAt", FormatTimestamp(createdAt));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -361,8 +452,17 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
     private static string FormatTimestamp(DateTimeOffset value) =>
         value.ToString("O", CultureInfo.InvariantCulture);
 
+    private static string FormatDecimal(decimal value) =>
+        value.ToString(CultureInfo.InvariantCulture);
+
     private static DateTimeOffset ParseTimestamp(string value) =>
         DateTimeOffset.ParseExact(value, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+    private static decimal ParseDecimal(string value, string columnName) =>
+        decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException(
+                $"The database value in '{columnName}' is not a valid decimal.");
 
     private static TEnum ParseEnum<TEnum>(string value)
         where TEnum : struct, Enum

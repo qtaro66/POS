@@ -1,3 +1,4 @@
+using Pos.Application.MasterData;
 using Pos.Application.Printing;
 using Pos.Domain.TableSessions;
 
@@ -31,6 +32,10 @@ public interface ITableSessionCommandTransaction
         TableSessionId tableSessionId,
         CancellationToken cancellationToken);
 
+    Task<ActiveMasterDataSnapshot?> FindActiveMasterDataSnapshotAsync(
+        string branchId,
+        CancellationToken cancellationToken);
+
     Task<bool> HasOpenCancellationRequestAsync(
         string branchId,
         TableSessionId tableSessionId,
@@ -48,6 +53,13 @@ public interface ITableSessionCommandTransaction
     Task InsertSessionAsync(
         string branchId,
         TableSession session,
+        CancellationToken cancellationToken);
+
+    Task AddTableSessionBillingPolicyAsync(
+        string branchId,
+        TableSessionId tableSessionId,
+        ActiveMasterDataSnapshot masterData,
+        DateTimeOffset createdAt,
         CancellationToken cancellationToken);
 
     Task UpdateSessionAsync(
