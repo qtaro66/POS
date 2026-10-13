@@ -136,6 +136,21 @@ public sealed class TableSessionCommandService
                     session);
             }
 
+            var hasActiveOrderLines = await transaction.HasActiveOrderLinesAsync(
+                command.Metadata.BranchId,
+                command.Metadata.TableSessionId,
+                token);
+            if (!hasActiveOrderLines)
+            {
+                return await PersistRejectionAsync(
+                    transaction,
+                    command.Metadata,
+                    receivedAt,
+                    "NoActiveOrderLines",
+                    token,
+                    session);
+            }
+
             var captureRequest = new BillPreviewCaptureRequest(
                 command.Metadata.BranchId,
                 command.Metadata.RequestId,

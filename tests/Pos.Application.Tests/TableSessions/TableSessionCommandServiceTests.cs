@@ -153,6 +153,26 @@ public sealed class TableSessionCommandServiceTests
     }
 
     [Fact]
+    public async Task Session_without_active_order_lines_is_idempotently_rejected()
+    {
+        var store = new InMemoryTableSessionCommandStore { HasActiveOrderLines = false };
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        var command = PaymentCommand("REQ-2", "TS-1", 1);
+
+        var first = await service.RequestPaymentAsync(command);
+        var duplicate = await service.RequestPaymentAsync(command);
+
+        Assert.Equal(BranchCommandOutcome.Rejected, first.Outcome);
+        Assert.Equal("NoActiveOrderLines", first.ErrorCode);
+        Assert.Equal(first, duplicate);
+        Assert.Equal(TableSessionStatus.Ordering, store.Sessions.Single().Status);
+        Assert.Equal(0, store.BillPreviewCaptureCount);
+        Assert.Empty(store.BillPreviewSnapshots);
+        Assert.Empty(store.PrintJobs);
+    }
+
+    [Fact]
     public async Task Missing_session_rejection_is_saved_for_idempotent_replay()
     {
         var store = new InMemoryTableSessionCommandStore();
@@ -234,6 +254,8 @@ public sealed class TableSessionCommandServiceTests
 
         public HashSet<string> OpenCancellationSessionIds { get; } = [];
 
+        public bool HasActiveOrderLines { get; set; } = true;
+
         public int BillPreviewCaptureCount { get; private set; }
 
         public async Task<TResult> ExecuteAtomicallyAsync<TResult>(
@@ -292,6 +314,14 @@ public sealed class TableSessionCommandServiceTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(OpenCancellationSessionIds.Contains(tableSessionId.Value));
+        }
+
+        public Task<bool> HasActiveOrderLinesAsync(
+            string branchId,
+            TableSessionId tableSessionId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(HasActiveOrderLines);
         }
 
         public Task<BillPreviewContent> CaptureBillPreviewContentAsync(

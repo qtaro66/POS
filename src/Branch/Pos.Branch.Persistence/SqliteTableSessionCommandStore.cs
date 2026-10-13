@@ -8,6 +8,11 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
     private readonly SqliteConnectionFactory _connections;
     private readonly ISqliteBillPreviewContentSource _billPreviewContentSource;
 
+    public SqliteTableSessionCommandStore(string databasePath)
+        : this(databasePath, new SqliteBillPreviewContentSource())
+    {
+    }
+
     public SqliteTableSessionCommandStore(
         string databasePath,
         ISqliteBillPreviewContentSource billPreviewContentSource)

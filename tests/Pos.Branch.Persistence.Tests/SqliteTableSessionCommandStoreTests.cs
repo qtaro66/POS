@@ -17,7 +17,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
 
-        Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(3L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("wal", await database.ScalarAsync<string>("PRAGMA journal_mode;"));
         Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA synchronous;"));
         Assert.Equal(store.DatabasePath, Path.GetFullPath(database.Path));
@@ -145,12 +145,16 @@ public sealed class SqliteTableSessionCommandStoreTests
     }
 
     [Fact]
-    public async Task Version_one_database_migrates_to_version_two_without_losing_sessions()
+    public async Task Version_one_database_migrates_to_current_version_without_losing_sessions()
     {
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
         await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
         await database.ExecuteAsync("""
+            DROP TABLE order_line_options;
+            DROP TABLE order_lines;
+            DROP TABLE order_batches;
+            DROP TABLE table_session_billing_policy;
             DROP TABLE print_jobs;
             DROP TABLE bill_preview_snapshots;
             PRAGMA user_version = 1;
@@ -161,12 +165,164 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(3L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("table_sessions"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_preview_snapshots';"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'print_jobs';"));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'order_lines';"));
+    }
+
+    [Fact]
+    public async Task Version_two_database_migrates_to_version_three_without_losing_preview_jobs()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await Service(store).RequestPaymentAsync(PaymentCommand("REQ-2", "TS-1", 1));
+        await database.ExecuteAsync("""
+            DROP TABLE order_line_options;
+            DROP TABLE order_lines;
+            DROP TABLE order_batches;
+            DROP TABLE table_session_billing_policy;
+            PRAGMA user_version = 2;
+            """);
+
+        var migratedStore = new SqliteTableSessionCommandStore(
+            database.Path,
+            new StaticBillPreviewContentSource());
+        await migratedStore.InitializeAsync();
+
+        Assert.Equal(3L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
+        Assert.Equal(1L, await database.CountAsync("print_jobs"));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'table_session_billing_policy';"));
+    }
+
+    [Fact]
+    public async Task Production_preview_source_uses_persisted_snapshots_and_authoritative_calculation()
+    {
+        await using var database = new TemporaryDatabase();
+        var setupStore = await database.CreateStoreAsync();
+        await Service(setupStore).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await database.ExecuteAsync("""
+            INSERT INTO table_session_billing_policy (
+                branch_id, table_session_id, master_data_version, calculation_policy_version,
+                vat_rate, service_charge_rate, currency_scale, midpoint_rounding,
+                bill_discount_kind, bill_discount_requested_value, created_at)
+            VALUES ('BRANCH-01', 'TS-1', 'MASTER-7', 'CALC-3', '7', '10', 2,
+                    'AwayFromZero', 'FixedAmount', '20', '2026-10-13T08:00:00.0000000+00:00');
+
+            INSERT INTO order_batches (
+                branch_id, order_batch_id, request_id, table_session_id,
+                device_id, employee_id, submitted_at)
+            VALUES ('BRANCH-01', 'BATCH-1', 'ORDER-REQ-1', 'TS-1',
+                    'DEVICE-01', 'EMPLOYEE-01', '2026-10-13T08:01:00.0000000+00:00');
+
+            INSERT INTO order_lines (
+                branch_id, order_line_id, order_batch_id, table_session_id, line_sequence,
+                sellable_item_id, display_name, original_quantity, active_quantity, unit_price,
+                fulfillment_type, comment, discount_kind, discount_requested_value, status, created_at)
+            VALUES ('BRANCH-01', 'LINE-1', 'BATCH-1', 'TS-1', 1,
+                    'ITEM-1', 'ข้าวผัดกุ้ง', 2, 2, '100', 'DineIn', 'ไม่ใส่ต้นหอม',
+                    'Percentage', '10', 'Active', '2026-10-13T08:01:00.0000000+00:00');
+
+            INSERT INTO order_line_options (
+                branch_id, order_line_id, option_sequence, option_id,
+                display_name, quantity_per_item, unit_price)
+            VALUES ('BRANCH-01', 'LINE-1', 1, 'OPT-1', 'ไข่ดาว', 1, '15');
+            """);
+        var productionStore = new SqliteTableSessionCommandStore(database.Path);
+        await productionStore.InitializeAsync();
+
+        var result = await Service(productionStore).RequestPaymentAsync(
+            PaymentCommand("REQ-2", "TS-1", 1));
+
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, result.Outcome);
+        var json = await database.ScalarAsync<string>(
+            "SELECT content_json FROM bill_preview_snapshots WHERE request_id = 'REQ-2';");
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var root = document.RootElement;
+        Assert.Equal("MASTER-7", root.GetProperty("masterDataVersion").GetString());
+        Assert.Equal("CALC-3", root.GetProperty("calculationPolicyVersion").GetString());
+        Assert.Equal(230m, root.GetProperty("itemGrossAmount").GetDecimal());
+        Assert.Equal(23m, root.GetProperty("lineDiscountAmount").GetDecimal());
+        Assert.Equal(205.70m, root.GetProperty("totalBeforeRounding").GetDecimal());
+        Assert.Equal(-0.70m, root.GetProperty("roundingAdjustment").GetDecimal());
+        Assert.Equal(205m, root.GetProperty("netTotal").GetDecimal());
+        Assert.Equal("BATCH-1", root.GetProperty("items")[0].GetProperty("orderBatchId").GetString());
+        Assert.Equal("ไข่ดาว", root.GetProperty("items")[0].GetProperty("options")[0]
+            .GetProperty("displayName").GetString());
+        Assert.Equal(10m, root.GetProperty("items")[0].GetProperty("discount")
+            .GetProperty("requestedValue").GetDecimal());
+        Assert.Equal(23m, root.GetProperty("items")[0].GetProperty("discount")
+            .GetProperty("appliedAmount").GetDecimal());
+        Assert.Equal(20m, root.GetProperty("billDiscount").GetProperty("appliedAmount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Production_preview_source_rejects_session_without_billing_policy_and_rolls_back()
+    {
+        await using var database = new TemporaryDatabase();
+        var setupStore = await database.CreateStoreAsync();
+        await Service(setupStore).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await database.ExecuteAsync("""
+            INSERT INTO order_batches (
+                branch_id, order_batch_id, request_id, table_session_id,
+                device_id, employee_id, submitted_at)
+            VALUES ('BRANCH-01', 'BATCH-1', 'ORDER-REQ-1', 'TS-1',
+                    'DEVICE-01', 'EMPLOYEE-01', '2026-10-13T08:01:00.0000000+00:00');
+
+            INSERT INTO order_lines (
+                branch_id, order_line_id, order_batch_id, table_session_id, line_sequence,
+                sellable_item_id, display_name, original_quantity, active_quantity, unit_price,
+                fulfillment_type, comment, discount_kind, discount_requested_value, status, created_at)
+            VALUES ('BRANCH-01', 'LINE-1', 'BATCH-1', 'TS-1', 1,
+                    'ITEM-1', 'Item', 1, 1, '100', 'DineIn', NULL,
+                    NULL, NULL, 'Active', '2026-10-13T08:01:00.0000000+00:00');
+            """);
+        var productionStore = new SqliteTableSessionCommandStore(database.Path);
+        await productionStore.InitializeAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Service(productionStore).RequestPaymentAsync(PaymentCommand("REQ-2", "TS-1", 1)));
+
+        Assert.Equal("The table session has no authoritative billing policy snapshot.", exception.Message);
+        Assert.Equal("Ordering", await database.ScalarAsync<string>(
+            "SELECT status FROM table_sessions WHERE table_session_id = 'TS-1';"));
+        Assert.Equal(0L, await database.CountAsync("bill_preview_snapshots"));
+        Assert.Equal(0L, await database.CountAsync("print_jobs"));
+    }
+
+    [Fact]
+    public async Task Production_preview_source_rejects_session_without_active_order_lines()
+    {
+        await using var database = new TemporaryDatabase();
+        var setupStore = await database.CreateStoreAsync();
+        await Service(setupStore).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await database.ExecuteAsync("""
+            INSERT INTO table_session_billing_policy (
+                branch_id, table_session_id, master_data_version, calculation_policy_version,
+                vat_rate, service_charge_rate, currency_scale, midpoint_rounding,
+                bill_discount_kind, bill_discount_requested_value, created_at)
+            VALUES ('BRANCH-01', 'TS-1', 'MASTER-7', 'CALC-3', '7', '0', 2,
+                    'AwayFromZero', NULL, NULL, '2026-10-13T08:00:00.0000000+00:00');
+            """);
+        var productionStore = new SqliteTableSessionCommandStore(database.Path);
+        await productionStore.InitializeAsync();
+
+        var result = await Service(productionStore).RequestPaymentAsync(
+            PaymentCommand("REQ-2", "TS-1", 1));
+
+        Assert.Equal(BranchCommandOutcome.Rejected, result.Outcome);
+        Assert.Equal("NoActiveOrderLines", result.ErrorCode);
+        Assert.Equal("Ordering", await database.ScalarAsync<string>(
+            "SELECT status FROM table_sessions WHERE table_session_id = 'TS-1';"));
+        Assert.Equal(0L, await database.CountAsync("bill_preview_snapshots"));
+        Assert.Equal(0L, await database.CountAsync("print_jobs"));
     }
 
     [Fact]
@@ -194,14 +350,14 @@ public sealed class SqliteTableSessionCommandStoreTests
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 3;");
+        await database.ExecuteAsync("PRAGMA user_version = 4;");
         var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 3", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(3L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 4", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(4L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]
@@ -336,7 +492,11 @@ public sealed class SqliteTableSessionCommandStoreTests
                 "table_session_audit",
                 "cloud_sync_outbox",
                 "bill_preview_snapshots",
-                "print_jobs"
+                "print_jobs",
+                "table_session_billing_policy",
+                "order_batches",
+                "order_lines",
+                "order_line_options"
             };
             if (!allowed.Contains(tableName))
             {
@@ -387,6 +547,16 @@ public sealed class SqliteTableSessionCommandStoreTests
 
     private sealed class StaticBillPreviewContentSource : ISqliteBillPreviewContentSource
     {
+        public Task<bool> HasActiveOrderLinesAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            string branchId,
+            string tableSessionId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
         public Task<BillPreviewContent> CaptureAsync(
             SqliteConnection connection,
             SqliteTransaction transaction,
@@ -404,6 +574,16 @@ public sealed class SqliteTableSessionCommandStoreTests
 
     private sealed class ThrowingBillPreviewContentSource : ISqliteBillPreviewContentSource
     {
+        public Task<bool> HasActiveOrderLinesAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            string branchId,
+            string tableSessionId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
         public Task<BillPreviewContent> CaptureAsync(
             SqliteConnection connection,
             SqliteTransaction transaction,

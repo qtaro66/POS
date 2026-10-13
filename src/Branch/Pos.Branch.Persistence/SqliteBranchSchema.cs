@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -125,6 +125,86 @@ internal static class SqliteBranchSchema
             ON print_jobs (status, next_retry_at, created_at);
         """;
 
+    private const string SchemaVersion3 = """
+        CREATE TABLE IF NOT EXISTS table_session_billing_policy (
+            branch_id TEXT NOT NULL,
+            table_session_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            calculation_policy_version TEXT NOT NULL,
+            vat_rate TEXT NOT NULL,
+            service_charge_rate TEXT NOT NULL,
+            currency_scale INTEGER NOT NULL CHECK (currency_scale BETWEEN 0 AND 28),
+            midpoint_rounding TEXT NOT NULL CHECK (midpoint_rounding IN (
+                'AwayFromZero', 'ToEven', 'ToZero', 'ToNegativeInfinity', 'ToPositiveInfinity')),
+            bill_discount_kind TEXT NULL CHECK (bill_discount_kind IS NULL OR bill_discount_kind IN ('Percentage', 'FixedAmount')),
+            bill_discount_requested_value TEXT NULL,
+            created_at TEXT NOT NULL,
+            CHECK ((bill_discount_kind IS NULL) = (bill_discount_requested_value IS NULL)),
+            PRIMARY KEY (branch_id, table_session_id),
+            FOREIGN KEY (branch_id, table_session_id)
+                REFERENCES table_sessions (branch_id, table_session_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS order_batches (
+            branch_id TEXT NOT NULL,
+            order_batch_id TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            table_session_id TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            employee_id TEXT NOT NULL,
+            submitted_at TEXT NOT NULL,
+            PRIMARY KEY (branch_id, order_batch_id),
+            UNIQUE (branch_id, request_id),
+            FOREIGN KEY (branch_id, table_session_id)
+                REFERENCES table_sessions (branch_id, table_session_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_order_batches_session
+            ON order_batches (branch_id, table_session_id, submitted_at, order_batch_id);
+
+        CREATE TABLE IF NOT EXISTS order_lines (
+            branch_id TEXT NOT NULL,
+            order_line_id TEXT NOT NULL,
+            order_batch_id TEXT NOT NULL,
+            table_session_id TEXT NOT NULL,
+            line_sequence INTEGER NOT NULL CHECK (line_sequence >= 1),
+            sellable_item_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            original_quantity INTEGER NOT NULL CHECK (original_quantity >= 1),
+            active_quantity INTEGER NOT NULL CHECK (active_quantity BETWEEN 0 AND original_quantity),
+            unit_price TEXT NOT NULL,
+            fulfillment_type TEXT NOT NULL CHECK (fulfillment_type IN ('DineIn', 'Takeaway')),
+            comment TEXT NULL,
+            discount_kind TEXT NULL CHECK (discount_kind IS NULL OR discount_kind IN ('Percentage', 'FixedAmount')),
+            discount_requested_value TEXT NULL,
+            status TEXT NOT NULL CHECK (status IN ('Active', 'Cancelled')),
+            created_at TEXT NOT NULL,
+            CHECK ((discount_kind IS NULL) = (discount_requested_value IS NULL)),
+            PRIMARY KEY (branch_id, order_line_id),
+            UNIQUE (branch_id, order_batch_id, line_sequence),
+            FOREIGN KEY (branch_id, order_batch_id)
+                REFERENCES order_batches (branch_id, order_batch_id),
+            FOREIGN KEY (branch_id, table_session_id)
+                REFERENCES table_sessions (branch_id, table_session_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_order_lines_active_session
+            ON order_lines (branch_id, table_session_id, status, order_batch_id, line_sequence);
+
+        CREATE TABLE IF NOT EXISTS order_line_options (
+            branch_id TEXT NOT NULL,
+            order_line_id TEXT NOT NULL,
+            option_sequence INTEGER NOT NULL CHECK (option_sequence >= 1),
+            option_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            quantity_per_item INTEGER NOT NULL CHECK (quantity_per_item >= 1),
+            unit_price TEXT NOT NULL,
+            PRIMARY KEY (branch_id, order_line_id, option_sequence),
+            FOREIGN KEY (branch_id, order_line_id)
+                REFERENCES order_lines (branch_id, order_line_id)
+        );
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -149,6 +229,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 2)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion2, cancellationToken);
+        }
+
+        if (storedVersion < 3)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion3, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

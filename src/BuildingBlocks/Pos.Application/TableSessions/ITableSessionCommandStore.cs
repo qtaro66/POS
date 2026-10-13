@@ -36,6 +36,11 @@ public interface ITableSessionCommandTransaction
         TableSessionId tableSessionId,
         CancellationToken cancellationToken);
 
+    Task<bool> HasActiveOrderLinesAsync(
+        string branchId,
+        TableSessionId tableSessionId,
+        CancellationToken cancellationToken);
+
     Task<BillPreviewContent> CaptureBillPreviewContentAsync(
         BillPreviewCaptureRequest request,
         CancellationToken cancellationToken);
