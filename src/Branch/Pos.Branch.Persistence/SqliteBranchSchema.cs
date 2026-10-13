@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -205,6 +205,43 @@ internal static class SqliteBranchSchema
         );
         """;
 
+    private const string SchemaVersion4 = """
+        CREATE TABLE IF NOT EXISTS master_data_packages (
+            branch_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            package_schema_version INTEGER NOT NULL CHECK (package_schema_version >= 1),
+            checksum_sha256 TEXT NOT NULL CHECK (
+                length(checksum_sha256) = 64
+                AND checksum_sha256 NOT GLOB '*[^0-9A-Fa-f]*'),
+            published_at TEXT NOT NULL,
+            activated_at TEXT NULL,
+            lifecycle_status TEXT NOT NULL CHECK (lifecycle_status IN ('Staged', 'Active', 'Previous')),
+            CHECK (lifecycle_status = 'Staged' OR activated_at IS NOT NULL),
+            PRIMARY KEY (branch_id, master_data_version)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_master_data_packages_active
+            ON master_data_packages (branch_id)
+            WHERE lifecycle_status = 'Active';
+
+        CREATE INDEX IF NOT EXISTS ix_master_data_packages_lifecycle
+            ON master_data_packages (branch_id, lifecycle_status);
+
+        CREATE TABLE IF NOT EXISTS master_data_billing_policy (
+            branch_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            calculation_policy_version TEXT NOT NULL,
+            vat_rate TEXT NOT NULL,
+            service_charge_rate TEXT NOT NULL,
+            currency_scale INTEGER NOT NULL CHECK (currency_scale BETWEEN 0 AND 28),
+            midpoint_rounding TEXT NOT NULL CHECK (midpoint_rounding IN (
+                'AwayFromZero', 'ToEven', 'ToZero', 'ToNegativeInfinity', 'ToPositiveInfinity')),
+            PRIMARY KEY (branch_id, master_data_version),
+            FOREIGN KEY (branch_id, master_data_version)
+                REFERENCES master_data_packages (branch_id, master_data_version)
+        );
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -234,6 +271,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 3)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion3, cancellationToken);
+        }
+
+        if (storedVersion < 4)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion4, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

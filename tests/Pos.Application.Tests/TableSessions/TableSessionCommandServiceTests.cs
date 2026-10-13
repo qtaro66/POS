@@ -1,6 +1,8 @@
+using Pos.Application.MasterData;
 using Pos.Application.Printing;
 using Pos.Application.TableSessions;
 using Pos.Application.Time;
+using Pos.Domain.Billing;
 using Pos.Domain.TableSessions;
 
 namespace Pos.Application.Tests.TableSessions;
@@ -27,6 +29,9 @@ public sealed class TableSessionCommandServiceTests
         Assert.Single(store.Receipts);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        var policy = Assert.Single(store.SessionPolicies);
+        Assert.Equal("MASTER-1", policy.MasterData.MasterDataVersion);
+        Assert.Equal("CALC-1", policy.MasterData.BillingPolicy.CalculationPolicyVersion);
         Assert.Equal(0, store.BillPreviewCaptureCount);
         Assert.Equal(TableSessionAction.OpenTable, store.Audits[0].Transition.Action);
     }
@@ -46,6 +51,7 @@ public sealed class TableSessionCommandServiceTests
         Assert.Single(store.Receipts);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        Assert.Single(store.SessionPolicies);
         Assert.Equal(0, store.BillPreviewCaptureCount);
     }
 
@@ -64,7 +70,44 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(2, store.Receipts.Count);
         Assert.Single(store.Audits);
         Assert.Single(store.Outbox);
+        Assert.Single(store.SessionPolicies);
         Assert.Equal(0, store.BillPreviewCaptureCount);
+    }
+
+    [Fact]
+    public async Task Open_table_without_active_master_data_is_idempotently_rejected()
+    {
+        var store = new InMemoryTableSessionCommandStore { ActiveMasterData = null };
+        var service = Service(store);
+        var command = OpenCommand("REQ-1", "TS-1", "A04");
+
+        var first = await service.OpenTableAsync(command);
+        var duplicate = await service.OpenTableAsync(command);
+
+        Assert.Equal(BranchCommandOutcome.Rejected, first.Outcome);
+        Assert.Equal("ActiveMasterDataUnavailable", first.ErrorCode);
+        Assert.Equal(first, duplicate);
+        Assert.Empty(store.Sessions);
+        Assert.Empty(store.SessionPolicies);
+        Assert.Empty(store.Audits);
+        Assert.Empty(store.Outbox);
+        Assert.Single(store.Receipts);
+    }
+
+    [Fact]
+    public async Task Existing_session_keeps_original_master_data_when_active_package_changes()
+    {
+        var store = new InMemoryTableSessionCommandStore();
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        store.ActiveMasterData = MasterData("MASTER-2", "CALC-2");
+
+        var result = await service.OpenTableAsync(OpenCommand("REQ-2", "TS-2", "A04"));
+
+        Assert.Equal("TS-1", result.TableSessionId.Value);
+        var policy = Assert.Single(store.SessionPolicies);
+        Assert.Equal("MASTER-1", policy.MasterData.MasterDataVersion);
+        Assert.Equal("CALC-1", policy.MasterData.BillingPolicy.CalculationPolicyVersion);
     }
 
     [Fact]
@@ -227,6 +270,23 @@ public sealed class TableSessionCommandServiceTests
             Now.AddMinutes(-1));
     }
 
+    private static ActiveMasterDataSnapshot MasterData(
+        string masterDataVersion = "MASTER-1",
+        string calculationPolicyVersion = "CALC-1") =>
+        new(
+            masterDataVersion,
+            1,
+            new string('A', 64),
+            Now.AddHours(-2),
+            Now.AddHours(-1),
+            new BillPolicySnapshot(
+                masterDataVersion,
+                calculationPolicyVersion,
+                7m,
+                0m,
+                2,
+                MonetaryRoundingMode.AwayFromZero));
+
     private sealed class FixedClock(DateTimeOffset utcNow) : IBranchClock
     {
         public DateTimeOffset UtcNow { get; } = utcNow;
@@ -252,9 +312,15 @@ public sealed class TableSessionCommandServiceTests
 
         public List<PersistentPrintJob> PrintJobs { get; } = [];
 
+        public List<(string BranchId, TableSessionId TableSessionId, ActiveMasterDataSnapshot MasterData, DateTimeOffset CreatedAt)>
+            SessionPolicies
+        { get; } = [];
+
         public HashSet<string> OpenCancellationSessionIds { get; } = [];
 
         public bool HasActiveOrderLines { get; set; } = true;
+
+        public ActiveMasterDataSnapshot? ActiveMasterData { get; set; } = MasterData();
 
         public int BillPreviewCaptureCount { get; private set; }
 
@@ -308,6 +374,13 @@ public sealed class TableSessionCommandServiceTests
             return Task.FromResult(session);
         }
 
+        public Task<ActiveMasterDataSnapshot?> FindActiveMasterDataSnapshotAsync(
+            string branchId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(ActiveMasterData);
+        }
+
         public Task<bool> HasOpenCancellationRequestAsync(
             string branchId,
             TableSessionId tableSessionId,
@@ -342,6 +415,17 @@ public sealed class TableSessionCommandServiceTests
             CancellationToken cancellationToken)
         {
             _sessions.Add((branchId, session.Id.Value), session);
+            return Task.CompletedTask;
+        }
+
+        public Task AddTableSessionBillingPolicyAsync(
+            string branchId,
+            TableSessionId tableSessionId,
+            ActiveMasterDataSnapshot masterData,
+            DateTimeOffset createdAt,
+            CancellationToken cancellationToken)
+        {
+            SessionPolicies.Add((branchId, tableSessionId, masterData, createdAt));
             return Task.CompletedTask;
         }
 
