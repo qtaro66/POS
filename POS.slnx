@@ -2,6 +2,7 @@
   <Folder Name="/src/" />
   <Folder Name="/src/Branch/">
     <Project Path="src/Branch/Pos.Branch.Api/Pos.Branch.Api.csproj" />
+    <Project Path="src/Branch/Pos.Branch.Persistence/Pos.Branch.Persistence.csproj" />
   </Folder>
   <Folder Name="/src/BuildingBlocks/">
     <Project Path="src/BuildingBlocks/Pos.Application/Pos.Application.csproj" />
@@ -23,6 +24,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Pos.Application.Tests/Pos.Application.Tests.csproj" />
     <Project Path="tests/Pos.Branch.Api.Tests/Pos.Branch.Api.Tests.csproj" />
+    <Project Path="tests/Pos.Branch.Persistence.Tests/Pos.Branch.Persistence.Tests.csproj" />
     <Project Path="tests/Pos.Domain.Tests/Pos.Domain.Tests.csproj" />
     <Project Path="tests/Pos.Printing.Tests/Pos.Printing.Tests.csproj" />
   </Folder>

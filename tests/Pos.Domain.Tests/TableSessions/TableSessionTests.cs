@@ -7,6 +7,30 @@ public sealed class TableSessionTests
     private static readonly DateTimeOffset OccurredAt = new(2026, 10, 13, 8, 30, 0, TimeSpan.FromHours(7));
 
     [Fact]
+    public void Rehydrate_restores_persisted_state_without_creating_a_transition()
+    {
+        var session = TableSession.Rehydrate(
+            TableSessionId.From("TS-1"),
+            TableId.From("A04"),
+            TableSessionStatus.PaymentPending,
+            version: 7);
+
+        Assert.Equal(TableSessionStatus.PaymentPending, session.Status);
+        Assert.Equal(7, session.Version);
+        Assert.Empty(session.Transitions);
+    }
+
+    [Fact]
+    public void Rehydrate_rejects_non_positive_version()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TableSession.Rehydrate(
+            TableSessionId.From("TS-1"),
+            TableId.From("A04"),
+            TableSessionStatus.Ordering,
+            version: 0));
+    }
+
+    [Fact]
     public void Open_starts_ordering_and_records_auditable_transition()
     {
         var session = OpenSession();

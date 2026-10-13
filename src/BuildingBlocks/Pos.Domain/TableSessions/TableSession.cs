@@ -41,6 +41,32 @@ public sealed class TableSession
         return session;
     }
 
+    public static TableSession Rehydrate(
+        TableSessionId id,
+        TableId currentTableId,
+        TableSessionStatus status,
+        long version)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(currentTableId);
+
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status));
+        }
+
+        if (version < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(version), "A persisted session version must be positive.");
+        }
+
+        return new TableSession(id, currentTableId)
+        {
+            Status = status,
+            Version = version
+        };
+    }
+
     public void EnsureCanSubmitOrder()
     {
         EnsureStatus(TableSessionAction.SubmitOrder, TableSessionStatus.Ordering);
