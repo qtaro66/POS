@@ -1,4 +1,5 @@
 using Pos.Application.MasterData;
+using Pos.Application.Orders;
 using Pos.Application.Printing;
 using Pos.Application.TableSessions;
 using Pos.Application.Time;
@@ -234,6 +235,118 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(0, store.BillPreviewCaptureCount);
     }
 
+    [Fact]
+    public async Task Submit_order_persists_resolved_batch_receipt_and_outbox()
+    {
+        var store = new InMemoryTableSessionCommandStore();
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+
+        var result = await service.SubmitOrderAsync(SubmitCommand("REQ-2", "BATCH-1"));
+
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, result.Outcome);
+        Assert.Equal(TableSessionStatus.Ordering, result.SessionStatus);
+        Assert.Equal(1, result.TableVersion);
+        var batch = Assert.Single(store.OrderBatches);
+        Assert.Equal("BATCH-1", batch.OrderBatchId);
+        Assert.Equal("DEVICE-01", batch.DeviceId);
+        Assert.Equal("EMPLOYEE-01", batch.EmployeeId);
+        Assert.Equal(1, batch.BranchSequence);
+        Assert.Equal(Now.AddMinutes(-1), batch.ClientCreatedAt);
+        Assert.Equal(Now, batch.ServerReceivedAt);
+        Assert.Equal(1, result.BranchSequence);
+        var line = Assert.Single(batch.Lines);
+        Assert.Equal("ข้าวผัดกุ้ง", line.DisplayName);
+        Assert.Equal(120m, line.UnitPrice);
+        Assert.Equal(FulfillmentType.DineIn, line.FulfillmentType);
+        Assert.Equal("ไม่ใส่ต้นหอม", line.Comment);
+        Assert.Equal(TableSessionAction.SubmitOrder, store.Outbox[^1].Action);
+        Assert.Single(store.Audits);
+    }
+
+    [Fact]
+    public async Task Duplicate_submit_order_replays_without_appending_batch_twice()
+    {
+        var store = new InMemoryTableSessionCommandStore();
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        var command = SubmitCommand("REQ-2", "BATCH-1");
+
+        var first = await service.SubmitOrderAsync(command);
+        var duplicate = await service.SubmitOrderAsync(command);
+
+        Assert.Equal(first, duplicate);
+        Assert.Single(store.OrderBatches);
+        Assert.Equal(2, store.Receipts.Count);
+        Assert.Equal(2, store.Outbox.Count);
+        Assert.Equal(1, store.CatalogResolutionCount);
+    }
+
+    [Fact]
+    public async Task Any_catalog_error_rejects_whole_batch_with_persisted_details()
+    {
+        var store = new InMemoryTableSessionCommandStore();
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        store.CatalogResults["ITEM-2"] = new CatalogResolutionResult(
+            null,
+            [new CatalogValidationError(
+                CatalogValidationErrorCode.ItemSoldOut,
+                "ITEM-2")]);
+        var command = new SubmitOrderCommand(
+            Metadata("REQ-2", "TS-1"),
+            "BATCH-1",
+            [
+                new SubmitOrderLine("ITEM-1", 1, FulfillmentType.DineIn),
+                new SubmitOrderLine("ITEM-2", 1, FulfillmentType.Takeaway)
+            ]);
+
+        var first = await service.SubmitOrderAsync(command);
+        var duplicate = await service.SubmitOrderAsync(command);
+
+        Assert.Equal(BranchCommandOutcome.Rejected, first.Outcome);
+        Assert.Equal("CatalogValidationFailed", first.ErrorCode);
+        Assert.Contains("itemSoldOut", first.ErrorDetailsJson, StringComparison.Ordinal);
+        Assert.Contains("\"lineSequence\":2", first.ErrorDetailsJson, StringComparison.Ordinal);
+        Assert.Equal(first, duplicate);
+        Assert.Empty(store.OrderBatches);
+        Assert.Single(store.Outbox);
+    }
+
+    [Fact]
+    public async Task Payment_pending_rejects_submit_before_catalog_resolution()
+    {
+        var store = new InMemoryTableSessionCommandStore();
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await service.RequestPaymentAsync(PaymentCommand("REQ-2", "TS-1", 1));
+
+        var result = await service.SubmitOrderAsync(SubmitCommand("REQ-3", "BATCH-1"));
+
+        Assert.Equal(BranchCommandOutcome.Rejected, result.Outcome);
+        Assert.Equal("InvalidTableSessionState", result.ErrorCode);
+        Assert.Empty(store.OrderBatches);
+        Assert.Equal(0, store.CatalogResolutionCount);
+    }
+
+    [Fact]
+    public async Task Reused_order_batch_id_is_idempotently_rejected()
+    {
+        var store = new InMemoryTableSessionCommandStore();
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await service.SubmitOrderAsync(SubmitCommand("REQ-2", "BATCH-1"));
+
+        var command = SubmitCommand("REQ-3", "BATCH-1");
+        var first = await service.SubmitOrderAsync(command);
+        var duplicate = await service.SubmitOrderAsync(command);
+
+        Assert.Equal(BranchCommandOutcome.Rejected, first.Outcome);
+        Assert.Equal("OrderBatchIdConflict", first.ErrorCode);
+        Assert.Equal(first, duplicate);
+        Assert.Single(store.OrderBatches);
+    }
+
     private static TableSessionCommandService Service(InMemoryTableSessionCommandStore store)
     {
         return new TableSessionCommandService(store, new FixedClock(Now));
@@ -258,6 +371,16 @@ public sealed class TableSessionCommandServiceTests
             Metadata(requestId, sessionId),
             expectedVersion);
     }
+
+    private static SubmitOrderCommand SubmitCommand(string requestId, string orderBatchId) =>
+        new(
+            Metadata(requestId, "TS-1"),
+            orderBatchId,
+            [new SubmitOrderLine(
+                "ITEM-1",
+                1,
+                FulfillmentType.DineIn,
+                "ไม่ใส่ต้นหอม")]);
 
     private static BranchCommandMetadata Metadata(string requestId, string sessionId)
     {
@@ -311,6 +434,13 @@ public sealed class TableSessionCommandServiceTests
         public List<BillPreviewSnapshot> BillPreviewSnapshots { get; } = [];
 
         public List<PersistentPrintJob> PrintJobs { get; } = [];
+
+        public List<OrderBatchSnapshot> OrderBatches { get; } = [];
+
+        public Dictionary<string, CatalogResolutionResult> CatalogResults { get; } =
+            new(StringComparer.Ordinal);
+
+        public int CatalogResolutionCount { get; private set; }
 
         public List<(string BranchId, TableSessionId TableSessionId, ActiveMasterDataSnapshot MasterData, DateTimeOffset CreatedAt)>
             SessionPolicies
@@ -409,6 +539,48 @@ public sealed class TableSessionCommandServiceTests
                 """));
         }
 
+        public Task<bool> OrderBatchExistsAsync(
+            string branchId,
+            string orderBatchId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(OrderBatches.Any(batch =>
+                batch.BranchId == branchId && batch.OrderBatchId == orderBatchId));
+        }
+
+        public Task<long> GetNextBranchSequenceAsync(
+            string branchId,
+            CancellationToken cancellationToken)
+        {
+            var next = OrderBatches
+                .Where(batch => batch.BranchId == branchId)
+                .Select(batch => batch.BranchSequence)
+                .DefaultIfEmpty(0)
+                .Max() + 1;
+            return Task.FromResult(next);
+        }
+
+        public Task<CatalogResolutionResult> ResolveCatalogSelectionAsync(
+            CatalogSelectionRequest request,
+            CancellationToken cancellationToken)
+        {
+            CatalogResolutionCount++;
+            if (CatalogResults.TryGetValue(request.SellableItemId, out var configured))
+            {
+                return Task.FromResult(configured);
+            }
+
+            return Task.FromResult(new CatalogResolutionResult(
+                new ResolvedCatalogSelection(
+                    "MASTER-1",
+                    request.SellableItemId,
+                    "ข้าวผัดกุ้ง",
+                    request.Quantity,
+                    120m,
+                    []),
+                []));
+        }
+
         public Task InsertSessionAsync(
             string branchId,
             TableSession session,
@@ -481,6 +653,14 @@ public sealed class TableSessionCommandServiceTests
             CancellationToken cancellationToken)
         {
             PrintJobs.Add(printJob);
+            return Task.CompletedTask;
+        }
+
+        public Task AddOrderBatchAsync(
+            OrderBatchSnapshot orderBatch,
+            CancellationToken cancellationToken)
+        {
+            OrderBatches.Add(orderBatch);
             return Task.CompletedTask;
         }
     }

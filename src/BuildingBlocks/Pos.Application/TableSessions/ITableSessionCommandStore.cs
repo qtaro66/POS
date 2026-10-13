@@ -1,4 +1,5 @@
 using Pos.Application.MasterData;
+using Pos.Application.Orders;
 using Pos.Application.Printing;
 using Pos.Domain.TableSessions;
 
@@ -50,6 +51,19 @@ public interface ITableSessionCommandTransaction
         BillPreviewCaptureRequest request,
         CancellationToken cancellationToken);
 
+    Task<bool> OrderBatchExistsAsync(
+        string branchId,
+        string orderBatchId,
+        CancellationToken cancellationToken);
+
+    Task<long> GetNextBranchSequenceAsync(
+        string branchId,
+        CancellationToken cancellationToken);
+
+    Task<CatalogResolutionResult> ResolveCatalogSelectionAsync(
+        CatalogSelectionRequest request,
+        CancellationToken cancellationToken);
+
     Task InsertSessionAsync(
         string branchId,
         TableSession session,
@@ -86,5 +100,9 @@ public interface ITableSessionCommandTransaction
 
     Task AddPrintJobAsync(
         PersistentPrintJob printJob,
+        CancellationToken cancellationToken);
+
+    Task AddOrderBatchAsync(
+        OrderBatchSnapshot orderBatch,
         CancellationToken cancellationToken);
 }

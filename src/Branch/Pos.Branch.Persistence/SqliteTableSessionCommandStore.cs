@@ -7,19 +7,33 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
 {
     private readonly SqliteConnectionFactory _connections;
     private readonly ISqliteBillPreviewContentSource _billPreviewContentSource;
+    private readonly ISqliteCatalogSnapshotResolver _catalogSnapshotResolver;
 
     public SqliteTableSessionCommandStore(string databasePath)
-        : this(databasePath, new SqliteBillPreviewContentSource())
+        : this(
+            databasePath,
+            new SqliteBillPreviewContentSource(),
+            new SqliteCatalogSnapshotResolver())
     {
     }
 
     public SqliteTableSessionCommandStore(
         string databasePath,
         ISqliteBillPreviewContentSource billPreviewContentSource)
+        : this(databasePath, billPreviewContentSource, new SqliteCatalogSnapshotResolver())
+    {
+    }
+
+    public SqliteTableSessionCommandStore(
+        string databasePath,
+        ISqliteBillPreviewContentSource billPreviewContentSource,
+        ISqliteCatalogSnapshotResolver catalogSnapshotResolver)
     {
         _connections = new SqliteConnectionFactory(databasePath);
         _billPreviewContentSource = billPreviewContentSource ??
             throw new ArgumentNullException(nameof(billPreviewContentSource));
+        _catalogSnapshotResolver = catalogSnapshotResolver ??
+            throw new ArgumentNullException(nameof(catalogSnapshotResolver));
     }
 
     public string DatabasePath => _connections.DatabasePath;
@@ -41,7 +55,8 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
         var commandTransaction = new SqliteTableSessionCommandTransaction(
             connection,
             transaction,
-            _billPreviewContentSource);
+            _billPreviewContentSource,
+            _catalogSnapshotResolver);
 
         try
         {

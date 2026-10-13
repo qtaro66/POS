@@ -19,4 +19,6 @@ public sealed record BranchCommandReceipt(
     TableSessionStatus? SessionStatus,
     long? TableVersion,
     string? ErrorCode,
-    DateTimeOffset ServerReceivedAt);
+    DateTimeOffset ServerReceivedAt,
+    string? ErrorDetailsJson = null,
+    long? BranchSequence = null);
