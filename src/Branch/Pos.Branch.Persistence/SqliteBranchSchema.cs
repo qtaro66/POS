@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -242,6 +242,88 @@ internal static class SqliteBranchSchema
         );
         """;
 
+    private const string SchemaVersion5 = """
+        CREATE TABLE IF NOT EXISTS master_data_sellable_items (
+            branch_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            sellable_item_id TEXT NOT NULL,
+            item_kind TEXT NOT NULL CHECK (item_kind IN ('Item', 'SubItem', 'Topping')),
+            display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
+            resolved_price TEXT NULL,
+            central_active INTEGER NOT NULL CHECK (central_active IN (0, 1)),
+            branch_catalog_enabled INTEGER NOT NULL CHECK (branch_catalog_enabled IN (0, 1)),
+            PRIMARY KEY (branch_id, master_data_version, sellable_item_id),
+            FOREIGN KEY (branch_id, master_data_version)
+                REFERENCES master_data_packages (branch_id, master_data_version)
+        );
+
+        CREATE TABLE IF NOT EXISTS master_data_option_groups (
+            branch_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            parent_sellable_item_id TEXT NOT NULL,
+            option_group_id TEXT NOT NULL,
+            display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
+            option_type TEXT NOT NULL CHECK (option_type IN ('SubItem', 'Topping')),
+            min_selections INTEGER NOT NULL CHECK (min_selections >= 0),
+            max_selections INTEGER NOT NULL CHECK (max_selections >= min_selections),
+            allow_repeated_option INTEGER NOT NULL CHECK (allow_repeated_option IN (0, 1)),
+            max_quantity_per_option INTEGER NOT NULL CHECK (max_quantity_per_option >= 1),
+            display_order INTEGER NOT NULL CHECK (display_order >= 0),
+            PRIMARY KEY (branch_id, master_data_version, parent_sellable_item_id, option_group_id),
+            FOREIGN KEY (branch_id, master_data_version, parent_sellable_item_id)
+                REFERENCES master_data_sellable_items (
+                    branch_id, master_data_version, sellable_item_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS master_data_option_group_items (
+            branch_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            parent_sellable_item_id TEXT NOT NULL,
+            option_group_id TEXT NOT NULL,
+            option_sellable_item_id TEXT NOT NULL,
+            display_order INTEGER NOT NULL CHECK (display_order >= 0),
+            is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+            PRIMARY KEY (
+                branch_id, master_data_version, parent_sellable_item_id,
+                option_group_id, option_sellable_item_id),
+            FOREIGN KEY (
+                branch_id, master_data_version, parent_sellable_item_id, option_group_id)
+                REFERENCES master_data_option_groups (
+                    branch_id, master_data_version, parent_sellable_item_id, option_group_id),
+            FOREIGN KEY (branch_id, master_data_version, option_sellable_item_id)
+                REFERENCES master_data_sellable_items (
+                    branch_id, master_data_version, sellable_item_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS branch_sold_out_overrides (
+            branch_id TEXT NOT NULL,
+            sellable_item_id TEXT NOT NULL,
+            is_sold_out INTEGER NOT NULL CHECK (is_sold_out IN (0, 1)),
+            changed_by_employee_id TEXT NOT NULL,
+            changed_by_device_id TEXT NOT NULL,
+            changed_at TEXT NOT NULL,
+            PRIMARY KEY (branch_id, sellable_item_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS branch_sold_out_audit (
+            audit_id TEXT NOT NULL PRIMARY KEY,
+            branch_id TEXT NOT NULL,
+            sellable_item_id TEXT NOT NULL,
+            previous_sold_out INTEGER NOT NULL CHECK (previous_sold_out IN (0, 1)),
+            current_sold_out INTEGER NOT NULL CHECK (current_sold_out IN (0, 1)),
+            employee_id TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            occurred_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_branch_sold_out_audit_item
+            ON branch_sold_out_audit (branch_id, sellable_item_id, occurred_at);
+
+        CREATE INDEX IF NOT EXISTS ix_master_data_option_groups_parent
+            ON master_data_option_groups (
+                branch_id, master_data_version, parent_sellable_item_id, display_order);
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -276,6 +358,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 4)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion4, cancellationToken);
+        }
+
+        if (storedVersion < 5)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion5, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
