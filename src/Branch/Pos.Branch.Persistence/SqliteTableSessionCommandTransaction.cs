@@ -110,6 +110,19 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
             CultureInfo.InvariantCulture) == 1;
     }
 
+    public Task<bool> HasActiveOrderLinesAsync(
+        string branchId,
+        TableSessionId tableSessionId,
+        CancellationToken cancellationToken)
+    {
+        return _billPreviewContentSource.HasActiveOrderLinesAsync(
+            _connection,
+            _transaction,
+            branchId,
+            tableSessionId.Value,
+            cancellationToken);
+    }
+
     public Task<BillPreviewContent> CaptureBillPreviewContentAsync(
         BillPreviewCaptureRequest request,
         CancellationToken cancellationToken)
