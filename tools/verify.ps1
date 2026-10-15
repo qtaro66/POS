@@ -314,6 +314,8 @@ if (Test-Path 'package.json') {
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
+# Always Gregorian ISO 8601 and '.' decimals, whatever the machine culture (th-TH uses the Buddhist calendar).
+$invariant = [System.Globalization.CultureInfo]::InvariantCulture
 $head = (& git rev-parse HEAD 2>$null)
 $branch = (& git rev-parse --abbrev-ref HEAD)
 $failed = @($results | Where-Object Status -eq 'FAIL')
@@ -324,7 +326,7 @@ $lines = @(
     "Commit: $head",
     "Working tree clean: $(if ($dirty) { 'no (results do not describe a commit)' } else { 'yes' })",
     "OS: $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)",
-    "Generated: $([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))",
+    "Generated: $([DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", $invariant))",
     "Overall: $overall",
     '',
     '| Check | Command | Result | Seconds |',
@@ -332,14 +334,15 @@ $lines = @(
 )
 foreach ($r in $results) {
     $res = if ($r.Note) { "$($r.Status): $($r.Note)" } else { $r.Status }
-    $lines += "| $($r.Name) | ``$($r.Command)`` | $($res -replace '\|', '/') | $($r.Seconds) |"
+    $lines += "| $($r.Name) | ``$($r.Command)`` | $($res -replace '\|', '/') | $($r.Seconds.ToString('0.0', $invariant)) |"
 }
 
 if (-not $PSBoundParameters.ContainsKey('ReportPath') -and -not $isCI) {
     $ReportPath = Join-Path (Get-HandoffDir $branch).Path 'validation.md'
 }
 if ($ReportPath) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $ReportPath -Parent) | Out-Null
+    $reportDir = Split-Path $ReportPath -Parent
+    if ($reportDir) { New-Item -ItemType Directory -Force -Path $reportDir | Out-Null }
     ($lines -join "`n") + "`n" | Set-Content -Path $ReportPath -Encoding utf8NoBOM -NoNewline
     Write-Host "`nReport written to $ReportPath"
 }
