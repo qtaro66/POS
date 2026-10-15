@@ -78,7 +78,20 @@ public interface IPrinterConditionProbe
 
 public interface IPrintSendObserver
 {
-    void OnFirstByteSending();
+    Task OnFirstByteSendingAsync(CancellationToken cancellationToken);
+}
+
+public interface IPrintDispatchLifecycle
+{
+    Task OnTransportAttemptStartingAsync(
+        PrintDispatchRequest request,
+        PrinterProfile profile,
+        CancellationToken cancellationToken);
+
+    Task OnFirstByteSendingAsync(
+        PrintDispatchRequest request,
+        PrinterProfile profile,
+        CancellationToken cancellationToken);
 }
 
 public interface IPrintTransportAdapter
@@ -96,5 +109,6 @@ public interface IPrintDispatcher
 {
     Task<PrintDispatchResult> DispatchAsync(
         PrintDispatchRequest request,
+        IPrintDispatchLifecycle? lifecycle = null,
         CancellationToken cancellationToken = default);
 }

@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 9;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -554,6 +554,51 @@ internal static class SqliteBranchSchema
             ON printer_profile_audit (printer_id, occurred_at, audit_id);
         """;
 
+    private const string SchemaVersion9 = """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_print_jobs_active_printer_lease
+            ON print_jobs (assigned_printer_id)
+            WHERE lease_owner IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_print_jobs_printer_dispatch
+            ON print_jobs (assigned_printer_id, status, next_retry_at, created_at);
+
+        CREATE TABLE IF NOT EXISTS print_attempts (
+            print_attempt_id TEXT NOT NULL PRIMARY KEY CHECK (
+                length(trim(print_attempt_id)) > 0),
+            print_job_id TEXT NOT NULL,
+            printer_id TEXT NOT NULL,
+            attempt_number INTEGER NOT NULL CHECK (attempt_number >= 1),
+            worker_id TEXT NOT NULL CHECK (length(trim(worker_id)) > 0),
+            payload_sha256 TEXT NOT NULL CHECK (length(payload_sha256) = 64),
+            status TEXT NOT NULL CHECK (status IN (
+                'Connecting', 'Dispatching', 'PrintDispatched', 'Failed', 'Unknown')),
+            automatic_retry_allowed INTEGER NOT NULL DEFAULT 0 CHECK (
+                automatic_retry_allowed IN (0, 1)),
+            error_code TEXT NULL,
+            started_at TEXT NOT NULL,
+            first_byte_at TEXT NULL,
+            finished_at TEXT NULL,
+            FOREIGN KEY (print_job_id) REFERENCES print_jobs (print_job_id),
+            FOREIGN KEY (printer_id) REFERENCES printer_profiles (printer_id),
+            UNIQUE (print_job_id, attempt_number),
+            CHECK (status NOT IN ('Dispatching', 'PrintDispatched') OR first_byte_at IS NOT NULL),
+            CHECK ((status IN ('PrintDispatched', 'Failed', 'Unknown')) = (finished_at IS NOT NULL))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_print_attempts_job
+            ON print_attempts (print_job_id, attempt_number);
+
+        CREATE INDEX IF NOT EXISTS ix_print_attempts_active
+            ON print_attempts (status, started_at);
+
+        CREATE TRIGGER IF NOT EXISTS print_attempt_terminal_immutable
+        BEFORE UPDATE ON print_attempts
+        WHEN OLD.status IN ('PrintDispatched', 'Failed', 'Unknown')
+        BEGIN
+            SELECT RAISE(ABORT, 'Terminal Print Attempt is immutable');
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -608,6 +653,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 8)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion8, cancellationToken);
+        }
+
+        if (storedVersion < 9)
+        {
+            await MigrateToVersion9Async(connection, transaction, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
@@ -723,6 +773,64 @@ internal static class SqliteBranchSchema
         }
 
         return false;
+    }
+
+    private static async Task MigrateToVersion9Async(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "print_jobs",
+                "assigned_printer_id",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                """
+                ALTER TABLE print_jobs
+                    ADD COLUMN assigned_printer_id TEXT NULL
+                    REFERENCES printer_profiles (printer_id);
+                """,
+                cancellationToken);
+        }
+
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "print_jobs",
+                "lease_owner",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                """
+                ALTER TABLE print_jobs
+                    ADD COLUMN lease_owner TEXT NULL CHECK (
+                        lease_owner IS NULL OR length(trim(lease_owner)) > 0);
+                """,
+                cancellationToken);
+        }
+
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "print_jobs",
+                "lease_expires_at",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                "ALTER TABLE print_jobs ADD COLUMN lease_expires_at TEXT NULL;",
+                cancellationToken);
+        }
+
+        await ExecuteAsync(connection, transaction, SchemaVersion9, cancellationToken);
     }
 
     private static async Task<string> ReadTableSqlAsync(

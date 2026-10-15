@@ -118,6 +118,36 @@ public sealed class SafePrintDispatcherTests
         Assert.Equal(nameof(IOException), result.ErrorCode);
     }
 
+    [Fact]
+    public async Task First_byte_journal_failure_is_conservatively_unknown()
+    {
+        var adapter = new FakeTransportAdapter { SignalFirstByte = true };
+        var dispatcher = Dispatcher(Profile(), PrinterCondition.Ready, adapter);
+
+        var result = await dispatcher.DispatchAsync(
+            Request(),
+            new ThrowingDispatchLifecycle(throwOnFirstByte: true));
+
+        Assert.Equal(PrintDispatchOutcome.Unknown, result.Outcome);
+        Assert.True(result.AttemptStarted);
+        Assert.False(result.AutomaticRetryAllowed);
+        Assert.Equal(nameof(InvalidOperationException), result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Attempt_journal_failure_stops_before_transport_and_propagates()
+    {
+        var adapter = new FakeTransportAdapter { SignalFirstByte = true };
+        var dispatcher = Dispatcher(Profile(), PrinterCondition.Ready, adapter);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(
+                Request(),
+                new ThrowingDispatchLifecycle(throwOnAttemptStart: true)));
+
+        Assert.Equal(0, adapter.SendCount);
+    }
+
     [Theory]
     [InlineData(PrinterCondition.Ready)]
     [InlineData(PrinterCondition.StatusUnsupported)]
@@ -251,6 +281,27 @@ public sealed class SafePrintDispatcherTests
             Task.FromException<PrinterCondition>(new IOException("probe failed"));
     }
 
+    private sealed class ThrowingDispatchLifecycle(
+        bool throwOnFirstByte = false,
+        bool throwOnAttemptStart = false) : IPrintDispatchLifecycle
+    {
+        public Task OnTransportAttemptStartingAsync(
+            PrintDispatchRequest request,
+            PrinterProfile profile,
+            CancellationToken cancellationToken) =>
+            throwOnAttemptStart
+                ? Task.FromException(new InvalidOperationException("journal unavailable"))
+                : Task.CompletedTask;
+
+        public Task OnFirstByteSendingAsync(
+            PrintDispatchRequest request,
+            PrinterProfile profile,
+            CancellationToken cancellationToken) =>
+            throwOnFirstByte
+                ? Task.FromException(new InvalidOperationException("journal unavailable"))
+                : Task.CompletedTask;
+    }
+
     private sealed class FakeTransportAdapter : IPrintTransportAdapter
     {
         public PrinterProtocol Protocol => PrinterProtocol.RawTcpEscPos;
@@ -261,7 +312,7 @@ public sealed class SafePrintDispatcherTests
 
         public int SendCount { get; private set; }
 
-        public Task SendAsync(
+        public async Task SendAsync(
             PrinterProfile profile,
             RenderedPrintPayload payload,
             IPrintSendObserver observer,
@@ -270,10 +321,13 @@ public sealed class SafePrintDispatcherTests
             SendCount++;
             if (SignalFirstByte)
             {
-                observer.OnFirstByteSending();
+                await observer.OnFirstByteSendingAsync(cancellationToken);
             }
 
-            return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
         }
     }
 }
