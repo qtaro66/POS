@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -324,6 +324,49 @@ internal static class SqliteBranchSchema
                 branch_id, master_data_version, parent_sellable_item_id, display_order);
         """;
 
+    private const string SchemaVersion6 = """
+        ALTER TABLE command_receipts ADD COLUMN error_details_json TEXT NULL;
+        ALTER TABLE command_receipts ADD COLUMN branch_sequence INTEGER NULL CHECK (branch_sequence >= 1);
+        ALTER TABLE order_line_options ADD COLUMN option_group_id TEXT NULL;
+        ALTER TABLE order_batches ADD COLUMN branch_sequence INTEGER NULL CHECK (branch_sequence >= 1);
+        ALTER TABLE order_batches ADD COLUMN client_created_at TEXT NULL;
+        ALTER TABLE order_batches ADD COLUMN server_received_at TEXT NULL;
+
+        WITH ranked AS (
+            SELECT rowid AS batch_rowid,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY branch_id
+                       ORDER BY submitted_at, order_batch_id) AS sequence
+            FROM order_batches
+        )
+        UPDATE order_batches
+        SET branch_sequence = (
+                SELECT sequence FROM ranked
+                WHERE ranked.batch_rowid = order_batches.rowid),
+            client_created_at = COALESCE(
+                (SELECT receipt.client_created_at
+                 FROM command_receipts AS receipt
+                 WHERE receipt.branch_id = order_batches.branch_id
+                   AND receipt.request_id = order_batches.request_id),
+                submitted_at),
+            server_received_at = submitted_at;
+
+        UPDATE command_receipts
+        SET branch_sequence = (
+            SELECT batch.branch_sequence
+            FROM order_batches AS batch
+            WHERE batch.branch_id = command_receipts.branch_id
+              AND batch.request_id = command_receipts.request_id)
+        WHERE EXISTS (
+            SELECT 1 FROM order_batches AS batch
+            WHERE batch.branch_id = command_receipts.branch_id
+              AND batch.request_id = command_receipts.request_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_order_batches_branch_sequence
+            ON order_batches (branch_id, branch_sequence)
+            WHERE branch_sequence IS NOT NULL;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -363,6 +406,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 5)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion5, cancellationToken);
+        }
+
+        if (storedVersion < 6)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion6, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

@@ -143,7 +143,8 @@ public sealed class SqliteBillPreviewContentSource : ISqliteBillPreviewContentSo
               AND line.table_session_id = $tableSessionId
               AND line.status = 'Active'
               AND line.active_quantity > 0
-            ORDER BY batch.submitted_at, batch.order_batch_id,
+            ORDER BY COALESCE(batch.branch_sequence, 9223372036854775807),
+                     batch.submitted_at, batch.order_batch_id,
                      line.line_sequence, option.option_sequence;
             """);
         command.Parameters.AddWithValue("$branchId", request.BranchId);

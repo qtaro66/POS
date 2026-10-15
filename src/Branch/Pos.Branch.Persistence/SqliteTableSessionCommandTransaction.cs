@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Pos.Application.MasterData;
+using Pos.Application.Orders;
 using Pos.Application.Printing;
 using Pos.Application.TableSessions;
 using Pos.Domain.Billing;
@@ -13,15 +14,18 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
     private readonly SqliteConnection _connection;
     private readonly SqliteTransaction _transaction;
     private readonly ISqliteBillPreviewContentSource _billPreviewContentSource;
+    private readonly ISqliteCatalogSnapshotResolver _catalogSnapshotResolver;
 
     public SqliteTableSessionCommandTransaction(
         SqliteConnection connection,
         SqliteTransaction transaction,
-        ISqliteBillPreviewContentSource billPreviewContentSource)
+        ISqliteBillPreviewContentSource billPreviewContentSource,
+        ISqliteCatalogSnapshotResolver catalogSnapshotResolver)
     {
         _connection = connection;
         _transaction = transaction;
         _billPreviewContentSource = billPreviewContentSource;
+        _catalogSnapshotResolver = catalogSnapshotResolver;
     }
 
     public async Task<BranchCommandReceipt?> FindReceiptAsync(
@@ -32,7 +36,7 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         using var command = CreateCommand("""
             SELECT request_id, branch_id, device_id, employee_id, client_created_at,
                    outcome, table_session_id, session_status, table_version,
-                   error_code, server_received_at
+                   error_code, server_received_at, error_details_json, branch_sequence
             FROM command_receipts
             WHERE branch_id = $branchId AND request_id = $requestId;
             """);
@@ -56,7 +60,9 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
             reader.IsDBNull(7) ? null : ParseEnum<TableSessionStatus>(reader.GetString(7)),
             reader.IsDBNull(8) ? null : reader.GetInt64(8),
             reader.IsDBNull(9) ? null : reader.GetString(9),
-            ParseTimestamp(reader.GetString(10)));
+            ParseTimestamp(reader.GetString(10)),
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetInt64(12));
     }
 
     public async Task<TableSession?> FindActiveSessionByTableAsync(
@@ -190,6 +196,49 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
             cancellationToken);
     }
 
+    public async Task<bool> OrderBatchExistsAsync(
+        string branchId,
+        string orderBatchId,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            SELECT EXISTS (
+                SELECT 1 FROM order_batches
+                WHERE branch_id = $branchId AND order_batch_id = $orderBatchId);
+            """);
+        command.Parameters.AddWithValue("$branchId", branchId);
+        command.Parameters.AddWithValue("$orderBatchId", orderBatchId);
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture) == 1;
+    }
+
+    public async Task<long> GetNextBranchSequenceAsync(
+        string branchId,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            SELECT COALESCE(MAX(branch_sequence), 0) + 1
+            FROM order_batches
+            WHERE branch_id = $branchId;
+            """);
+        command.Parameters.AddWithValue("$branchId", branchId);
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture);
+    }
+
+    public Task<CatalogResolutionResult> ResolveCatalogSelectionAsync(
+        CatalogSelectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        return _catalogSnapshotResolver.ResolveAsync(
+            _connection,
+            _transaction,
+            request,
+            cancellationToken);
+    }
+
     public async Task InsertSessionAsync(
         string branchId,
         TableSession session,
@@ -279,11 +328,11 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
             INSERT INTO command_receipts (
                 branch_id, request_id, device_id, employee_id, client_created_at,
                 outcome, table_session_id, session_status, table_version,
-                error_code, server_received_at)
+                error_code, server_received_at, error_details_json, branch_sequence)
             VALUES (
                 $branchId, $requestId, $deviceId, $employeeId, $clientCreatedAt,
                 $outcome, $tableSessionId, $sessionStatus, $tableVersion,
-                $errorCode, $serverReceivedAt);
+                $errorCode, $serverReceivedAt, $errorDetailsJson, $branchSequence);
             """);
         command.Parameters.AddWithValue("$branchId", receipt.BranchId);
         command.Parameters.AddWithValue("$requestId", receipt.RequestId);
@@ -296,6 +345,8 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         command.Parameters.AddWithValue("$tableVersion", DbValue(receipt.TableVersion));
         command.Parameters.AddWithValue("$errorCode", DbValue(receipt.ErrorCode));
         command.Parameters.AddWithValue("$serverReceivedAt", FormatTimestamp(receipt.ServerReceivedAt));
+        command.Parameters.AddWithValue("$errorDetailsJson", DbValue(receipt.ErrorDetailsJson));
+        command.Parameters.AddWithValue("$branchSequence", DbValue(receipt.BranchSequence));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -405,6 +456,96 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         command.Parameters.AddWithValue("$originalPrintJobId", DbValue(printJob.OriginalPrintJobId));
         command.Parameters.AddWithValue("$isReprint", printJob.IsReprint ? 1 : 0);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task AddOrderBatchAsync(
+        OrderBatchSnapshot orderBatch,
+        CancellationToken cancellationToken)
+    {
+        using (var command = CreateCommand("""
+            INSERT INTO order_batches (
+                branch_id, order_batch_id, request_id, table_session_id,
+                device_id, employee_id, submitted_at, branch_sequence,
+                client_created_at, server_received_at)
+            VALUES (
+                $branchId, $orderBatchId, $requestId, $tableSessionId,
+                $deviceId, $employeeId, $submittedAt, $branchSequence,
+                $clientCreatedAt, $serverReceivedAt);
+            """))
+        {
+            command.Parameters.AddWithValue("$branchId", orderBatch.BranchId);
+            command.Parameters.AddWithValue("$orderBatchId", orderBatch.OrderBatchId);
+            command.Parameters.AddWithValue("$requestId", orderBatch.RequestId);
+            command.Parameters.AddWithValue("$tableSessionId", orderBatch.TableSessionId.Value);
+            command.Parameters.AddWithValue("$deviceId", orderBatch.DeviceId);
+            command.Parameters.AddWithValue("$employeeId", orderBatch.EmployeeId);
+            command.Parameters.AddWithValue(
+                "$submittedAt",
+                FormatTimestamp(orderBatch.ServerReceivedAt));
+            command.Parameters.AddWithValue("$branchSequence", orderBatch.BranchSequence);
+            command.Parameters.AddWithValue(
+                "$clientCreatedAt",
+                FormatTimestamp(orderBatch.ClientCreatedAt));
+            command.Parameters.AddWithValue(
+                "$serverReceivedAt",
+                FormatTimestamp(orderBatch.ServerReceivedAt));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var line in orderBatch.Lines)
+        {
+            using (var command = CreateCommand("""
+                INSERT INTO order_lines (
+                    branch_id, order_line_id, order_batch_id, table_session_id,
+                    line_sequence, sellable_item_id, display_name,
+                    original_quantity, active_quantity, unit_price,
+                    fulfillment_type, comment, discount_kind,
+                    discount_requested_value, status, created_at)
+                VALUES (
+                    $branchId, $orderLineId, $orderBatchId, $tableSessionId,
+                    $lineSequence, $sellableItemId, $displayName,
+                    $quantity, $quantity, $unitPrice,
+                    $fulfillmentType, $comment, NULL, NULL, 'Active', $createdAt);
+                """))
+            {
+                command.Parameters.AddWithValue("$branchId", orderBatch.BranchId);
+                command.Parameters.AddWithValue("$orderLineId", line.OrderLineId);
+                command.Parameters.AddWithValue("$orderBatchId", orderBatch.OrderBatchId);
+                command.Parameters.AddWithValue("$tableSessionId", orderBatch.TableSessionId.Value);
+                command.Parameters.AddWithValue("$lineSequence", line.LineSequence);
+                command.Parameters.AddWithValue("$sellableItemId", line.SellableItemId);
+                command.Parameters.AddWithValue("$displayName", line.DisplayName);
+                command.Parameters.AddWithValue("$quantity", line.Quantity);
+                command.Parameters.AddWithValue("$unitPrice", FormatDecimal(line.UnitPrice));
+                command.Parameters.AddWithValue("$fulfillmentType", line.FulfillmentType.ToString());
+                command.Parameters.AddWithValue("$comment", DbValue(line.Comment));
+                command.Parameters.AddWithValue(
+                    "$createdAt",
+                    FormatTimestamp(orderBatch.ServerReceivedAt));
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            foreach (var option in line.Options)
+            {
+                using var command = CreateCommand("""
+                    INSERT INTO order_line_options (
+                        branch_id, order_line_id, option_sequence, option_id,
+                        display_name, quantity_per_item, unit_price, option_group_id)
+                    VALUES (
+                        $branchId, $orderLineId, $optionSequence, $optionId,
+                        $displayName, $quantityPerItem, $unitPrice, $optionGroupId);
+                    """);
+                command.Parameters.AddWithValue("$branchId", orderBatch.BranchId);
+                command.Parameters.AddWithValue("$orderLineId", line.OrderLineId);
+                command.Parameters.AddWithValue("$optionSequence", option.OptionSequence);
+                command.Parameters.AddWithValue("$optionId", option.SellableItemId);
+                command.Parameters.AddWithValue("$displayName", option.DisplayName);
+                command.Parameters.AddWithValue("$quantityPerItem", option.QuantityPerItem);
+                command.Parameters.AddWithValue("$unitPrice", FormatDecimal(option.UnitPrice));
+                command.Parameters.AddWithValue("$optionGroupId", option.OptionGroupId);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
     }
 
     private SqliteCommand CreateCommand(string commandText)

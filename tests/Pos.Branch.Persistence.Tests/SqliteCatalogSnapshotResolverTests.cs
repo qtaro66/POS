@@ -84,12 +84,12 @@ public sealed class SqliteCatalogSnapshotResolverTests
     }
 
     [Fact]
-    public async Task Schema_version_five_creates_catalog_and_sold_out_tables()
+    public async Task Current_schema_creates_catalog_and_sold_out_tables()
     {
         await using var database = new CatalogDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(5L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'master_data_sellable_items';

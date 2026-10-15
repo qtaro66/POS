@@ -1,4 +1,6 @@
 using Microsoft.Data.Sqlite;
+using Pos.Application.MasterData;
+using Pos.Application.Orders;
 using Pos.Application.Printing;
 using Pos.Application.TableSessions;
 using Pos.Application.Time;
@@ -17,7 +19,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
 
-        Assert.Equal(5L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("wal", await database.ScalarAsync<string>("PRAGMA journal_mode;"));
         Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA synchronous;"));
         Assert.Equal(store.DatabasePath, Path.GetFullPath(database.Path));
@@ -187,6 +189,28 @@ public sealed class SqliteTableSessionCommandStoreTests
                     masterData,
                     Now,
                     token);
+                await transaction.AddOrderBatchAsync(
+                    new OrderBatchSnapshot(
+                        "BRANCH-01",
+                        "BATCH-ROLLBACK",
+                        "ORDER-REQ-ROLLBACK",
+                        session.Id,
+                        "DEVICE-01",
+                        "EMPLOYEE-01",
+                        1,
+                        Now.AddMinutes(-1),
+                        Now,
+                        [new OrderLineSnapshot(
+                            "LINE-ROLLBACK",
+                            1,
+                            "ITEM-1",
+                            "รายการทดสอบ",
+                            1,
+                            10m,
+                            FulfillmentType.DineIn,
+                            null,
+                            [])]),
+                    token);
                 await transaction.AddAuditAsync(
                     new TableSessionAuditRecord("AUDIT-ROLLBACK", "BRANCH-01", "REQ-ROLLBACK", transition),
                     token);
@@ -226,6 +250,8 @@ public sealed class SqliteTableSessionCommandStoreTests
         Assert.Equal(0L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(0L, await database.CountAsync("print_jobs"));
         Assert.Equal(0L, await database.CountAsync("table_session_billing_policy"));
+        Assert.Equal(0L, await database.CountAsync("order_batches"));
+        Assert.Equal(0L, await database.CountAsync("order_lines"));
     }
 
     [Fact]
@@ -243,6 +269,8 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP TABLE table_session_billing_policy;
             DROP TABLE print_jobs;
             DROP TABLE bill_preview_snapshots;
+            ALTER TABLE command_receipts DROP COLUMN error_details_json;
+            ALTER TABLE command_receipts DROP COLUMN branch_sequence;
             PRAGMA user_version = 1;
             """);
 
@@ -251,7 +279,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(5L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("table_sessions"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_preview_snapshots';"));
@@ -277,6 +305,8 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP TABLE order_lines;
             DROP TABLE order_batches;
             DROP TABLE table_session_billing_policy;
+            ALTER TABLE command_receipts DROP COLUMN error_details_json;
+            ALTER TABLE command_receipts DROP COLUMN branch_sequence;
             PRAGMA user_version = 2;
             """);
 
@@ -285,7 +315,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(5L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -301,6 +331,13 @@ public sealed class SqliteTableSessionCommandStoreTests
         await database.ExecuteAsync("""
             DROP TABLE master_data_billing_policy;
             DROP TABLE master_data_packages;
+            ALTER TABLE command_receipts DROP COLUMN error_details_json;
+            ALTER TABLE command_receipts DROP COLUMN branch_sequence;
+            ALTER TABLE order_line_options DROP COLUMN option_group_id;
+            DROP INDEX ux_order_batches_branch_sequence;
+            ALTER TABLE order_batches DROP COLUMN branch_sequence;
+            ALTER TABLE order_batches DROP COLUMN client_created_at;
+            ALTER TABLE order_batches DROP COLUMN server_received_at;
             PRAGMA user_version = 3;
             """);
 
@@ -309,7 +346,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(5L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>(
             "SELECT master_data_version FROM table_session_billing_policy WHERE table_session_id = 'TS-1';"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -319,7 +356,7 @@ public sealed class SqliteTableSessionCommandStoreTests
     }
 
     [Fact]
-    public async Task Version_four_database_migrates_to_version_five_without_replacing_active_package()
+    public async Task Version_four_database_migrates_to_current_without_replacing_active_package()
     {
         await using var database = new TemporaryDatabase();
         await database.CreateStoreAsync();
@@ -329,6 +366,13 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP TABLE master_data_option_group_items;
             DROP TABLE master_data_option_groups;
             DROP TABLE master_data_sellable_items;
+            ALTER TABLE command_receipts DROP COLUMN error_details_json;
+            ALTER TABLE command_receipts DROP COLUMN branch_sequence;
+            ALTER TABLE order_line_options DROP COLUMN option_group_id;
+            DROP INDEX ux_order_batches_branch_sequence;
+            ALTER TABLE order_batches DROP COLUMN branch_sequence;
+            ALTER TABLE order_batches DROP COLUMN client_created_at;
+            ALTER TABLE order_batches DROP COLUMN server_received_at;
             PRAGMA user_version = 4;
             """);
 
@@ -337,7 +381,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(5L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>("""
             SELECT master_data_version FROM master_data_packages
             WHERE branch_id = 'BRANCH-01' AND lifecycle_status = 'Active';
@@ -346,6 +390,47 @@ public sealed class SqliteTableSessionCommandStoreTests
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'master_data_sellable_items';"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'branch_sold_out_overrides';"));
+    }
+
+    [Fact]
+    public async Task Version_five_database_backfills_existing_batch_sequence_and_timestamps()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await database.ExecuteAsync("""
+            INSERT INTO order_batches (
+                branch_id, order_batch_id, request_id, table_session_id,
+                device_id, employee_id, submitted_at)
+            VALUES ('BRANCH-01', 'LEGACY-BATCH', 'LEGACY-REQ', 'TS-1',
+                    'DEVICE-01', 'EMPLOYEE-01', '2026-10-13T08:30:00.0000000+00:00');
+
+            DROP INDEX ux_order_batches_branch_sequence;
+            ALTER TABLE command_receipts DROP COLUMN error_details_json;
+            ALTER TABLE command_receipts DROP COLUMN branch_sequence;
+            ALTER TABLE order_line_options DROP COLUMN option_group_id;
+            ALTER TABLE order_batches DROP COLUMN branch_sequence;
+            ALTER TABLE order_batches DROP COLUMN client_created_at;
+            ALTER TABLE order_batches DROP COLUMN server_received_at;
+            PRAGMA user_version = 5;
+            """);
+
+        var migratedStore = new SqliteTableSessionCommandStore(
+            database.Path,
+            new StaticBillPreviewContentSource());
+        await migratedStore.InitializeAsync();
+
+        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT branch_sequence FROM order_batches WHERE order_batch_id = 'LEGACY-BATCH';"));
+        Assert.Equal(
+            "2026-10-13T08:30:00.0000000+00:00",
+            await database.ScalarAsync<string>(
+                "SELECT client_created_at FROM order_batches WHERE order_batch_id = 'LEGACY-BATCH';"));
+        Assert.Equal(
+            "2026-10-13T08:30:00.0000000+00:00",
+            await database.ScalarAsync<string>(
+                "SELECT server_received_at FROM order_batches WHERE order_batch_id = 'LEGACY-BATCH';"));
     }
 
     [Fact]
@@ -492,17 +577,189 @@ public sealed class SqliteTableSessionCommandStoreTests
     }
 
     [Fact]
+    public async Task Submit_order_persists_authoritative_snapshots_and_replays_after_restart()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        await database.SeedCatalogAsync("BRANCH-01", "MASTER-1");
+        await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        var command = SubmitCommand("REQ-2", "BATCH-1");
+
+        var accepted = await Service(store).SubmitOrderAsync(command);
+        var replayed = await Service(await database.CreateStoreAsync()).SubmitOrderAsync(command);
+
+        Assert.Equal(accepted, replayed);
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, accepted.Outcome);
+        Assert.Equal(1L, await database.CountAsync("order_batches"));
+        Assert.Equal(1L, await database.CountAsync("order_lines"));
+        Assert.Equal(1L, await database.CountAsync("order_line_options"));
+        Assert.Equal("ผัดเปรี้ยวหวาน", await database.ScalarAsync<string>(
+            "SELECT display_name FROM order_lines WHERE order_batch_id = 'BATCH-1';"));
+        Assert.Equal("105", await database.ScalarAsync<string>(
+            "SELECT unit_price FROM order_lines WHERE order_batch_id = 'BATCH-1';"));
+        Assert.Equal("ไก่ชิ้น", await database.ScalarAsync<string>(
+            "SELECT display_name FROM order_line_options LIMIT 1;"));
+        Assert.Equal("GROUP-1", await database.ScalarAsync<string>(
+            "SELECT option_group_id FROM order_line_options LIMIT 1;"));
+        Assert.Equal("Takeaway", await database.ScalarAsync<string>(
+            "SELECT fulfillment_type FROM order_lines WHERE order_batch_id = 'BATCH-1';"));
+        Assert.Equal("SubmitOrder", await database.ScalarAsync<string>(
+            "SELECT action FROM cloud_sync_outbox WHERE request_id = 'REQ-2';"));
+        Assert.Equal(1L, accepted.BranchSequence);
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT branch_sequence FROM order_batches WHERE request_id = 'REQ-2';"));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT branch_sequence FROM command_receipts WHERE request_id = 'REQ-2';"));
+        Assert.Equal(
+            "2026-10-13T09:59:00.0000000+00:00",
+            await database.ScalarAsync<string>(
+                "SELECT client_created_at FROM order_batches WHERE request_id = 'REQ-2';"));
+        Assert.Equal(
+            "2026-10-13T10:00:00.0000000+00:00",
+            await database.ScalarAsync<string>(
+                "SELECT server_received_at FROM order_batches WHERE request_id = 'REQ-2';"));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT table_version FROM cloud_sync_outbox WHERE request_id = 'REQ-2';"));
+    }
+
+    [Fact]
+    public async Task Catalog_rejection_persists_details_but_no_partial_order_or_outbox()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        await database.SeedCatalogAsync("BRANCH-01", "MASTER-1");
+        await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        await database.ExecuteAsync("""
+            INSERT INTO branch_sold_out_overrides (
+                branch_id, sellable_item_id, is_sold_out,
+                changed_by_employee_id, changed_by_device_id, changed_at)
+            VALUES ('BRANCH-01', 'OPT-1', 1, 'EMPLOYEE-01', 'DEVICE-01',
+                    '2026-10-13T09:30:00.0000000+00:00');
+            """);
+        var command = SubmitCommand("REQ-2", "BATCH-1");
+
+        var first = await Service(store).SubmitOrderAsync(command);
+        var replayed = await Service(await database.CreateStoreAsync()).SubmitOrderAsync(command);
+
+        Assert.Equal(first, replayed);
+        Assert.Equal(BranchCommandOutcome.Rejected, first.Outcome);
+        Assert.Equal("CatalogValidationFailed", first.ErrorCode);
+        Assert.Contains("optionSoldOut", first.ErrorDetailsJson, StringComparison.Ordinal);
+        Assert.Equal(0L, await database.CountAsync("order_batches"));
+        Assert.Equal(0L, await database.CountAsync("order_lines"));
+        Assert.Equal(0L, await database.CountAsync("order_line_options"));
+        Assert.Equal(0L, await database.ScalarAsync<long>(
+            "SELECT COUNT(*) FROM cloud_sync_outbox WHERE request_id = 'REQ-2';"));
+    }
+
+    [Fact]
+    public async Task Request_payment_after_submit_uses_persisted_order_snapshots()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        await database.SeedCatalogAsync("BRANCH-01", "MASTER-1");
+        await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        var productionStore = new SqliteTableSessionCommandStore(database.Path);
+        await productionStore.InitializeAsync();
+        await Service(productionStore).SubmitOrderAsync(SubmitCommand("REQ-2", "BATCH-1"));
+
+        var payment = await Service(productionStore).RequestPaymentAsync(
+            PaymentCommand("REQ-3", "TS-1", 1));
+
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, payment.Outcome);
+        var json = await database.ScalarAsync<string>(
+            "SELECT content_json FROM bill_preview_snapshots WHERE request_id = 'REQ-3';");
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var item = document.RootElement.GetProperty("items")[0];
+        Assert.Equal("ผัดเปรี้ยวหวาน", item.GetProperty("displayName").GetString());
+        Assert.Equal(105m, item.GetProperty("unitPrice").GetDecimal());
+        Assert.Equal("ไก่ชิ้น", item.GetProperty("options")[0]
+            .GetProperty("displayName").GetString());
+        Assert.Equal(120m, document.RootElement.GetProperty("itemGrossAmount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Concurrent_submit_and_request_payment_follow_commit_order_without_partial_batch()
+    {
+        await using var database = new TemporaryDatabase();
+        var setupStore = await database.CreateStoreAsync();
+        await database.SeedCatalogAsync("BRANCH-01", "MASTER-1");
+        await Service(setupStore).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        var initialStore = new SqliteTableSessionCommandStore(database.Path);
+        await initialStore.InitializeAsync();
+        await Service(initialStore).SubmitOrderAsync(SubmitCommand("REQ-2", "BATCH-1"));
+
+        var submitStore = new SqliteTableSessionCommandStore(database.Path);
+        var paymentStore = new SqliteTableSessionCommandStore(database.Path);
+        await Task.WhenAll(submitStore.InitializeAsync(), paymentStore.InitializeAsync());
+        var submitTask = Service(submitStore).SubmitOrderAsync(
+            SubmitCommand("REQ-3", "BATCH-2"));
+        var paymentTask = Service(paymentStore).RequestPaymentAsync(
+            PaymentCommand("REQ-4", "TS-1", 1));
+
+        await Task.WhenAll(submitTask, paymentTask);
+        var submit = await submitTask;
+        var payment = await paymentTask;
+
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, payment.Outcome);
+        var expectedBatchCount = submit.Outcome == BranchCommandOutcome.BranchAccepted ? 2L : 1L;
+        Assert.Equal(expectedBatchCount, await database.CountAsync("order_batches"));
+        Assert.Equal(expectedBatchCount, await database.CountAsync("order_lines"));
+        Assert.Equal(expectedBatchCount, await database.CountAsync("order_line_options"));
+        if (submit.Outcome == BranchCommandOutcome.Rejected)
+        {
+            Assert.Equal("InvalidTableSessionState", submit.ErrorCode);
+        }
+
+        var itemCount = await database.ScalarAsync<long>("""
+            SELECT json_array_length(content_json, '$.items')
+            FROM bill_preview_snapshots WHERE request_id = 'REQ-4';
+            """);
+        Assert.Equal(expectedBatchCount, itemCount);
+    }
+
+    [Fact]
+    public async Task Twenty_concurrent_mobile_batches_are_appended_once_with_unique_branch_sequences()
+    {
+        await using var database = new TemporaryDatabase();
+        var setupStore = await database.CreateStoreAsync();
+        await database.SeedCatalogAsync("BRANCH-01", "MASTER-1");
+        await Service(setupStore).OpenTableAsync(OpenCommand("REQ-OPEN", "TS-1", "A04"));
+        var productionStore = new SqliteTableSessionCommandStore(database.Path);
+        await productionStore.InitializeAsync();
+        var service = Service(productionStore);
+
+        var results = await Task.WhenAll(Enumerable.Range(1, 20).Select(index =>
+            service.SubmitOrderAsync(SubmitCommand($"REQ-{index}", $"BATCH-{index}"))));
+
+        Assert.All(results, result =>
+            Assert.Equal(BranchCommandOutcome.BranchAccepted, result.Outcome));
+        Assert.Equal(20, results.Select(result => result.BranchSequence).Distinct().Count());
+        Assert.Equal(20L, await database.CountAsync("order_batches"));
+        Assert.Equal(20L, await database.CountAsync("order_lines"));
+        Assert.Equal(20L, await database.CountAsync("order_line_options"));
+        Assert.Equal(20L, await database.ScalarAsync<long>("""
+            SELECT COUNT(DISTINCT branch_sequence) FROM order_batches
+            WHERE branch_id = 'BRANCH-01';
+            """));
+        Assert.Equal(1L, await database.ScalarAsync<long>(
+            "SELECT MIN(branch_sequence) FROM order_batches WHERE branch_id = 'BRANCH-01';"));
+        Assert.Equal(20L, await database.ScalarAsync<long>(
+            "SELECT MAX(branch_sequence) FROM order_batches WHERE branch_id = 'BRANCH-01';"));
+    }
+
+    [Fact]
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 6;");
+        await database.ExecuteAsync("PRAGMA user_version = 7;");
         var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 6", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 7", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]
@@ -577,6 +834,17 @@ public sealed class SqliteTableSessionCommandStoreTests
         string sessionId,
         long expectedVersion) =>
         new(Metadata(requestId, sessionId), expectedVersion);
+
+    private static SubmitOrderCommand SubmitCommand(string requestId, string orderBatchId) =>
+        new(
+            Metadata(requestId, "TS-1"),
+            orderBatchId,
+            [new SubmitOrderLine(
+                "ITEM-1",
+                1,
+                FulfillmentType.Takeaway,
+                "ไม่ใส่ต้นหอม",
+                [new CatalogOptionSelection("GROUP-1", "OPT-1", 1)])]);
 
     private static BranchCommandMetadata Metadata(
         string requestId,
@@ -734,6 +1002,36 @@ public sealed class SqliteTableSessionCommandStoreTests
                 calculationPolicyVersion,
                 vatRate,
                 serviceChargeRate);
+        }
+
+        public Task SeedCatalogAsync(string branchId, string masterDataVersion)
+        {
+            var escapedBranchId = SqlLiteral(branchId);
+            var escapedMasterDataVersion = SqlLiteral(masterDataVersion);
+            return ExecuteAsync($$"""
+                INSERT INTO master_data_sellable_items (
+                    branch_id, master_data_version, sellable_item_id, item_kind,
+                    display_name, resolved_price, central_active, branch_catalog_enabled)
+                VALUES
+                    ('{{escapedBranchId}}', '{{escapedMasterDataVersion}}', 'ITEM-1',
+                     'Item', 'ผัดเปรี้ยวหวาน', '105', 1, 1),
+                    ('{{escapedBranchId}}', '{{escapedMasterDataVersion}}', 'OPT-1',
+                     'SubItem', 'ไก่ชิ้น', '15', 1, 1);
+
+                INSERT INTO master_data_option_groups (
+                    branch_id, master_data_version, parent_sellable_item_id,
+                    option_group_id, display_name, option_type, min_selections,
+                    max_selections, allow_repeated_option, max_quantity_per_option,
+                    display_order)
+                VALUES ('{{escapedBranchId}}', '{{escapedMasterDataVersion}}', 'ITEM-1',
+                        'GROUP-1', 'เลือกวัตถุดิบหลัก', 'SubItem', 1, 1, 0, 1, 1);
+
+                INSERT INTO master_data_option_group_items (
+                    branch_id, master_data_version, parent_sellable_item_id,
+                    option_group_id, option_sellable_item_id, display_order, is_default)
+                VALUES ('{{escapedBranchId}}', '{{escapedMasterDataVersion}}', 'ITEM-1',
+                        'GROUP-1', 'OPT-1', 1, 0);
+                """);
         }
 
         public ValueTask DisposeAsync()

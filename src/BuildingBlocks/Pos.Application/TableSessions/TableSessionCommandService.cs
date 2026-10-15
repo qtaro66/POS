@@ -1,3 +1,7 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Pos.Application.MasterData;
+using Pos.Application.Orders;
 using Pos.Application.Printing;
 using Pos.Application.Time;
 using Pos.Domain.TableSessions;
@@ -6,6 +10,10 @@ namespace Pos.Application.TableSessions;
 
 public sealed class TableSessionCommandService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+    };
     private readonly ITableSessionCommandStore _store;
     private readonly IBranchClock _clock;
 
@@ -245,6 +253,168 @@ public sealed class TableSessionCommandService
         }, cancellationToken);
     }
 
+    public Task<BranchCommandReceipt> SubmitOrderAsync(
+        SubmitOrderCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        return _store.ExecuteAtomicallyAsync(async (transaction, token) =>
+        {
+            var metadata = command.Metadata;
+            var duplicate = await transaction.FindReceiptAsync(
+                metadata.BranchId,
+                metadata.RequestId,
+                token);
+            if (duplicate is not null)
+            {
+                return duplicate;
+            }
+
+            var receivedAt = _clock.UtcNow;
+            var session = await transaction.FindSessionAsync(
+                metadata.BranchId,
+                metadata.TableSessionId,
+                token);
+            if (session is null)
+            {
+                return await PersistRejectionAsync(
+                    transaction,
+                    metadata,
+                    receivedAt,
+                    "TableSessionNotFound",
+                    token);
+            }
+
+            try
+            {
+                session.EnsureCanSubmitOrder();
+            }
+            catch (InvalidTableSessionTransitionException)
+            {
+                return await PersistRejectionAsync(
+                    transaction,
+                    metadata,
+                    receivedAt,
+                    "InvalidTableSessionState",
+                    token,
+                    session);
+            }
+
+            if (await transaction.OrderBatchExistsAsync(
+                    metadata.BranchId,
+                    command.OrderBatchId,
+                    token))
+            {
+                return await PersistRejectionAsync(
+                    transaction,
+                    metadata,
+                    receivedAt,
+                    "OrderBatchIdConflict",
+                    token,
+                    session);
+            }
+
+            var resolvedLines = new List<ResolvedCatalogSelection>(command.Lines.Count);
+            var validationErrors = new List<SubmitOrderValidationError>();
+            for (var index = 0; index < command.Lines.Count; index++)
+            {
+                var line = command.Lines[index];
+                var resolution = await transaction.ResolveCatalogSelectionAsync(
+                    new CatalogSelectionRequest(
+                        metadata.BranchId,
+                        metadata.TableSessionId.Value,
+                        line.SellableItemId,
+                        line.Quantity,
+                        line.Options),
+                    token);
+                if (!resolution.Accepted)
+                {
+                    validationErrors.AddRange(resolution.Errors.Select(error =>
+                        new SubmitOrderValidationError(
+                            index + 1,
+                            error.Code,
+                            error.SellableItemId,
+                            error.OptionGroupId)));
+                    continue;
+                }
+
+                resolvedLines.Add(resolution.Selection!);
+            }
+
+            if (validationErrors.Count != 0)
+            {
+                var detailsJson = JsonSerializer.Serialize(
+                    new SubmitOrderRejectionDetails(1, validationErrors),
+                    JsonOptions);
+                return await PersistRejectionAsync(
+                    transaction,
+                    metadata,
+                    receivedAt,
+                    "CatalogValidationFailed",
+                    token,
+                    session,
+                    detailsJson);
+            }
+
+            var branchSequence = await transaction.GetNextBranchSequenceAsync(
+                metadata.BranchId,
+                token);
+
+            var snapshotLines = resolvedLines.Select((resolved, index) =>
+            {
+                var submitted = command.Lines[index];
+                return new OrderLineSnapshot(
+                    $"{metadata.BranchId}:{metadata.RequestId}:line:{index + 1}",
+                    index + 1,
+                    resolved.SellableItemId,
+                    resolved.DisplayName,
+                    resolved.Quantity,
+                    resolved.UnitPrice,
+                    submitted.FulfillmentType,
+                    submitted.Comment,
+                    resolved.Options.Select((option, optionIndex) =>
+                        new OrderLineOptionSnapshot(
+                            optionIndex + 1,
+                            option.OptionGroupId,
+                            option.SellableItemId,
+                            option.DisplayName,
+                            option.Quantity,
+                            option.UnitPrice)).ToArray());
+            }).ToArray();
+
+            await transaction.AddOrderBatchAsync(
+                new OrderBatchSnapshot(
+                    metadata.BranchId,
+                    command.OrderBatchId,
+                    metadata.RequestId,
+                    session.Id,
+                    metadata.DeviceId,
+                    metadata.EmployeeId,
+                    branchSequence,
+                    metadata.ClientCreatedAt,
+                    receivedAt,
+                    snapshotLines),
+                token);
+            await transaction.AddCloudOutboxAsync(
+                new CloudSyncOutboxRecord(
+                    $"{metadata.BranchId}:{metadata.RequestId}:cloud:1",
+                    metadata.BranchId,
+                    metadata.RequestId,
+                    session.Id,
+                    TableSessionAction.SubmitOrder,
+                    session.Version,
+                    receivedAt),
+                token);
+            var receipt = Accepted(metadata, session, receivedAt) with
+            {
+                BranchSequence = branchSequence
+            };
+            await transaction.AddReceiptAsync(receipt, token);
+            return receipt;
+        }, cancellationToken);
+    }
+
     private static async Task PersistAcceptedTransitionAsync(
         ITableSessionCommandTransaction transaction,
         BranchCommandMetadata metadata,
@@ -279,7 +449,8 @@ public sealed class TableSessionCommandService
         DateTimeOffset receivedAt,
         string errorCode,
         CancellationToken cancellationToken,
-        TableSession? session = null)
+        TableSession? session = null,
+        string? errorDetailsJson = null)
     {
         var receipt = new BranchCommandReceipt(
             metadata.RequestId,
@@ -292,7 +463,8 @@ public sealed class TableSessionCommandService
             session?.Status,
             session?.Version,
             errorCode,
-            receivedAt);
+            receivedAt,
+            errorDetailsJson);
         await transaction.AddReceiptAsync(receipt, cancellationToken);
         return receipt;
     }
@@ -325,4 +497,8 @@ public sealed class TableSessionCommandService
             metadata.DeviceId,
             receivedAt);
     }
+
+    private sealed record SubmitOrderRejectionDetails(
+        int SchemaVersion,
+        IReadOnlyList<SubmitOrderValidationError> Errors);
 }
