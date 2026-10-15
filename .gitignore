@@ -43,3 +43,6 @@ certificates/private/
 # Local hardware evidence
 artifacts/hardware/
 
+# Local agent handoff state
+/.handoff/
+

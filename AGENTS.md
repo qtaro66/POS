@@ -54,3 +54,157 @@ Every OpenAI-to-Antigravity handoff must include:
 
 Both agents must stop and obtain explicit user approval before force-pushing, rewriting published history, bypassing branch protection, merging with failed required checks, publishing secrets or production data, or making a material change outside the original task scope.
 
+## File-based handoff protocol
+
+OpenAI and Antigravity exchange handoffs through ignored files in the same local repository. This protocol is available only when both agents use the same repository root and filesystem. If they are on different hosts, clones, or worktrees, stop and tell the user that file handoff is unavailable; do not assume that an ignored file will synchronize.
+
+### Storage and identity
+
+- Handoff files live under `.handoff/<branch-slug>--<branch-id>/`.
+- Derive `branch-slug` from the exact branch name by replacing each run of characters outside `[A-Za-z0-9._-]` with `-`, trimming leading and trailing `-`, and converting to lowercase invariant.
+- Derive `branch-id` as the first eight lowercase hexadecimal characters of SHA-256 over the UTF-8 bytes of the exact, case-sensitive branch name. The hash prevents collisions such as `feature/a-b` and `feature/a/b`.
+- `.handoff/` must remain ignored by the repository root `.gitignore`. Never force-add, stage, commit, push, or attach files from `.handoff/`.
+- Before every commit, `git ls-files -- .handoff` must return no paths. Before using this protocol, `git check-ignore .handoff/probe` must confirm that the directory is ignored.
+- Handoff files follow the same data restrictions as commits: no secrets, private keys, real device identifiers, customer data, production databases, or local hardware evidence. Summarize sensitive evidence instead of copying it.
+- Ignoring the directory prevents publication but does not encrypt it or protect it from other local processes.
+
+### Files and writing rules
+
+| File | Written by | Read by | Purpose |
+| --- | --- | --- | --- |
+| `to-antigravity.md` | OpenAI | Antigravity | Validated local commit ready for GitHub work |
+| `from-antigravity.md` | Antigravity | OpenAI | PR state, merge result, or exact correction request |
+| `log.md` | Both | Both | Append-only status history |
+
+- Use UTF-8 without a byte-order mark and LF line endings.
+- Use UTC timestamps in ISO 8601 form, for example `2026-10-15T12:30:00Z`.
+- Only one agent may write handoff files at a time. User trigger phrases create the sequencing boundary; agents must not run handoff mutations concurrently.
+- Write `to-antigravity.md` and `from-antigravity.md` to a temporary file in the same directory, flush and close it, then atomically replace the destination. Never expose a partially written status file.
+- Append exactly one complete line to `log.md` after the status file has been replaced. Use this format:
+
+  ```text
+  <timestamp> | agent=<OpenAI|Antigravity> | branch=<exact branch> | branchId=<branch-id> | round=<integer> | status=<status> | commit=<sha-or-none>
+  ```
+
+Every status file starts with this header:
+
+```text
+Protocol-Version: 1
+Branch: <exact branch name>
+Branch-Id: <branch-id>
+Round: <integer starting at 1>
+Status: <status defined below>
+Updated: <UTC ISO 8601 timestamp>
+```
+
+Before acting, the reader must verify `Protocol-Version`, exact branch name, derived `Branch-Id`, round, allowed status, and the relevant commit. Stop and report any mismatch instead of guessing or repairing the file silently.
+
+### Status and round ownership
+
+- `to-antigravity.md` may use `READY` or `WITHDRAWN`.
+- `from-antigravity.md` may use `PR_OPEN`, `NEEDS_CHANGES`, `BLOCKED`, or `MERGED`.
+- OpenAI creates round 1 for the first `READY` handoff. After `NEEDS_CHANGES`, OpenAI increments the round only after producing and validating a new local commit.
+- Antigravity always responds using the same round as the `READY` file it consumed.
+- `PR_OPEN` remains in the same round. Resuming checks or reviewers must update that round rather than create a new one.
+- `WITHDRAWN` invalidates that round. Antigravity must not push or resume it.
+
+### Commit verification
+
+- For `READY`, `Final local commit` must equal the local task branch HEAD, and the working tree must be clean except for ignored `.handoff/` files.
+- For `PR_OPEN` and `NEEDS_CHANGES`, `Source commit checked` must equal the remote pull-request head inspected by Antigravity.
+- For `MERGED`, record both the source commit checked and the resulting merge or squash commit on `main`.
+- A squash merge normally changes the commit SHA. Verify the task content rather than requiring the source and merge SHA to match: compare the task's changed paths and resulting file states, or use an equivalent patch/content comparison that excludes unrelated concurrent changes on `main`. Record the method and result.
+- Never declare content equivalence solely because the pull request reports `MERGED`.
+
+### `to-antigravity.md` template
+
+```text
+Protocol-Version: 1
+Branch:
+Branch-Id:
+Round:
+Status: READY
+Updated:
+
+## Commits
+- Base commit:
+- Final local commit:
+
+## Scope
+- Requested:
+- Implemented:
+
+## Files changed
+-
+
+## Validation
+| Check | Command | Result |
+| --- | --- | --- |
+| Tests | | |
+| Lint | | |
+| Build | | |
+| Security | | |
+
+## Risks, limitations, unresolved issues
+-
+
+## Suggested pull request
+Title:
+
+Body:
+```
+
+### `from-antigravity.md` template
+
+```text
+Protocol-Version: 1
+Branch:
+Branch-Id:
+Round:
+Status:
+Updated:
+
+## Pull request
+- URL:
+- Source commit checked:
+- Required checks: <passed, failed, or pending, with names>
+- Reviews and unresolved objections:
+- Mergeability:
+
+## Merge result
+- Main commit: <merge or squash commit; empty until merged>
+- Content verification: <method and passed/failed; empty until merged>
+- Local main synchronized: <yes/no>
+- Task branch cleanup: <local and remote result>
+
+## Corrections requested
+<For NEEDS_CHANGES: one item per failed check or review comment, including file, line where available, evidence, and exact requested outcome. Leave empty otherwise.>
+
+## Corrections applied by Antigravity
+<Only small in-scope corrections, including commit hashes and changed files. OpenAI must fetch these before the next round. Leave empty otherwise.>
+
+## Decision needed from user
+<For BLOCKED only. Leave empty otherwise.>
+```
+
+### Trigger phrases
+
+The user controls the sequence with these phrases:
+
+- To OpenAI, **`handoff`**: use the current checked-out task branch. Reject `main`, a detached HEAD, a dirty worktree, or an unvalidated commit. Write the next `to-antigravity.md` round with `READY`, append `log.md`, and stop. This is the only trigger that may infer the branch from the current checkout.
+- To Antigravity, **`take handoff <exact-branch>`** or **`รับ handoff <exact-branch>`**: the branch argument is mandatory. Resolve its handoff directory, validate `READY`, confirm the final commit equals the local branch HEAD, and run the GitHub workflow. Write `from-antigravity.md`, append `log.md`, and stop on a terminal status or `PR_OPEN`.
+- To Antigravity, **`resume handoff <exact-branch>`**: the branch argument is mandatory. Resume only a matching `PR_OPEN` in the same round. Recheck the pull-request head, required checks, reviews, security results, and mergeability. Do not create a new round merely because checks were pending.
+- To OpenAI, **`take result <exact-branch>`** or **`รับผล <exact-branch>`**: the branch argument is mandatory even if Antigravity already switched to `main` or deleted the task branch. Read the matching `from-antigravity.md` and act by status:
+  - `PR_OPEN`: report the pending checks or reviewers. Do not change code or create another round. Antigravity retains GitHub ownership.
+  - `NEEDS_CHANGES`: fetch any commits explicitly listed under corrections applied by Antigravity, make only the requested in-scope corrections, revalidate, commit, and create the next `READY` round.
+  - `BLOCKED`: summarize the exact user decision required and stop.
+  - `MERGED`: verify the recorded main synchronization and content comparison, report completion, and do not create another round.
+
+If a mandatory branch argument is missing, stop and request the exact branch name. If the shared repository prerequisite, directory identity, file header, round, status, or commit validation fails, stop and report the mismatch. Never search other handoff directories and select one by recency.
+
+### GitHub ownership while `PR_OPEN`
+
+Antigravity retains responsibility for the existing pull request while the status is `PR_OPEN`. OpenAI must not modify the task merely because checks or reviews are pending. The user may invoke `resume handoff <exact-branch>` until Antigravity records `MERGED`, `NEEDS_CHANGES`, or `BLOCKED`.
+
+Antigravity must write the final `MERGED` result before switching to `main` or deleting the task branch. Ignored handoff files remain available after branch cleanup. OpenAI locates the result from the mandatory branch argument, not from the current checkout.
+
