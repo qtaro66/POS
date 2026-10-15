@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\BuildingBlocks\Pos.Application\Pos.Application.csproj" />
+    <ProjectReference Include="..\..\Printing\Pos.Printing.Abstractions\Pos.Printing.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

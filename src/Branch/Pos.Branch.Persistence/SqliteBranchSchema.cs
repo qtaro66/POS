@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -480,6 +480,80 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion8 = """
+        CREATE TABLE IF NOT EXISTS printer_profiles (
+            printer_id TEXT NOT NULL PRIMARY KEY CHECK (length(trim(printer_id)) > 0),
+            branch_id TEXT NOT NULL CHECK (length(trim(branch_id)) > 0),
+            display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
+            production_station_id TEXT NOT NULL CHECK (
+                length(trim(production_station_id)) > 0),
+            host TEXT NOT NULL CHECK (length(trim(host)) > 0),
+            port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+            protocol TEXT NOT NULL CHECK (protocol IN ('RawTcpEscPos', 'Ipp', 'Lpr')),
+            compatibility_profile_id TEXT NOT NULL CHECK (
+                length(trim(compatibility_profile_id)) > 0),
+            manufacturer TEXT NOT NULL CHECK (length(trim(manufacturer)) > 0),
+            model TEXT NOT NULL CHECK (length(trim(model)) > 0),
+            product_code TEXT NULL,
+            firmware_version TEXT NULL,
+            paper_width_millimeters INTEGER NOT NULL CHECK (paper_width_millimeters >= 1),
+            dpi INTEGER NOT NULL CHECK (dpi >= 1),
+            printable_width_dots INTEGER NOT NULL CHECK (printable_width_dots >= 1),
+            render_mode TEXT NOT NULL CHECK (
+                render_mode IN ('BitmapRaster', 'NativeTextExperimental')),
+            thai_encoding_mode TEXT NOT NULL CHECK (
+                thai_encoding_mode IN ('UnicodeRaster', 'NativeCodePageExperimental')),
+            status_mode TEXT NOT NULL CHECK (status_mode IN ('Unsupported', 'SnmpPrinterMib')),
+            supports_cash_drawer INTEGER NOT NULL CHECK (supports_cash_drawer IN (0, 1)),
+            cutter_command_hex TEXT NULL CHECK (
+                cutter_command_hex IS NULL OR (
+                    length(cutter_command_hex) > 0
+                    AND
+                    length(cutter_command_hex) % 2 = 0
+                    AND cutter_command_hex NOT GLOB '*[^0-9A-Fa-f]*')),
+            drawer_pulse_command_hex TEXT NULL CHECK (
+                drawer_pulse_command_hex IS NULL OR (
+                    length(drawer_pulse_command_hex) > 0
+                    AND
+                    length(drawer_pulse_command_hex) % 2 = 0
+                    AND drawer_pulse_command_hex NOT GLOB '*[^0-9A-Fa-f]*')),
+            status_command_profile TEXT NULL CHECK (
+                status_command_profile IS NULL OR length(trim(status_command_profile)) > 0),
+            connect_timeout_ms INTEGER NOT NULL CHECK (connect_timeout_ms >= 1),
+            send_timeout_ms INTEGER NOT NULL CHECK (send_timeout_ms >= 1),
+            maximum_automatic_retries_before_send INTEGER NOT NULL CHECK (
+                maximum_automatic_retries_before_send >= 0),
+            automatic_retry_backoff_ms INTEGER NOT NULL CHECK (
+                automatic_retry_backoff_ms >= 1),
+            is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
+            updated_at TEXT NOT NULL,
+            CHECK ((supports_cash_drawer = 1) = (drawer_pulse_command_hex IS NOT NULL)),
+            CHECK (status_mode = 'Unsupported' OR status_command_profile IS NOT NULL)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_printer_profiles_active_station
+            ON printer_profiles (branch_id, production_station_id)
+            WHERE is_active = 1;
+
+        CREATE INDEX IF NOT EXISTS ix_printer_profiles_branch
+            ON printer_profiles (branch_id, production_station_id, printer_id);
+
+        CREATE TABLE IF NOT EXISTS printer_profile_audit (
+            audit_id TEXT NOT NULL PRIMARY KEY,
+            printer_id TEXT NOT NULL,
+            branch_id TEXT NOT NULL,
+            previous_configuration_json TEXT NULL,
+            current_configuration_json TEXT NOT NULL,
+            employee_id TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            occurred_at TEXT NOT NULL,
+            FOREIGN KEY (printer_id) REFERENCES printer_profiles (printer_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_printer_profile_audit_printer
+            ON printer_profile_audit (printer_id, occurred_at, audit_id);
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -529,6 +603,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 7)
         {
             await MigrateToVersion7Async(connection, transaction, cancellationToken);
+        }
+
+        if (storedVersion < 8)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion8, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
