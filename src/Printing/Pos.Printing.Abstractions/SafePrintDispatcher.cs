@@ -20,6 +20,7 @@ public sealed class SafePrintDispatcher : IPrintDispatcher
 
     public async Task<PrintDispatchResult> DispatchAsync(
         PrintDispatchRequest request,
+        IPrintDispatchLifecycle? lifecycle = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -76,7 +77,15 @@ public sealed class SafePrintDispatcher : IPrintDispatcher
             return Blocked(request, profile.PrinterId, "ProtocolAdapterUnavailable");
         }
 
-        var observer = new SendObserver();
+        var observer = new SendObserver(request, profile, lifecycle);
+        if (lifecycle is not null)
+        {
+            await lifecycle.OnTransportAttemptStartingAsync(
+                request,
+                profile,
+                cancellationToken);
+        }
+
         try
         {
             await adapter.SendAsync(profile, request.Payload, observer, cancellationToken);
@@ -135,15 +144,37 @@ public sealed class SafePrintDispatcher : IPrintDispatcher
             ? throw new ArgumentException("The value cannot be empty.", name)
             : value.Trim();
 
-    private sealed class SendObserver : IPrintSendObserver
+    private sealed class SendObserver(
+        PrintDispatchRequest request,
+        PrinterProfile profile,
+        IPrintDispatchLifecycle? lifecycle) : IPrintSendObserver
     {
         private int _attemptStarted;
+        private readonly Lock _sync = new();
+        private Task? _firstByteTask;
 
         public bool AttemptStarted => Volatile.Read(ref _attemptStarted) == 1;
 
-        public void OnFirstByteSending()
+        public Task OnFirstByteSendingAsync(CancellationToken cancellationToken)
         {
-            Interlocked.Exchange(ref _attemptStarted, 1);
+            lock (_sync)
+            {
+                return _firstByteTask ??= MarkFirstByteSendingAsync(cancellationToken);
+            }
+        }
+
+        private async Task MarkFirstByteSendingAsync(CancellationToken cancellationToken)
+        {
+            // Crossing this boundary authorizes the adapter to send. If the durable
+            // journal fails ambiguously, the result must remain Unknown, never retryable.
+            Volatile.Write(ref _attemptStarted, 1);
+            if (lifecycle is not null)
+            {
+                await lifecycle.OnFirstByteSendingAsync(
+                    request,
+                    profile,
+                    cancellationToken);
+            }
         }
     }
 }
