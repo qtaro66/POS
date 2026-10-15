@@ -136,7 +136,8 @@ public static class CatalogSelectionValidator
                 context.Item.DisplayName,
                 request.Quantity,
                 context.Item.ResolvedPrice.Value,
-                resolvedOptions),
+                resolvedOptions,
+                context.Item.ProductionStationId),
             []);
     }
 

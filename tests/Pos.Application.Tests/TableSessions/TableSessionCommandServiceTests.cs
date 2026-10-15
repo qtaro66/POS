@@ -260,6 +260,16 @@ public sealed class TableSessionCommandServiceTests
         Assert.Equal(120m, line.UnitPrice);
         Assert.Equal(FulfillmentType.DineIn, line.FulfillmentType);
         Assert.Equal("ไม่ใส่ต้นหอม", line.Comment);
+        Assert.Equal("KITCHEN-HOT", line.ProductionStationId);
+        var productionSnapshot = Assert.Single(store.ProductionOrderSnapshots);
+        Assert.Equal("KITCHEN-HOT", productionSnapshot.ProductionStationId);
+        using var productionDocument = System.Text.Json.JsonDocument.Parse(
+            productionSnapshot.Content.Json);
+        Assert.Equal("ข้าวผัดกุ้ง", productionDocument.RootElement
+            .GetProperty("lines")[0].GetProperty("displayName").GetString());
+        var productionJob = Assert.Single(store.PrintJobs);
+        Assert.Equal(PrintJobPurpose.KitchenOrder, productionJob.Purpose);
+        Assert.Equal(new PrintTargetStation("KITCHEN-HOT"), productionJob.TargetStation);
         Assert.Equal(TableSessionAction.SubmitOrder, store.Outbox[^1].Action);
         Assert.Single(store.Audits);
     }
@@ -277,9 +287,54 @@ public sealed class TableSessionCommandServiceTests
 
         Assert.Equal(first, duplicate);
         Assert.Single(store.OrderBatches);
+        Assert.Single(store.ProductionOrderSnapshots);
+        Assert.Single(store.PrintJobs);
         Assert.Equal(2, store.Receipts.Count);
         Assert.Equal(2, store.Outbox.Count);
         Assert.Equal(1, store.CatalogResolutionCount);
+    }
+
+    [Fact]
+    public async Task Submit_order_groups_immutable_print_snapshots_by_production_station()
+    {
+        var store = new InMemoryTableSessionCommandStore();
+        var service = Service(store);
+        await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        store.CatalogResults["ITEM-1"] = AcceptedCatalog("ITEM-1", "จานหนึ่ง", "HOT");
+        store.CatalogResults["ITEM-2"] = AcceptedCatalog("ITEM-2", "จานสอง", "HOT");
+        store.CatalogResults["ITEM-3"] = AcceptedCatalog("ITEM-3", "เค้ก", "CAKE");
+        store.CatalogResults["ITEM-4"] = AcceptedCatalog("ITEM-4", "ไม่ส่งครัว", null);
+        var command = new SubmitOrderCommand(
+            Metadata("REQ-2", "TS-1"),
+            "BATCH-1",
+            [
+                new SubmitOrderLine("ITEM-1", 1, FulfillmentType.DineIn),
+                new SubmitOrderLine("ITEM-2", 2, FulfillmentType.Takeaway),
+                new SubmitOrderLine("ITEM-3", 1, FulfillmentType.DineIn),
+                new SubmitOrderLine("ITEM-4", 1, FulfillmentType.DineIn)
+            ]);
+
+        var result = await service.SubmitOrderAsync(command);
+
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, result.Outcome);
+        Assert.Equal(2, store.ProductionOrderSnapshots.Count);
+        Assert.Equal(2, store.PrintJobs.Count);
+        var hot = Assert.Single(
+            store.ProductionOrderSnapshots,
+            snapshot => snapshot.ProductionStationId == "HOT");
+        using var hotDocument = System.Text.Json.JsonDocument.Parse(hot.Content.Json);
+        Assert.Equal(2, hotDocument.RootElement.GetProperty("lines").GetArrayLength());
+        var cake = Assert.Single(
+            store.PrintJobs,
+            job => job.TargetStation == new PrintTargetStation("CAKE"));
+        Assert.Equal(PrintJobPurpose.KitchenOrder, cake.Purpose);
+        Assert.Equal(
+            3,
+            store.ProductionOrderSnapshots.Sum(snapshot =>
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(snapshot.Content.Json);
+                return document.RootElement.GetProperty("lines").GetArrayLength();
+            }));
     }
 
     [Fact]
@@ -382,6 +437,21 @@ public sealed class TableSessionCommandServiceTests
                 FulfillmentType.DineIn,
                 "ไม่ใส่ต้นหอม")]);
 
+    private static CatalogResolutionResult AcceptedCatalog(
+        string sellableItemId,
+        string displayName,
+        string? productionStationId) =>
+        new(
+            new ResolvedCatalogSelection(
+                "MASTER-1",
+                sellableItemId,
+                displayName,
+                1,
+                100m,
+                [],
+                productionStationId),
+            []);
+
     private static BranchCommandMetadata Metadata(string requestId, string sessionId)
     {
         return new BranchCommandMetadata(
@@ -432,6 +502,8 @@ public sealed class TableSessionCommandServiceTests
         public List<CloudSyncOutboxRecord> Outbox { get; } = [];
 
         public List<BillPreviewSnapshot> BillPreviewSnapshots { get; } = [];
+
+        public List<ProductionOrderSnapshot> ProductionOrderSnapshots { get; } = [];
 
         public List<PersistentPrintJob> PrintJobs { get; } = [];
 
@@ -577,7 +649,8 @@ public sealed class TableSessionCommandServiceTests
                     "ข้าวผัดกุ้ง",
                     request.Quantity,
                     120m,
-                    []),
+                    [],
+                    "KITCHEN-HOT"),
                 []));
         }
 
@@ -645,6 +718,14 @@ public sealed class TableSessionCommandServiceTests
             CancellationToken cancellationToken)
         {
             BillPreviewSnapshots.Add(snapshot);
+            return Task.CompletedTask;
+        }
+
+        public Task AddProductionOrderSnapshotAsync(
+            ProductionOrderSnapshot snapshot,
+            CancellationToken cancellationToken)
+        {
+            ProductionOrderSnapshots.Add(snapshot);
             return Task.CompletedTask;
         }
 

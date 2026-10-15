@@ -458,6 +458,34 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task AddProductionOrderSnapshotAsync(
+        ProductionOrderSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            INSERT INTO production_order_snapshots (
+                snapshot_id, branch_id, request_id, order_batch_id,
+                table_session_id, table_id, production_station_id,
+                content_schema_version, content_json, content_sha256, created_at)
+            VALUES (
+                $snapshotId, $branchId, $requestId, $orderBatchId,
+                $tableSessionId, $tableId, $productionStationId,
+                $contentSchemaVersion, $contentJson, $contentSha256, $createdAt);
+            """);
+        command.Parameters.AddWithValue("$snapshotId", snapshot.SnapshotId);
+        command.Parameters.AddWithValue("$branchId", snapshot.BranchId);
+        command.Parameters.AddWithValue("$requestId", snapshot.RequestId);
+        command.Parameters.AddWithValue("$orderBatchId", snapshot.OrderBatchId);
+        command.Parameters.AddWithValue("$tableSessionId", snapshot.TableSessionId.Value);
+        command.Parameters.AddWithValue("$tableId", snapshot.TableId.Value);
+        command.Parameters.AddWithValue("$productionStationId", snapshot.ProductionStationId);
+        command.Parameters.AddWithValue("$contentSchemaVersion", snapshot.Content.SchemaVersion);
+        command.Parameters.AddWithValue("$contentJson", snapshot.Content.Json);
+        command.Parameters.AddWithValue("$contentSha256", snapshot.Content.Sha256);
+        command.Parameters.AddWithValue("$createdAt", FormatTimestamp(snapshot.CreatedAt));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task AddOrderBatchAsync(
         OrderBatchSnapshot orderBatch,
         CancellationToken cancellationToken)
@@ -500,12 +528,14 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
                     line_sequence, sellable_item_id, display_name,
                     original_quantity, active_quantity, unit_price,
                     fulfillment_type, comment, discount_kind,
-                    discount_requested_value, status, created_at)
+                    discount_requested_value, status, created_at,
+                    production_station_id)
                 VALUES (
                     $branchId, $orderLineId, $orderBatchId, $tableSessionId,
                     $lineSequence, $sellableItemId, $displayName,
                     $quantity, $quantity, $unitPrice,
-                    $fulfillmentType, $comment, NULL, NULL, 'Active', $createdAt);
+                    $fulfillmentType, $comment, NULL, NULL, 'Active', $createdAt,
+                    $productionStationId);
                 """))
             {
                 command.Parameters.AddWithValue("$branchId", orderBatch.BranchId);
@@ -519,6 +549,9 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
                 command.Parameters.AddWithValue("$unitPrice", FormatDecimal(line.UnitPrice));
                 command.Parameters.AddWithValue("$fulfillmentType", line.FulfillmentType.ToString());
                 command.Parameters.AddWithValue("$comment", DbValue(line.Comment));
+                command.Parameters.AddWithValue(
+                    "$productionStationId",
+                    DbValue(line.ProductionStationId));
                 command.Parameters.AddWithValue(
                     "$createdAt",
                     FormatTimestamp(orderBatch.ServerReceivedAt));

@@ -111,7 +111,8 @@ public sealed record OrderLineSnapshot(
     decimal UnitPrice,
     FulfillmentType FulfillmentType,
     string? Comment,
-    IReadOnlyList<OrderLineOptionSnapshot> Options);
+    IReadOnlyList<OrderLineOptionSnapshot> Options,
+    string? ProductionStationId = null);
 
 public sealed record OrderLineOptionSnapshot(
     int OptionSequence,

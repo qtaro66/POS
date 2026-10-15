@@ -98,6 +98,10 @@ public interface ITableSessionCommandTransaction
         BillPreviewSnapshot snapshot,
         CancellationToken cancellationToken);
 
+    Task AddProductionOrderSnapshotAsync(
+        ProductionOrderSnapshot snapshot,
+        CancellationToken cancellationToken);
+
     Task AddPrintJobAsync(
         PersistentPrintJob printJob,
         CancellationToken cancellationToken);

@@ -380,7 +380,8 @@ public sealed class TableSessionCommandService
                             option.SellableItemId,
                             option.DisplayName,
                             option.Quantity,
-                            option.UnitPrice)).ToArray());
+                            option.UnitPrice)).ToArray(),
+                    resolved.ProductionStationId);
             }).ToArray();
 
             await transaction.AddOrderBatchAsync(
@@ -396,6 +397,65 @@ public sealed class TableSessionCommandService
                     receivedAt,
                     snapshotLines),
                 token);
+
+            var stationGroups = snapshotLines
+                .Where(line => line.ProductionStationId is not null)
+                .GroupBy(line => line.ProductionStationId!, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .ToArray();
+            for (var stationIndex = 0; stationIndex < stationGroups.Length; stationIndex++)
+            {
+                var station = stationGroups[stationIndex];
+                var snapshotId =
+                    $"{metadata.BranchId}:{metadata.RequestId}:production:{stationIndex + 1}";
+                var payloadJson = JsonSerializer.Serialize(
+                    new ProductionOrderPayload(
+                        1,
+                        command.OrderBatchId,
+                        session.Id.Value,
+                        session.CurrentTableId.Value,
+                        station.Key,
+                        receivedAt,
+                        station.Select(line => new ProductionOrderLinePayload(
+                            line.OrderLineId,
+                            line.LineSequence,
+                            line.DisplayName,
+                            line.Quantity,
+                            line.FulfillmentType,
+                            line.Comment,
+                            line.Options.Select(option => new ProductionOrderOptionPayload(
+                                option.OptionGroupId,
+                                option.DisplayName,
+                                option.QuantityPerItem)).ToArray())).ToArray()),
+                    JsonOptions);
+                var content = ProductionOrderContent.FromJson(1, payloadJson);
+                await transaction.AddProductionOrderSnapshotAsync(
+                    new ProductionOrderSnapshot(
+                        snapshotId,
+                        metadata.BranchId,
+                        metadata.RequestId,
+                        command.OrderBatchId,
+                        session.Id,
+                        session.CurrentTableId,
+                        station.Key,
+                        content,
+                        receivedAt),
+                    token);
+                await transaction.AddPrintJobAsync(
+                    new PersistentPrintJob(
+                        $"{metadata.BranchId}:{metadata.RequestId}:production-print:{stationIndex + 1}",
+                        metadata.BranchId,
+                        metadata.RequestId,
+                        session.Id,
+                        snapshotId,
+                        PrintJobPurpose.KitchenOrder,
+                        new PrintTargetStation(station.Key),
+                        PersistentPrintJobStatus.PrintQueued,
+                        0,
+                        receivedAt),
+                    token);
+            }
+
             await transaction.AddCloudOutboxAsync(
                 new CloudSyncOutboxRecord(
                     $"{metadata.BranchId}:{metadata.RequestId}:cloud:1",
@@ -501,4 +561,27 @@ public sealed class TableSessionCommandService
     private sealed record SubmitOrderRejectionDetails(
         int SchemaVersion,
         IReadOnlyList<SubmitOrderValidationError> Errors);
+
+    private sealed record ProductionOrderPayload(
+        int SchemaVersion,
+        string OrderBatchId,
+        string TableSessionId,
+        string TableId,
+        string ProductionStationId,
+        DateTimeOffset SubmittedAt,
+        IReadOnlyList<ProductionOrderLinePayload> Lines);
+
+    private sealed record ProductionOrderLinePayload(
+        string OrderLineId,
+        int LineSequence,
+        string DisplayName,
+        int Quantity,
+        FulfillmentType FulfillmentType,
+        string? Comment,
+        IReadOnlyList<ProductionOrderOptionPayload> Options);
+
+    private sealed record ProductionOrderOptionPayload(
+        string OptionGroupId,
+        string DisplayName,
+        int QuantityPerItem);
 }
