@@ -1,6 +1,9 @@
+using Pos.Branch.Api.Printing;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddPrintSpoolPolling(builder.Configuration);
 
 var app = builder.Build();
 
