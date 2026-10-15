@@ -21,6 +21,30 @@ public enum PrintDispatchOutcome
     Unknown
 }
 
+public enum PrintDocumentKind
+{
+    BillPreview,
+    KitchenOrder
+}
+
+public sealed record PrintSourceDocument(
+    string DocumentId,
+    PrintDocumentKind Kind,
+    int SchemaVersion,
+    string ContentJson,
+    string ContentSha256);
+
+public sealed record PrintRenderRequest(
+    PrintSourceDocument Document,
+    PrinterProfile Printer);
+
+public interface IPrintPayloadRenderer
+{
+    Task<RenderedPrintPayload> RenderAsync(
+        PrintRenderRequest request,
+        CancellationToken cancellationToken);
+}
+
 public sealed record RenderedPrintPayload
 {
     private readonly byte[] _bytes;
