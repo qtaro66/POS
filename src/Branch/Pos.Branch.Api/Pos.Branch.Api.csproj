@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Pos.Branch.Persistence\Pos.Branch.Persistence.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\Pos.Application\Pos.Application.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\Pos.Contracts\Pos.Contracts.csproj" />
     <ProjectReference Include="..\..\Printing\Pos.Printing.Abstractions\Pos.Printing.Abstractions.csproj" />
