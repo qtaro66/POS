@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -367,6 +367,119 @@ internal static class SqliteBranchSchema
             WHERE branch_sequence IS NOT NULL;
         """;
 
+    private const string SchemaVersion7ProductionSnapshots = """
+        CREATE TABLE IF NOT EXISTS production_order_snapshots (
+            snapshot_id TEXT NOT NULL PRIMARY KEY,
+            branch_id TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            order_batch_id TEXT NOT NULL,
+            table_session_id TEXT NOT NULL,
+            table_id TEXT NOT NULL,
+            production_station_id TEXT NOT NULL CHECK (
+                length(trim(production_station_id)) > 0),
+            content_schema_version INTEGER NOT NULL CHECK (content_schema_version >= 1),
+            content_json TEXT NOT NULL,
+            content_sha256 TEXT NOT NULL CHECK (
+                length(content_sha256) = 64
+                AND content_sha256 NOT GLOB '*[^0-9A-Fa-f]*'),
+            created_at TEXT NOT NULL,
+            UNIQUE (branch_id, order_batch_id, production_station_id),
+            FOREIGN KEY (branch_id, order_batch_id)
+                REFERENCES order_batches (branch_id, order_batch_id),
+            FOREIGN KEY (branch_id, table_session_id)
+                REFERENCES table_sessions (branch_id, table_session_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_production_order_snapshots_session
+            ON production_order_snapshots (
+                branch_id, table_session_id, created_at, snapshot_id);
+        """;
+
+    private const string SchemaVersion7PrintJobs = """
+        CREATE TABLE print_jobs_v7 (
+            print_job_id TEXT NOT NULL PRIMARY KEY,
+            branch_id TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            table_session_id TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL,
+            purpose TEXT NOT NULL CHECK (purpose IN ('BillPreview', 'KitchenOrder')),
+            target_station TEXT NOT NULL CHECK (length(trim(target_station)) > 0),
+            status TEXT NOT NULL CHECK (status IN (
+                'PrintQueued', 'Dispatching', 'PrintDispatched', 'Failed', 'Unknown', 'Completed')),
+            attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+            next_retry_at TEXT NULL,
+            last_error TEXT NULL,
+            blocked_reason TEXT NULL,
+            created_at TEXT NOT NULL,
+            original_print_job_id TEXT NULL,
+            is_reprint INTEGER NOT NULL DEFAULT 0 CHECK (is_reprint IN (0, 1)),
+            FOREIGN KEY (original_print_job_id) REFERENCES print_jobs_v7 (print_job_id),
+            UNIQUE (branch_id, request_id, purpose, target_station)
+        );
+
+        INSERT INTO print_jobs_v7 (
+            print_job_id, branch_id, request_id, table_session_id, snapshot_id,
+            purpose, target_station, status, attempt_count, next_retry_at,
+            last_error, blocked_reason, created_at, original_print_job_id, is_reprint)
+        SELECT print_job_id, branch_id, request_id, table_session_id, snapshot_id,
+               purpose, target_station, status, attempt_count, next_retry_at,
+               last_error, blocked_reason, created_at, original_print_job_id, is_reprint
+        FROM print_jobs;
+
+        DROP TABLE print_jobs;
+        ALTER TABLE print_jobs_v7 RENAME TO print_jobs;
+
+        CREATE INDEX ix_print_jobs_dispatch
+            ON print_jobs (status, next_retry_at, created_at);
+        """;
+
+    private const string SchemaVersion7PrintJobGuards = """
+        CREATE TRIGGER IF NOT EXISTS print_jobs_snapshot_insert_guard
+        BEFORE INSERT ON print_jobs
+        BEGIN
+            SELECT CASE
+                WHEN NEW.purpose = 'BillPreview' AND NOT EXISTS (
+                    SELECT 1 FROM bill_preview_snapshots
+                    WHERE snapshot_id = NEW.snapshot_id
+                      AND branch_id = NEW.branch_id
+                      AND request_id = NEW.request_id
+                      AND table_session_id = NEW.table_session_id)
+                THEN RAISE(ABORT, 'Bill Preview snapshot not found')
+                WHEN NEW.purpose = 'KitchenOrder' AND NOT EXISTS (
+                    SELECT 1 FROM production_order_snapshots
+                    WHERE snapshot_id = NEW.snapshot_id
+                      AND branch_id = NEW.branch_id
+                      AND request_id = NEW.request_id
+                      AND table_session_id = NEW.table_session_id
+                      AND production_station_id = NEW.target_station)
+                THEN RAISE(ABORT, 'Production order snapshot not found or station mismatch')
+            END;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS print_jobs_snapshot_update_guard
+        BEFORE UPDATE OF snapshot_id, purpose, target_station,
+                         branch_id, request_id, table_session_id ON print_jobs
+        BEGIN
+            SELECT CASE
+                WHEN NEW.purpose = 'BillPreview' AND NOT EXISTS (
+                    SELECT 1 FROM bill_preview_snapshots
+                    WHERE snapshot_id = NEW.snapshot_id
+                      AND branch_id = NEW.branch_id
+                      AND request_id = NEW.request_id
+                      AND table_session_id = NEW.table_session_id)
+                THEN RAISE(ABORT, 'Bill Preview snapshot not found')
+                WHEN NEW.purpose = 'KitchenOrder' AND NOT EXISTS (
+                    SELECT 1 FROM production_order_snapshots
+                    WHERE snapshot_id = NEW.snapshot_id
+                      AND branch_id = NEW.branch_id
+                      AND request_id = NEW.request_id
+                      AND table_session_id = NEW.table_session_id
+                      AND production_station_id = NEW.target_station)
+                THEN RAISE(ABORT, 'Production order snapshot not found or station mismatch')
+            END;
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -413,6 +526,11 @@ internal static class SqliteBranchSchema
             await ExecuteAsync(connection, transaction, SchemaVersion6, cancellationToken);
         }
 
+        if (storedVersion < 7)
+        {
+            await MigrateToVersion7Async(connection, transaction, cancellationToken);
+        }
+
         if (storedVersion != CurrentVersion)
         {
             await ExecuteAsync(
@@ -436,6 +554,110 @@ internal static class SqliteBranchSchema
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(cancellationToken),
             CultureInfo.InvariantCulture);
+    }
+
+    private static async Task MigrateToVersion7Async(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "master_data_sellable_items",
+                "production_station_id",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                """
+                ALTER TABLE master_data_sellable_items
+                    ADD COLUMN production_station_id TEXT NULL
+                    CHECK (production_station_id IS NULL OR length(trim(production_station_id)) > 0);
+                """,
+                cancellationToken);
+        }
+
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "order_lines",
+                "production_station_id",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                """
+                ALTER TABLE order_lines
+                    ADD COLUMN production_station_id TEXT NULL
+                    CHECK (production_station_id IS NULL OR length(trim(production_station_id)) > 0);
+                """,
+                cancellationToken);
+        }
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            SchemaVersion7ProductionSnapshots,
+            cancellationToken);
+
+        var printJobsSql = await ReadTableSqlAsync(
+            connection,
+            transaction,
+            "print_jobs",
+            cancellationToken);
+        if (!printJobsSql.Contains("KitchenOrder", StringComparison.Ordinal))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                SchemaVersion7PrintJobs,
+                cancellationToken);
+        }
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            SchemaVersion7PrintJobGuards,
+            cancellationToken);
+    }
+
+    private static async Task<bool> ColumnExistsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"PRAGMA table_info({tableName});";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<string> ReadTableSqlAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $name;";
+        command.Parameters.AddWithValue("$name", tableName);
+        return await command.ExecuteScalarAsync(cancellationToken) as string
+            ?? throw new InvalidOperationException($"Required table '{tableName}' was not found.");
     }
 
     private static async Task ExecuteAsync(

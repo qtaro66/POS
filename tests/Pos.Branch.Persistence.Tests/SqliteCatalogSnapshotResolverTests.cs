@@ -18,6 +18,7 @@ public sealed class SqliteCatalogSnapshotResolverTests
         Assert.Equal("MASTER-OLD", result.Selection!.MasterDataVersion);
         Assert.Equal("ชื่อเดิม", result.Selection.DisplayName);
         Assert.Equal(100m, result.Selection.UnitPrice);
+        Assert.Equal("KITCHEN-OLD", result.Selection.ProductionStationId);
         var option = Assert.Single(result.Selection.Options);
         Assert.Equal("ไก่เดิม", option.DisplayName);
         Assert.Equal(10m, option.UnitPrice);
@@ -89,7 +90,7 @@ public sealed class SqliteCatalogSnapshotResolverTests
         await using var database = new CatalogDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(6L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'master_data_sellable_items';
@@ -105,6 +106,10 @@ public sealed class SqliteCatalogSnapshotResolverTests
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'branch_sold_out_audit';
+            """));
+        Assert.Equal(1L, await database.ScalarAsync<long>("""
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'table' AND name = 'production_order_snapshots';
             """));
     }
 
@@ -166,12 +171,13 @@ public sealed class SqliteCatalogSnapshotResolverTests
 
                 INSERT INTO master_data_sellable_items (
                     branch_id, master_data_version, sellable_item_id, item_kind,
-                    display_name, resolved_price, central_active, branch_catalog_enabled)
+                    display_name, resolved_price, central_active, branch_catalog_enabled,
+                    production_station_id)
                 VALUES
-                    ('BRANCH-01', 'MASTER-OLD', 'ITEM-1', 'Item', 'ชื่อเดิม', '100', 1, 1),
-                    ('BRANCH-01', 'MASTER-OLD', 'OPT-1', 'SubItem', 'ไก่เดิม', '10', 1, 1),
-                    ('BRANCH-01', 'MASTER-NEW', 'ITEM-1', 'Item', 'ชื่อใหม่', '150', 1, 1),
-                    ('BRANCH-01', 'MASTER-NEW', 'OPT-1', 'SubItem', 'ไก่ใหม่', '20', 1, 1);
+                    ('BRANCH-01', 'MASTER-OLD', 'ITEM-1', 'Item', 'ชื่อเดิม', '100', 1, 1, 'KITCHEN-OLD'),
+                    ('BRANCH-01', 'MASTER-OLD', 'OPT-1', 'SubItem', 'ไก่เดิม', '10', 1, 1, NULL),
+                    ('BRANCH-01', 'MASTER-NEW', 'ITEM-1', 'Item', 'ชื่อใหม่', '150', 1, 1, 'KITCHEN-NEW'),
+                    ('BRANCH-01', 'MASTER-NEW', 'OPT-1', 'SubItem', 'ไก่ใหม่', '20', 1, 1, NULL);
 
                 INSERT INTO master_data_option_groups (
                     branch_id, master_data_version, parent_sellable_item_id,

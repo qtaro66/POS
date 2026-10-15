@@ -62,12 +62,24 @@ public sealed record BillPreviewSnapshot(
 
 public enum PrintJobPurpose
 {
-    BillPreview
+    BillPreview,
+    KitchenOrder
 }
 
-public enum PrintTargetStation
+public sealed record PrintTargetStation
 {
-    Cashier
+    public static PrintTargetStation Cashier { get; } = new("Cashier");
+
+    public PrintTargetStation(string value)
+    {
+        Value = string.IsNullOrWhiteSpace(value)
+            ? throw new ArgumentException("The print target station cannot be empty.", nameof(value))
+            : value.Trim();
+    }
+
+    public string Value { get; }
+
+    public override string ToString() => Value;
 }
 
 public enum PersistentPrintJobStatus

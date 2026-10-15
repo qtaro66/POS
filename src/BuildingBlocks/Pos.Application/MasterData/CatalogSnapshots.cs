@@ -86,7 +86,8 @@ public sealed record CatalogSellableItemSnapshot
         string sellableItemId,
         CatalogItemKind kind,
         string displayName,
-        decimal? resolvedPrice)
+        decimal? resolvedPrice,
+        string? productionStationId = null)
     {
         SellableItemId = Require(sellableItemId, nameof(sellableItemId));
         DisplayName = Require(displayName, nameof(displayName));
@@ -97,6 +98,9 @@ public sealed record CatalogSellableItemSnapshot
 
         Kind = kind;
         ResolvedPrice = resolvedPrice;
+        ProductionStationId = string.IsNullOrWhiteSpace(productionStationId)
+            ? null
+            : productionStationId.Trim();
     }
 
     public string SellableItemId { get; }
@@ -106,6 +110,8 @@ public sealed record CatalogSellableItemSnapshot
     public string DisplayName { get; }
 
     public decimal? ResolvedPrice { get; }
+
+    public string? ProductionStationId { get; }
 
     private static string Require(string value, string name) =>
         string.IsNullOrWhiteSpace(value)
@@ -242,7 +248,8 @@ public sealed record ResolvedCatalogSelection(
     string DisplayName,
     int Quantity,
     decimal UnitPrice,
-    IReadOnlyList<ResolvedCatalogOption> Options);
+    IReadOnlyList<ResolvedCatalogOption> Options,
+    string? ProductionStationId = null);
 
 public sealed record CatalogResolutionResult(
     ResolvedCatalogSelection? Selection,

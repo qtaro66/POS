@@ -95,7 +95,7 @@ public sealed class SqliteCatalogSnapshotResolver : ISqliteCatalogSnapshotResolv
         CancellationToken cancellationToken)
     {
         using var command = CreateCommand(connection, transaction, """
-            SELECT item_kind, display_name, resolved_price
+            SELECT item_kind, display_name, resolved_price, production_station_id
             FROM master_data_sellable_items
             WHERE branch_id = $branchId
               AND master_data_version = $masterDataVersion
@@ -115,7 +115,8 @@ public sealed class SqliteCatalogSnapshotResolver : ISqliteCatalogSnapshotResolv
             sellableItemId,
             ParseEnum<CatalogItemKind>(reader.GetString(0)),
             reader.GetString(1),
-            reader.IsDBNull(2) ? null : ParseDecimal(reader.GetString(2), "resolved_price"));
+            reader.IsDBNull(2) ? null : ParseDecimal(reader.GetString(2), "resolved_price"),
+            reader.IsDBNull(3) ? null : reader.GetString(3));
         if (await reader.ReadAsync(cancellationToken))
         {
             throw new InvalidOperationException("The frozen catalog contains duplicate sellable items.");
