@@ -16,7 +16,7 @@ public sealed class SqlitePrintDispatchStoreTests
 
         await new SqliteTableSessionCommandStore(database.Path).InitializeAsync();
 
-        Assert.Equal(9L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(10L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'print_attempts';
@@ -24,6 +24,10 @@ public sealed class SqlitePrintDispatchStoreTests
         Assert.Equal(3L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM pragma_table_info('print_jobs')
             WHERE name IN ('assigned_printer_id', 'lease_owner', 'lease_expires_at');
+            """));
+        Assert.Equal(1L, await database.ScalarAsync<long>("""
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'table' AND name = 'rendered_print_payloads';
             """));
     }
 

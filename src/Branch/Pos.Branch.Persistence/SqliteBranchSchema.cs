@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -599,6 +599,31 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion10 = """
+        CREATE TABLE IF NOT EXISTS rendered_print_payloads (
+            print_job_id TEXT NOT NULL PRIMARY KEY,
+            snapshot_id TEXT NOT NULL,
+            printer_id TEXT NOT NULL,
+            document_id TEXT NOT NULL CHECK (length(trim(document_id)) > 0),
+            payload_bytes BLOB NOT NULL CHECK (length(payload_bytes) > 0),
+            payload_sha256 TEXT NOT NULL CHECK (
+                length(payload_sha256) = 64
+                AND payload_sha256 NOT GLOB '*[^0-9A-F]*'),
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (print_job_id) REFERENCES print_jobs (print_job_id),
+            FOREIGN KEY (printer_id) REFERENCES printer_profiles (printer_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_rendered_print_payloads_snapshot
+            ON rendered_print_payloads (snapshot_id, printer_id);
+
+        CREATE TRIGGER IF NOT EXISTS rendered_print_payload_immutable_update
+        BEFORE UPDATE ON rendered_print_payloads
+        BEGIN
+            SELECT RAISE(ABORT, 'Rendered Print Payload is immutable');
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -658,6 +683,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 9)
         {
             await MigrateToVersion9Async(connection, transaction, cancellationToken);
+        }
+
+        if (storedVersion < 10)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion10, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
