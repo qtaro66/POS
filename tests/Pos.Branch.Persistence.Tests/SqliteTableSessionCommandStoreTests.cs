@@ -6,6 +6,7 @@ using Pos.Application.TableSessions;
 using Pos.Application.Time;
 using Pos.Branch.Infrastructure.Sqlite;
 using Pos.Domain.TableSessions;
+using Pos.Printing.Abstractions;
 
 namespace Pos.Branch.Infrastructure.Sqlite.Tests;
 
@@ -19,10 +20,100 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
 
-        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("wal", await database.ScalarAsync<string>("PRAGMA journal_mode;"));
         Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA synchronous;"));
         Assert.Equal(store.DatabasePath, Path.GetFullPath(database.Path));
+    }
+
+    [Fact]
+    public async Task Active_printer_profile_is_resolved_by_branch_and_station()
+    {
+        await using var database = new TemporaryDatabase();
+        await database.CreateStoreAsync();
+        await database.ExecuteAsync("""
+            INSERT INTO printer_profiles (
+                printer_id, branch_id, display_name, production_station_id,
+                host, port, protocol, compatibility_profile_id,
+                manufacturer, model, product_code, firmware_version,
+                paper_width_millimeters, dpi, printable_width_dots,
+                render_mode, thai_encoding_mode, status_mode, supports_cash_drawer,
+                cutter_command_hex, drawer_pulse_command_hex, status_command_profile,
+                connect_timeout_ms, send_timeout_ms,
+                maximum_automatic_retries_before_send, automatic_retry_backoff_ms,
+                is_active, updated_at)
+            VALUES (
+                'PRINTER-01', 'BRANCH-01', 'ครัวร้อน', 'KITCHEN-HOT',
+                'printer-hot.branch.test', 9100, 'RawTcpEscPos',
+                'epson-tm-t82x-m352a-v1', 'Epson', 'TM-T82X', 'M352A',
+                '13.07 ESC/POS', 80, 203, 576, 'BitmapRaster',
+                'UnicodeRaster', 'SnmpPrinterMib', 0, '1D5601', NULL,
+                'snmp-printer-mib-v1', 2000, 10000, 3, 1000, 1,
+                '2026-10-15T08:00:00.0000000+00:00');
+            """);
+        var provider = new SqlitePrinterConfigurationProvider(database.Path);
+
+        var profile = await provider.FindActivePrinterAsync(
+            "BRANCH-01",
+            "KITCHEN-HOT",
+            CancellationToken.None);
+        var missing = await provider.FindActivePrinterAsync(
+            "BRANCH-02",
+            "KITCHEN-HOT",
+            CancellationToken.None);
+
+        Assert.NotNull(profile);
+        Assert.Equal("PRINTER-01", profile.PrinterId);
+        Assert.Equal("printer-hot.branch.test", profile.Host);
+        Assert.Equal(9100, profile.Port);
+        Assert.Equal(PrinterProtocol.RawTcpEscPos, profile.Protocol);
+        Assert.Equal(PrinterRenderMode.BitmapRaster, profile.RenderMode);
+        Assert.Equal(PrinterThaiEncodingMode.UnicodeRaster, profile.ThaiEncodingMode);
+        Assert.Equal(PrinterStatusMode.SnmpPrinterMib, profile.StatusMode);
+        Assert.Equal("1D5601", profile.CutterCommandHex);
+        Assert.Equal("snmp-printer-mib-v1", profile.StatusCommandProfile);
+        Assert.Equal(TimeSpan.FromSeconds(1), profile.AutomaticRetryBackoff);
+        Assert.Equal(576, profile.PrintableWidthDots);
+        Assert.Null(missing);
+    }
+
+    [Fact]
+    public async Task Database_rejects_two_active_printers_for_same_branch_station()
+    {
+        await using var database = new TemporaryDatabase();
+        await database.CreateStoreAsync();
+        const string columns = """
+            printer_id, branch_id, display_name, production_station_id,
+            host, port, protocol, compatibility_profile_id,
+            manufacturer, model, paper_width_millimeters, dpi,
+            printable_width_dots, render_mode, thai_encoding_mode, status_mode,
+            supports_cash_drawer, cutter_command_hex, drawer_pulse_command_hex,
+            status_command_profile, connect_timeout_ms, send_timeout_ms,
+            maximum_automatic_retries_before_send, automatic_retry_backoff_ms,
+            is_active, updated_at
+            """;
+        await database.ExecuteAsync($$"""
+            INSERT INTO printer_profiles ({{columns}})
+            VALUES (
+                'PRINTER-01', 'BRANCH-01', 'เครื่องหนึ่ง', 'KITCHEN-HOT',
+                'printer-1.branch.test', 9100, 'RawTcpEscPos', 'PROFILE-1',
+                'Epson', 'TM-T82X', 80, 203, 576, 'BitmapRaster',
+                'UnicodeRaster', 'Unsupported', 0, '1D5601', NULL, NULL,
+                2000, 10000, 3, 1000, 1,
+                '2026-10-15T08:00:00.0000000+00:00');
+            """);
+
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() =>
+            database.ExecuteAsync($$"""
+                INSERT INTO printer_profiles ({{columns}})
+                VALUES (
+                    'PRINTER-02', 'BRANCH-01', 'เครื่องสอง', 'KITCHEN-HOT',
+                    'printer-2.branch.test', 9100, 'RawTcpEscPos', 'PROFILE-1',
+                    'Epson', 'TM-T82X', 80, 203, 576, 'BitmapRaster',
+                    'UnicodeRaster', 'Unsupported', 0, '1D5601', NULL, NULL,
+                    2000, 10000, 3, 1000, 1,
+                    '2026-10-15T08:01:00.0000000+00:00');
+                """));
     }
 
     [Fact]
@@ -352,7 +443,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("table_sessions"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_preview_snapshots';"));
@@ -388,7 +479,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -419,7 +510,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>(
             "SELECT master_data_version FROM table_session_billing_policy WHERE table_session_id = 'TS-1';"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -454,7 +545,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>("""
             SELECT master_data_version FROM master_data_packages
             WHERE branch_id = 'BRANCH-01' AND lifecycle_status = 'Active';
@@ -493,7 +584,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT branch_sequence FROM order_batches WHERE order_batch_id = 'LEGACY-BATCH';"));
         Assert.Equal(
@@ -557,7 +648,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(7L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal("Cashier", await database.ScalarAsync<string>(
@@ -577,6 +668,33 @@ public sealed class SqliteTableSessionCommandStoreTests
                 WHERE type = 'table' AND name = 'print_jobs';
                 """),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Version_seven_database_adds_printer_configuration_tables()
+    {
+        await using var database = new TemporaryDatabase();
+        await database.CreateStoreAsync();
+        await database.ExecuteAsync("""
+            DROP TABLE printer_profile_audit;
+            DROP TABLE printer_profiles;
+            PRAGMA user_version = 7;
+            """);
+
+        var migratedStore = new SqliteTableSessionCommandStore(
+            database.Path,
+            new StaticBillPreviewContentSource());
+        await migratedStore.InitializeAsync();
+
+        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(1L, await database.ScalarAsync<long>("""
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'table' AND name = 'printer_profiles';
+            """));
+        Assert.Equal(1L, await database.ScalarAsync<long>("""
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'table' AND name = 'printer_profile_audit';
+            """));
     }
 
     [Fact]
@@ -916,14 +1034,14 @@ public sealed class SqliteTableSessionCommandStoreTests
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 8;");
+        await database.ExecuteAsync("PRAGMA user_version = 9;");
         var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 8", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(8L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 9", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(9L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]
