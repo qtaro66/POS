@@ -17,7 +17,7 @@ OpenAI agents are responsible for local development, analysis, and verification:
 2. Create a local task branch from the correct base commit.
 3. Implement code and documentation within the requested scope.
 4. Add or update automated tests.
-5. Run the relevant tests, lint, build, and local security checks.
+5. Run the relevant tests, lint, build, and local security checks through `tools/verify.ps1` (see Verification gate).
 6. Review the complete local diff for correctness, scope, secrets, and production data.
 7. Create one or more local commits after validation succeeds.
 8. Prepare a handoff summary for Antigravity.
@@ -54,6 +54,34 @@ Every OpenAI-to-Antigravity handoff must include:
 
 Both agents must stop and obtain explicit user approval before force-pushing, rewriting published history, bypassing branch protection, merging with failed required checks, publishing secrets or production data, or making a material change outside the original task scope.
 
+## Verification gate
+
+`tools/verify.ps1` is the single local verification gate. `.github/workflows/verify.yml` runs the same script on `ubuntu-latest` and `windows-latest`, so a local pass predicts a CI pass. It covers repository hygiene, whitespace, secret scanning, license headers (once REUSE is configured), .NET restore/format/build/test/vulnerable-package checks, and Node install/lint/test/build/audit.
+
+- OpenAI must run `pwsh tools/verify.ps1` (or double-click `tools/verify.cmd`) on the final local commit with a clean working tree before every handoff. It writes `validation.md` into the branch's handoff directory. A commit is validated only when that report shows `Commit` equal to the branch HEAD, `Working tree clean: yes`, and `Overall: PASS`.
+- `verify.ps1` fails when the working tree has uncommitted or untracked files. While iterating, `-AllowDirty` runs the checks anyway, but such a report is never valid for handoff.
+- Do not hand off with a failing step or with a step skipped on request (`-Skip` or `-AllowDirty`). A step reported `SKIPPED` because its component does not exist yet is acceptable.
+- When CI fails on something `verify.ps1` did not catch, add that check to `verify.ps1` in the same correction round so it is caught locally next time.
+- Tests that contact a printer, cash drawer, or other hardware must be tagged `[Trait("Category", "Hardware")]` (or the equivalent in other test frameworks). `verify.ps1` and CI never run them.
+- Do not weaken `verify.ps1` or the CI workflows (removing steps, adding `-Skip`, lowering severity thresholds) without explicit user approval.
+
+## Antigravity correction authority
+
+Antigravity may make only these corrections itself, without a new OpenAI round:
+
+- Formatting produced by `dotnet format` or the repository's configured formatter, with no other change.
+- Lint auto-fixes that do not change behavior (import order, unused imports, whitespace).
+- Typos in comments, documentation, and the pull request title or body.
+- Purely mechanical merge-conflict resolutions (for example, both sides added different entries to a list), resolved by merging `main` into the task branch, never by rebasing pushed commits.
+
+Each correction must be a separate commit prefixed `chore(antigravity):`, `verify.ps1` must pass on it before pushing, and the commit must be listed under "Corrections applied by Antigravity" in `from-antigravity.md`.
+
+Everything else returns to OpenAI with `NEEDS_CHANGES`, including any change to business logic, tests, contracts or schemas, database migrations, payment, printing, security, dependencies, CI workflows, or `verify.ps1`. When unsure, return it to OpenAI.
+
+## Changes requiring user approval before merge
+
+Following requirements D21.3, a pull request that touches contracts or schemas, payment, printing, security or CI configuration, database migrations, or licensing needs explicit user approval before Antigravity merges it, even when all checks pass. `tools/check-handoff.ps1` lists these areas and adds a notice to the pull request body. Antigravity keeps such a pull request at `PR_OPEN`, records "user approval pending" under "Reviews and unresolved objections", and merges only after the user approves, either by an approving GitHub review from the code owner or by an explicit approval in the conversation.
+
 ## File-based handoff protocol
 
 OpenAI and Antigravity exchange handoffs through ignored files in the same local repository. This protocol is available only when both agents use the same repository root and filesystem. If they are on different hosts, clones, or worktrees, stop and tell the user that file handoff is unavailable; do not assume that an ignored file will synchronize.
@@ -75,6 +103,8 @@ OpenAI and Antigravity exchange handoffs through ignored files in the same local
 | `to-antigravity.md` | OpenAI | Antigravity | Validated local commit ready for GitHub work |
 | `from-antigravity.md` | Antigravity | OpenAI | PR state, merge result, or exact correction request |
 | `log.md` | Both | Both | Append-only status history |
+| `validation.md` | `tools/verify.ps1` | Both | Generated verification report for the validated commit |
+| `pr-title.txt`, `pr-body.md` | `tools/check-handoff.ps1 -WritePr` | Antigravity | Pull request text for `gh pr create` |
 
 - Use UTF-8 without a byte-order mark and LF line endings.
 - Use UTC timestamps in ISO 8601 form, for example `2026-10-15T12:30:00Z`.
@@ -138,12 +168,7 @@ Updated:
 -
 
 ## Validation
-| Check | Command | Result |
-| --- | --- | --- |
-| Tests | | |
-| Lint | | |
-| Build | | |
-| Security | | |
+<Copy the full content of validation.md produced by tools/verify.ps1 on the final local commit, unedited. Add rows below it only for extra checks run by hand.>
 
 ## Risks, limitations, unresolved issues
 -
@@ -191,8 +216,8 @@ Updated:
 
 The user controls the sequence with these phrases:
 
-- To OpenAI, **`handoff`**: use the current checked-out task branch. Reject `main`, a detached HEAD, a dirty worktree, or an unvalidated commit. Write the next `to-antigravity.md` round with `READY`, append `log.md`, and stop. This is the only trigger that may infer the branch from the current checkout.
-- To Antigravity, **`take handoff <exact-branch>`** or **`รับ handoff <exact-branch>`**: the branch argument is mandatory. Resolve its handoff directory, validate `READY`, confirm the final commit equals the local branch HEAD, and run the GitHub workflow. Write `from-antigravity.md`, append `log.md`, and stop on a terminal status or `PR_OPEN`.
+- To OpenAI, **`handoff`**: use the current checked-out task branch. Reject `main`, a detached HEAD, a dirty worktree, or a commit without a passing `validation.md` (see Verification gate). Write the next `to-antigravity.md` round with `READY`, append `log.md`, and stop. This is the only trigger that may infer the branch from the current checkout.
+- To Antigravity, **`take handoff <exact-branch>`** or **`รับ handoff <exact-branch>`**: the branch argument is mandatory. Run `pwsh tools/check-handoff.ps1 <exact-branch> -WritePr`, which resolves the handoff directory and validates the header, `READY`, the final commit against the local branch HEAD, and `validation.md`. If it exits non-zero, do not push; write `BLOCKED` with its output. Otherwise run the GitHub workflow, creating the pull request with the generated `pr-title.txt` and `pr-body.md`. Write `from-antigravity.md`, append `log.md`, and stop on a terminal status or `PR_OPEN`.
 - To Antigravity, **`resume handoff <exact-branch>`**: the branch argument is mandatory. Resume only a matching `PR_OPEN` in the same round. Recheck the pull-request head, required checks, reviews, security results, and mergeability. Do not create a new round merely because checks were pending.
 - To OpenAI, **`take result <exact-branch>`** or **`รับผล <exact-branch>`**: the branch argument is mandatory even if Antigravity already switched to `main` or deleted the task branch. Read the matching `from-antigravity.md` and act by status:
   - `PR_OPEN`: report the pending checks or reviewers. Do not change code or create another round. Antigravity retains GitHub ownership.

@@ -1,4 +1,4 @@
-﻿namespace Pos.Platform.Windows;
+namespace Pos.Platform.Windows;
 
 public class Class1
 {

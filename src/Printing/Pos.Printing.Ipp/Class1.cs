@@ -1,4 +1,4 @@
-﻿namespace Pos.Printing.Ipp;
+namespace Pos.Printing.Ipp;
 
 public class Class1
 {
