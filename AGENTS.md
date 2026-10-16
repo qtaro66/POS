@@ -202,7 +202,7 @@ Updated:
 - Main commit: <merge or squash commit; empty until merged>
 - Content verification: <method and passed/failed; empty until merged>
 - Local main synchronized: <yes/no>
-- Task branch cleanup: <local and remote result>
+- Task branch cleanup: <actual local and remote result after cleanup was attempted; never write pending in a final MERGED result>
 
 ## Corrections requested
 <For NEEDS_CHANGES: one item per failed check or review comment, including file, line where available, evidence, and exact requested outcome. Leave empty otherwise.>
@@ -220,7 +220,7 @@ The user controls the sequence with these phrases:
 
 - To OpenAI, **`handoff`**: use the current checked-out task branch. Reject `main`, a detached HEAD, a dirty worktree, or a commit without a passing `validation.md` (see Verification gate). Write the next `to-antigravity.md` round with `READY`, append `log.md`, and stop. This is the only trigger that may infer the branch from the current checkout.
 - To Antigravity, **`take handoff <exact-branch>`** or **`รับ handoff <exact-branch>`**: the branch argument is mandatory. Run `pwsh tools/check-handoff.ps1 <exact-branch> -WritePr`, which resolves the handoff directory and validates the header, `READY`, the final commit against the local branch HEAD, and `validation.md`. If it exits non-zero, do not push; write `BLOCKED` with its output. Otherwise run the GitHub workflow, creating the pull request with the generated `pr-title.txt` and `pr-body.md`. Write `from-antigravity.md`, append `log.md`, and stop on a terminal status or `PR_OPEN`.
-- To Antigravity, **`resume handoff <exact-branch>`**: the branch argument is mandatory. Resume only a matching `PR_OPEN` in the same round. Recheck the pull-request head, required checks, reviews, security results, and mergeability. Do not create a new round merely because checks were pending.
+- To Antigravity, **`resume handoff <exact-branch>`**: the branch argument is mandatory. Resume a matching `PR_OPEN` in the same round, or a matching `MERGED` result only when it records a failed post-merge synchronization, content-verification, or cleanup operation. For `PR_OPEN`, recheck the pull-request head, required checks, reviews, security results, and mergeability. If GitHub already reports the pull request as merged, resume the post-merge synchronization, content verification, cleanup, and final result recording instead of attempting another merge. For `MERGED`, retry only the recorded failed post-merge operation and its dependent steps. Do not create a new round merely because checks were pending or post-merge finalization needed a retry.
 - To OpenAI, **`take result <exact-branch>`** or **`รับผล <exact-branch>`**: the branch argument is mandatory even if Antigravity already switched to `main` or deleted the task branch. Read the matching `from-antigravity.md` and act by status:
   - `PR_OPEN`: report the pending checks or reviewers. Do not change code or create another round. Antigravity retains GitHub ownership.
   - `NEEDS_CHANGES`: fetch any commits explicitly listed under corrections applied by Antigravity, make only the requested in-scope corrections, revalidate, commit, and create the next `READY` round.
@@ -233,5 +233,14 @@ If a mandatory branch argument is missing, stop and request the exact branch nam
 
 Antigravity retains responsibility for the existing pull request while the status is `PR_OPEN`. OpenAI must not modify the task merely because checks or reviews are pending. The user may invoke `resume handoff <exact-branch>` until Antigravity records `MERGED`, `NEEDS_CHANGES`, or `BLOCKED`.
 
-Antigravity must write the final `MERGED` result before switching to `main` or deleting the task branch. Ignored handoff files remain available after branch cleanup. OpenAI locates the result from the mandatory branch argument, not from the current checkout.
+After GitHub reports the pull request as merged, Antigravity must complete the post-merge workflow in this order:
+
+1. Switch to and synchronize local `main` with `origin/main`.
+2. Verify that the merged result contains the task content using the content-comparison rule above.
+3. Attempt both remote and local task-branch cleanup.
+4. Write the final `MERGED` result with the actual outcome of synchronization, content verification, and each cleanup operation, then append its `MERGED` log entry.
+
+Do not write `pending` for synchronization, verification, or cleanup in a final `MERGED` result. If a post-merge operation fails, the pull request is still merged and cannot be represented as `PR_OPEN`; write `MERGED`, record the exact failed operation and error in its corresponding merge-result field, and do not claim that operation succeeded. A later `resume handoff <exact-branch>` may retry only the failed post-merge operation and update the same round's `MERGED` result with another appended log entry.
+
+If Antigravity is interrupted after GitHub merges the pull request but before the final `MERGED` file is written, the existing `PR_OPEN` file remains the recovery point. On the next `resume handoff`, detect the merged pull request and finish the post-merge workflow above. Ignored handoff files remain available after branch cleanup because they are not branch-specific Git content. OpenAI locates the result from the mandatory branch argument, not from the current checkout.
 
