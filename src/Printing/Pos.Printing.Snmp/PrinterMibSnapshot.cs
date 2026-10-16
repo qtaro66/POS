@@ -10,8 +10,8 @@ public sealed record PrinterMibAlert
         }
 
         Code = code;
-        Description = string.IsNullOrWhiteSpace(description)
-            ? throw new ArgumentException("The alert description cannot be empty.", nameof(description))
+        Description = description is null
+            ? throw new ArgumentNullException(nameof(description))
             : description.Trim();
     }
 
