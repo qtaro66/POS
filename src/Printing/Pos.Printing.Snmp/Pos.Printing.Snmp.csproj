@@ -10,4 +10,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pos.Printing.Tests" />
+  </ItemGroup>
+
 </Project>
