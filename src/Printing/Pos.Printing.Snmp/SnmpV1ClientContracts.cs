@@ -16,11 +16,31 @@ public sealed record SnmpV1OctetStringValue : SnmpV1Value
     public string Value { get; }
 }
 
+public sealed record SnmpV1RawValue : SnmpV1Value
+{
+    private readonly byte[] _bytes;
+
+    public SnmpV1RawValue(byte tag, ReadOnlySpan<byte> bytes)
+    {
+        if ((tag & 0x20) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tag), "A raw value must be primitive.");
+        }
+
+        Tag = tag;
+        _bytes = bytes.ToArray();
+    }
+
+    public byte Tag { get; }
+
+    public ReadOnlyMemory<byte> Bytes => _bytes.ToArray();
+}
+
 public sealed record SnmpV1Variable
 {
     public SnmpV1Variable(string oid, SnmpV1Value value)
     {
-        Oid = RequireOid(oid);
+        Oid = SnmpObjectIdentifier.Normalize(oid);
         Value = value ?? throw new ArgumentNullException(nameof(value));
     }
 
@@ -28,25 +48,6 @@ public sealed record SnmpV1Variable
 
     public SnmpV1Value Value { get; }
 
-    private static string RequireOid(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException("The OID cannot be empty.", nameof(value));
-        }
-
-        var normalized = value.Trim().Trim('.');
-        var components = normalized.Split('.');
-        if (components.Length < 2 ||
-            components.Any(component =>
-                component.Length == 0 ||
-                component.Any(character => character is < '0' or > '9')))
-        {
-            throw new ArgumentException("The OID must contain decimal components.", nameof(value));
-        }
-
-        return normalized;
-    }
 }
 
 public sealed record SnmpV1WalkResult
