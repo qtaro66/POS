@@ -15,7 +15,8 @@ public sealed class EscPosRasterRenderingCompositionTests
         using var provider = Provider(new Dictionary<string, string?>
         {
             ["PrintSpoolPolling:Enabled"] = "false",
-            ["EscPosRasterRendering:FontFilePath"] = string.Empty
+            ["EscPosRasterRendering:FontFilePath"] = string.Empty,
+            ["EscPosRasterRendering:BoldFontFilePath"] = string.Empty
         });
 
         provider.GetRequiredService<IStartupValidator>().Validate();
@@ -31,7 +32,8 @@ public sealed class EscPosRasterRenderingCompositionTests
         {
             ["PrintSpoolPolling:Enabled"] = "true",
             ["PrintSpoolPolling:PrinterIds:0"] = "PRINTER-01",
-            ["EscPosRasterRendering:FontFilePath"] = missingFont
+            ["EscPosRasterRendering:FontFilePath"] = missingFont,
+            ["EscPosRasterRendering:BoldFontFilePath"] = missingFont
         });
 
         var exception = Assert.Throws<OptionsValidationException>(
@@ -51,6 +53,7 @@ public sealed class EscPosRasterRenderingCompositionTests
         var result = validator.Validate(null, new EscPosRasterRenderingOptions
         {
             FontFilePath = "relative-font.bin",
+            BoldFontFilePath = "relative-font.bin",
             MonochromeThreshold = 255
         });
 
@@ -65,6 +68,7 @@ public sealed class EscPosRasterRenderingCompositionTests
         var unsupportedResult = validator.Validate(null, new EscPosRasterRenderingOptions
         {
             FontFilePath = Path.GetFullPath("font.bin"),
+            BoldFontFilePath = Path.GetFullPath("font.bin"),
             MonochromeThreshold = 180
         });
         Assert.True(unsupportedResult.Failed);
@@ -74,18 +78,50 @@ public sealed class EscPosRasterRenderingCompositionTests
     }
 
     [Fact]
-    public void Enabled_polling_accepts_existing_readable_font_candidate()
+    public void Enabled_polling_requires_the_bold_font_independently()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"font-{Guid.NewGuid():N}.ttf");
+        var regularPath = Path.Combine(Path.GetTempPath(), $"font-regular-{Guid.NewGuid():N}.ttf");
+        var missingBoldPath = Path.Combine(Path.GetTempPath(), $"font-bold-missing-{Guid.NewGuid():N}.ttf");
         try
         {
-            File.WriteAllBytes(path, [0x00, 0x01, 0x00, 0x00]);
+            File.WriteAllBytes(regularPath, [0x00, 0x01, 0x00, 0x00]);
             var validator = new EscPosRasterRenderingOptionsValidator(
                 Options.Create(new PrintSpoolPollingOptions { Enabled = true }));
 
             var result = validator.Validate(null, new EscPosRasterRenderingOptions
             {
-                FontFilePath = path,
+                FontFilePath = regularPath,
+                BoldFontFilePath = missingBoldPath,
+                MonochromeThreshold = 180
+            });
+
+            Assert.True(result.Failed);
+            Assert.Contains(
+                result.Failures,
+                failure => failure.Contains("BoldFontFilePath", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(regularPath);
+        }
+    }
+
+    [Fact]
+    public void Enabled_polling_accepts_existing_readable_font_candidate()
+    {
+        var regularPath = Path.Combine(Path.GetTempPath(), $"font-regular-{Guid.NewGuid():N}.ttf");
+        var boldPath = Path.Combine(Path.GetTempPath(), $"font-bold-{Guid.NewGuid():N}.ttf");
+        try
+        {
+            File.WriteAllBytes(regularPath, [0x00, 0x01, 0x00, 0x00]);
+            File.WriteAllBytes(boldPath, [0x00, 0x01, 0x00, 0x00]);
+            var validator = new EscPosRasterRenderingOptionsValidator(
+                Options.Create(new PrintSpoolPollingOptions { Enabled = true }));
+
+            var result = validator.Validate(null, new EscPosRasterRenderingOptions
+            {
+                FontFilePath = regularPath,
+                BoldFontFilePath = boldPath,
                 MonochromeThreshold = 180
             });
 
@@ -93,7 +129,8 @@ public sealed class EscPosRasterRenderingCompositionTests
         }
         finally
         {
-            File.Delete(path);
+            File.Delete(regularPath);
+            File.Delete(boldPath);
         }
     }
 

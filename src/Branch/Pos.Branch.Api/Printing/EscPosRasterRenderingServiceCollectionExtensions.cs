@@ -27,6 +27,7 @@ public static class EscPosRasterRenderingServiceCollectionExtensions
                 .Value;
             return new SkiaThaiTextRasterizer(
                 options.FontFilePath.Trim(),
+                options.BoldFontFilePath.Trim(),
                 options.MonochromeThreshold);
         });
         services.AddSingleton<IPrintPayloadRenderer, EscPosRasterPayloadRenderer>();

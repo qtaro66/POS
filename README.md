@@ -53,4 +53,5 @@ GitHub pull requests run the same .NET and frontend checks automatically. Depend
 ## License
 
 Source code is licensed under the Mozilla Public License 2.0. Third-party assets retain their own licenses and notices.
+See [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) for bundled components that are licensed separately.
 

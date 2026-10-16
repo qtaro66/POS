@@ -9,20 +9,49 @@ public sealed class SkiaThaiTextRasterizer : IEscPosDocumentRasterizer, IDisposa
     private const int HorizontalMarginDots = 12;
     private const int BottomMarginDots = 16;
     private const int MaximumHeightDots = 60_000;
-    private readonly SKTypeface _typeface;
+    private readonly SKTypeface _regularTypeface;
+    private readonly SKTypeface _boldTypeface;
     private readonly int _threshold;
+    private readonly bool _synthesizeBold;
     private bool _disposed;
 
     public SkiaThaiTextRasterizer(string fontFilePath, int threshold = 180)
+        : this(fontFilePath, fontFilePath, threshold, synthesizeBold: true)
     {
-        if (string.IsNullOrWhiteSpace(fontFilePath))
+    }
+
+    public SkiaThaiTextRasterizer(
+        string regularFontFilePath,
+        string boldFontFilePath,
+        int threshold = 180)
+        : this(regularFontFilePath, boldFontFilePath, threshold, synthesizeBold: false)
+    {
+    }
+
+    private SkiaThaiTextRasterizer(
+        string regularFontFilePath,
+        string boldFontFilePath,
+        int threshold,
+        bool synthesizeBold)
+    {
+        if (string.IsNullOrWhiteSpace(regularFontFilePath))
         {
-            throw new ArgumentException("A Thai-capable font file is required.", nameof(fontFilePath));
+            throw new ArgumentException("A Thai-capable regular font file is required.", nameof(regularFontFilePath));
         }
 
-        if (!File.Exists(fontFilePath))
+        if (string.IsNullOrWhiteSpace(boldFontFilePath))
         {
-            throw new FileNotFoundException("The configured font file does not exist.", fontFilePath);
+            throw new ArgumentException("A Thai-capable bold font file is required.", nameof(boldFontFilePath));
+        }
+
+        if (!File.Exists(regularFontFilePath))
+        {
+            throw new FileNotFoundException("The configured regular font file does not exist.", regularFontFilePath);
+        }
+
+        if (!File.Exists(boldFontFilePath))
+        {
+            throw new FileNotFoundException("The configured bold font file does not exist.", boldFontFilePath);
         }
 
         if (threshold is < 1 or > 254)
@@ -30,8 +59,21 @@ public sealed class SkiaThaiTextRasterizer : IEscPosDocumentRasterizer, IDisposa
             throw new ArgumentOutOfRangeException(nameof(threshold));
         }
 
-        _typeface = SKTypeface.FromFile(fontFilePath)
-            ?? throw new InvalidDataException("SkiaSharp could not load the configured font file.");
+        var regularTypeface = SKTypeface.FromFile(regularFontFilePath)
+            ?? throw new InvalidDataException("SkiaSharp could not load the configured regular font file.");
+        try
+        {
+            _boldTypeface = SKTypeface.FromFile(boldFontFilePath)
+                ?? throw new InvalidDataException("SkiaSharp could not load the configured bold font file.");
+        }
+        catch
+        {
+            regularTypeface.Dispose();
+            throw;
+        }
+
+        _regularTypeface = regularTypeface;
+        _synthesizeBold = synthesizeBold;
         _threshold = threshold;
     }
 
@@ -70,7 +112,8 @@ public sealed class SkiaThaiTextRasterizer : IEscPosDocumentRasterizer, IDisposa
             Color = SKColors.Black,
             IsAntialias = true
         };
-        using var shaper = new SKShaper(_typeface);
+        using var regularShaper = new SKShaper(_regularTypeface);
+        using var boldShaper = new SKShaper(_boldTypeface);
         canvas.Clear(SKColors.White);
 
         var y = 0f;
@@ -94,6 +137,7 @@ public sealed class SkiaThaiTextRasterizer : IEscPosDocumentRasterizer, IDisposa
                 EscPosTextAlignment.Right => SKTextAlign.Right,
                 _ => throw new InvalidDataException("Unsupported text alignment.")
             };
+            var shaper = line.Source.Bold ? boldShaper : regularShaper;
             canvas.DrawShapedText(shaper, line.Text, x, baseline, alignment, font, paint);
             if (line.RightText is not null)
             {
@@ -121,19 +165,23 @@ public sealed class SkiaThaiTextRasterizer : IEscPosDocumentRasterizer, IDisposa
             return;
         }
 
-        _typeface.Dispose();
+        _regularTypeface.Dispose();
+        _boldTypeface.Dispose();
         _disposed = true;
     }
 
     private void EnsureGlyphCoverage(IEnumerable<EscPosTextLine> lines)
     {
-        using var font = CreateFont(27, false);
-        foreach (var text in lines.SelectMany(line => new[] { line.Text, line.RightText }))
+        foreach (var line in lines)
         {
-            if (!string.IsNullOrEmpty(text) && !font.ContainsGlyphs(text))
+            using var font = CreateFont(line.FontSize, line.Bold);
+            foreach (var text in new[] { line.Text, line.RightText })
             {
-                throw new InvalidDataException(
-                    "The configured font does not contain every glyph required by the document.");
+                if (!string.IsNullOrEmpty(text) && !font.ContainsGlyphs(text))
+                {
+                    throw new InvalidDataException(
+                        "The configured font does not contain every glyph required by the document.");
+                }
             }
         }
     }
@@ -149,7 +197,7 @@ public sealed class SkiaThaiTextRasterizer : IEscPosDocumentRasterizer, IDisposa
             cancellationToken.ThrowIfCancellationRequested();
             Validate(source);
             using var font = CreateFont(source.FontSize, source.Bold);
-            using var shaper = new SKShaper(_typeface);
+            using var shaper = new SKShaper(source.Bold ? _boldTypeface : _regularTypeface);
             var rightWidth = source.RightText is null ? 0 : Measure(shaper, font, source.RightText);
             var textWidth = source.RightText is null
                 ? availableWidth
@@ -215,9 +263,9 @@ public sealed class SkiaThaiTextRasterizer : IEscPosDocumentRasterizer, IDisposa
     private static float Measure(SKShaper shaper, SKFont font, string text) =>
         shaper.Shape(text, font).Width;
 
-    private SKFont CreateFont(float size, bool bold) => new(_typeface, size)
+    private SKFont CreateFont(float size, bool bold) => new(bold ? _boldTypeface : _regularTypeface, size)
     {
-        Embolden = bold,
+        Embolden = bold && _synthesizeBold,
         Edging = SKFontEdging.Antialias,
         Hinting = SKFontHinting.Normal
     };

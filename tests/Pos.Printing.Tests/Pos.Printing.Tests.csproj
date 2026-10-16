@@ -24,4 +24,11 @@
     <ProjectReference Include="..\..\src\Printing\Pos.Printing.Ipp\Pos.Printing.Ipp.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\assets\fonts\NotoSansThaiLooped\2.000\*">
+      <Link>Assets\Fonts\NotoSansThaiLooped\2.000\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

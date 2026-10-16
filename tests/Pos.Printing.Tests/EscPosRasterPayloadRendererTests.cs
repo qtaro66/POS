@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Pos.Printing.Abstractions;
 using Pos.Printing.EscPosTcp;
 
@@ -147,13 +148,7 @@ public sealed class EscPosRasterPayloadRendererTests
     [Fact]
     public void SkiaThaiTextRasterizer_RendersWithAvailableFontWithoutHardwareAccess()
     {
-        var fontPath = FindPortableTestFont();
-        if (fontPath is null)
-        {
-            return;
-        }
-
-        using var rasterizer = new SkiaThaiTextRasterizer(fontPath);
+        using var rasterizer = new SkiaThaiTextRasterizer(RegularFontPath, BoldFontPath);
         var raster = rasterizer.Rasterize(
             [new EscPosTextLine("Raster smoke test 123", FontSize: 24)],
             384,
@@ -165,21 +160,86 @@ public sealed class EscPosRasterPayloadRendererTests
     }
 
     [Fact]
-    public void SkiaThaiTextRasterizer_RendersThaiWhenAThaiFontIsAvailable()
+    public void SkiaThaiTextRasterizer_RendersThaiWithBundledFonts()
     {
-        var fontPath = FindThaiTestFont();
-        if (fontPath is null)
-        {
-            return;
-        }
-
-        using var rasterizer = new SkiaThaiTextRasterizer(fontPath);
+        using var rasterizer = new SkiaThaiTextRasterizer(RegularFontPath, BoldFontPath);
         var raster = rasterizer.Rasterize(
             [new EscPosTextLine("ทดสอบภาษาไทย สระ และวรรณยุกต์", FontSize: 28)],
             576,
             CancellationToken.None);
 
         Assert.Contains(raster.PackedRows.ToArray(), value => value != 0);
+    }
+
+    [Fact]
+    public void BundledThaiFontAssets_ArePinnedAndLicensed()
+    {
+        Assert.Equal(
+            "D941D72AC9043B0A376FCC36F1DD538ABFEC690259915E89F68CA48CC5772726",
+            Sha256File(RegularFontPath));
+        Assert.Equal(
+            "7F4D4D0A80CB7463F7E47B319149ED43E70C5CA0E01A4AFF670DC78F0ACC6162",
+            Sha256File(BoldFontPath));
+        Assert.Equal(
+            "DAD6E6ABC2BF3FC37CC698AF7607C3F4D4235039695713B222E5A034FB5B9B1C",
+            Sha256File(Path.Combine(FontAssetRoot, "OFL.txt")));
+
+        using var manifest = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(FontAssetRoot, "font-manifest.json")));
+        Assert.Equal("Noto Sans Thai Looped", manifest.RootElement.GetProperty("family").GetString());
+        Assert.Equal("2.000", manifest.RootElement.GetProperty("version").GetString());
+        Assert.Equal("SIL Open Font License 1.1", manifest.RootElement.GetProperty("license").GetString());
+        Assert.Equal(
+            "c62000b1b2328aa5e08470c1924ac9987fdb83b9",
+            manifest.RootElement.GetProperty("sourceCommit").GetString());
+        Assert.Equal(
+            "D82D9A0D4F7B453D6EDA8B3E10BE680B0265138F610E91E4F5E887222F8BDB79",
+            manifest.RootElement.GetProperty("sourceArchiveSha256").GetString());
+        var manifestHashes = manifest.RootElement
+            .GetProperty("files")
+            .EnumerateArray()
+            .ToDictionary(
+                file => file.GetProperty("path").GetString()!,
+                file => file.GetProperty("sha256").GetString()!,
+                StringComparer.Ordinal);
+        Assert.Equal(Sha256File(RegularFontPath), manifestHashes[Path.GetFileName(RegularFontPath)]);
+        Assert.Equal(Sha256File(BoldFontPath), manifestHashes[Path.GetFileName(BoldFontPath)]);
+        Assert.Equal(
+            Sha256File(Path.Combine(FontAssetRoot, "OFL.txt")),
+            manifestHashes["OFL.txt"]);
+    }
+
+    [Fact]
+    public void SkiaThaiTextRasterizer_PinnedFont_MatchesPlatformGoldenRaster()
+    {
+        using var rasterizer = new SkiaThaiTextRasterizer(RegularFontPath, BoldFontPath, threshold: 180);
+        var raster = rasterizer.Rasterize(
+            [
+                new EscPosTextLine(
+                    "ทดสอบภาษาไทย",
+                    FontSize: 36,
+                    Bold: true,
+                    Alignment: EscPosTextAlignment.Center),
+                new EscPosTextLine("กุ้งสด ผัดไทย ไข่ดาว", "105.00", FontSize: 28, TopSpacingDots: 8),
+                new EscPosTextLine("สระ: กะ กา กิ กี กึ กื กุ กู เก แก โก ใก ไก", FontSize: 24),
+                new EscPosTextLine("วรรณยุกต์: ก่ ก้ ก๊ ก๋ และ น้ำ", FontSize: 24),
+                new EscPosTextLine("หมายเหตุ: ไม่ใส่ถั่ว เพิ่มพริก", FontSize: 24, Bold: true)
+            ],
+            576,
+            CancellationToken.None);
+
+        Assert.Equal(576, raster.WidthDots);
+        Assert.Equal(244, raster.HeightDots);
+        var expectedSha256 = OperatingSystem.IsWindows()
+            ? "73D9AE75D84C881EFA862985D5E96EF223142F0FFA01251286F25FC136B6B068"
+            : OperatingSystem.IsLinux()
+                ? "9E2942624F5AECC94D803DD4C02B75DEC4CBF5CC9A6FE59F8AB047B3A97CBDF9"
+                : throw new PlatformNotSupportedException("Golden raster is approved only for Windows and Linux.");
+        var expectedBlackPixels = OperatingSystem.IsWindows() ? 11_102 : 10_935;
+        Assert.Equal(expectedSha256, Convert.ToHexString(SHA256.HashData(raster.PackedRows.Span)));
+        Assert.Equal(
+            expectedBlackPixels,
+            raster.PackedRows.Span.ToArray().Sum(value => System.Numerics.BitOperations.PopCount(value)));
     }
 
     private static PrintSourceDocument Document(PrintDocumentKind kind, string json)
@@ -242,29 +302,21 @@ public sealed class EscPosRasterPayloadRendererTests
         return false;
     }
 
-    private static string? FindPortableTestFont()
-    {
-        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        var candidates = new[]
-        {
-            string.IsNullOrWhiteSpace(windows) ? null : Path.Combine(windows, "Fonts", "arial.ttf"),
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        };
-        return candidates.FirstOrDefault(path => path is not null && File.Exists(path));
-    }
+    private static string Sha256File(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
 
-    private static string? FindThaiTestFont()
-    {
-        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        var candidates = new[]
-        {
-            string.IsNullOrWhiteSpace(windows) ? null : Path.Combine(windows, "Fonts", "tahoma.ttf"),
-            "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
-            "/usr/share/fonts/opentype/noto/NotoSansThai-Regular.ttf"
-        };
-        return candidates.FirstOrDefault(path => path is not null && File.Exists(path));
-    }
+    private static string FontAssetRoot => Path.Combine(
+        AppContext.BaseDirectory,
+        "Assets",
+        "Fonts",
+        "NotoSansThaiLooped",
+        "2.000");
+
+    private static string RegularFontPath =>
+        Path.Combine(FontAssetRoot, "NotoSansThaiLooped-Regular.ttf");
+
+    private static string BoldFontPath =>
+        Path.Combine(FontAssetRoot, "NotoSansThaiLooped-Bold.ttf");
 
     private sealed class CapturingRasterizer(int heightDots = 2) : IEscPosDocumentRasterizer
     {
