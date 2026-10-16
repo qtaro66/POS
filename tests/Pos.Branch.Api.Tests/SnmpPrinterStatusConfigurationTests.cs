@@ -50,6 +50,33 @@ public sealed class SnmpPrinterStatusConfigurationTests
     }
 
     [Fact]
+    public void Enabled_configuration_composes_singletons_without_starting_background_work()
+    {
+        using var provider = Provider(EnabledValues());
+        provider.GetRequiredService<IStartupValidator>().Validate();
+
+        var community = provider.GetRequiredService<ISnmpV1CommunityProvider>();
+        var transport = provider.GetRequiredService<ISnmpV1DatagramTransport>();
+        var requestIds = provider.GetRequiredService<ISnmpV1RequestIdSource>();
+        var client = provider.GetRequiredService<ISnmpV1PrinterClient>();
+        var reader = provider.GetRequiredService<IPrinterMibSnapshotReader>();
+        var evaluator = Assert.Single(provider.GetServices<IPrinterMibConditionEvaluator>());
+        var probe = provider.GetRequiredService<IPrinterConditionProbe>();
+
+        Assert.IsType<EnvironmentVariableSnmpV1CommunityProvider>(community);
+        Assert.IsType<SnmpV1UdpDatagramTransport>(transport);
+        Assert.IsType<CryptographicSnmpV1RequestIdSource>(requestIds);
+        Assert.IsType<BoundedSnmpV1PrinterClient>(client);
+        Assert.IsType<EpsonTmT82xM352ASnapshotReader>(reader);
+        Assert.IsType<EpsonTmT82xM352AConditionEvaluator>(evaluator);
+        Assert.IsType<SnmpPrinterConditionProbe>(probe);
+        Assert.Same(community, provider.GetRequiredService<ISnmpV1CommunityProvider>());
+        Assert.Same(probe, provider.GetRequiredService<IPrinterConditionProbe>());
+        Assert.Empty(provider.GetServices<IHostedService>());
+        Assert.Null(provider.GetService<IPrintSpoolCycleProcessor>());
+    }
+
+    [Fact]
     public void Enabled_configuration_requires_at_least_one_secret_mapping()
     {
         var values = EnabledValues();
@@ -145,7 +172,7 @@ public sealed class SnmpPrinterStatusConfigurationTests
             .Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSnmpPrinterStatusConfiguration(configuration);
+        services.AddSnmpPrinterStatus(configuration);
         return services.BuildServiceProvider();
     }
 }
