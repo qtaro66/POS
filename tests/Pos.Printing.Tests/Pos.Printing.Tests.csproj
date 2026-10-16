@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\Printing\Pos.Printing.Abstractions\Pos.Printing.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Printing\Pos.Printing.EscPosTcp\Pos.Printing.EscPosTcp.csproj" />
     <ProjectReference Include="..\..\src\Printing\Pos.Printing.Ipp\Pos.Printing.Ipp.csproj" />
+    <ProjectReference Include="..\..\src\Printing\Pos.Printing.Snmp\Pos.Printing.Snmp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
