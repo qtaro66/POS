@@ -25,3 +25,6 @@
 *.woff2 binary
 *.cmd text eol=crlf
 *.bat text eol=crlf
+
+# Preserve the upstream OFL license bytes recorded in the font manifest.
+assets/fonts/NotoSansThaiLooped/2.000/OFL.txt -text -whitespace

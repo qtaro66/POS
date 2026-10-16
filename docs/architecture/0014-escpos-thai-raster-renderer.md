@@ -29,8 +29,8 @@ The same source JSON, printer profile, font file, threshold, and renderer versio
 
 ## Deliberately outside this slice
 
-- committing a font asset and its third-party license to the repository
-- Branch API dependency-injection and font-path configuration
+- font asset pinning, license notice and golden-raster verification are defined by ADR 0016
+- Branch API dependency-injection and font-path configuration are defined by ADR 0015
 - RAW TCP transport, condition probing, and physical-printer verification
 - receipt, cancellation, transfer, reprint, and cash-drawer document renderers
 - visual golden-image approval for the final production font and paper
