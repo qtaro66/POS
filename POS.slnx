@@ -20,6 +20,7 @@
     <Project Path="src/Printing/Pos.Printing.Abstractions/Pos.Printing.Abstractions.csproj" />
     <Project Path="src/Printing/Pos.Printing.EscPosTcp/Pos.Printing.EscPosTcp.csproj" />
     <Project Path="src/Printing/Pos.Printing.Ipp/Pos.Printing.Ipp.csproj" />
+    <Project Path="src/Printing/Pos.Printing.Snmp/Pos.Printing.Snmp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Pos.Application.Tests/Pos.Application.Tests.csproj" />
