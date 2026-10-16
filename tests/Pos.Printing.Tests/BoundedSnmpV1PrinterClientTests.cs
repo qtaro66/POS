@@ -257,6 +257,38 @@ public sealed class BoundedSnmpV1PrinterClientTests
         Assert.Equal(source.Token, transport.LastCancellationToken);
     }
 
+    [Fact]
+    public async Task Community_secret_buffer_is_zeroed_after_a_successful_exchange()
+    {
+        var community = new FakeCommunityProvider("public"u8.ToArray());
+        var client = new BoundedSnmpV1PrinterClient(
+            community,
+            new FakeTransport(Response(
+                1,
+                SystemDescriptionOid,
+                new SnmpV1OctetStringValue("Test"))),
+            new FixedRequestIdSource(1));
+
+        await client.GetAsync(Profile(), SystemDescriptionOid, CancellationToken.None);
+
+        Assert.All(community.LastLeaseBytes.ToArray(), value => Assert.Equal(0, value));
+    }
+
+    [Fact]
+    public async Task Community_secret_buffer_is_zeroed_when_transport_fails()
+    {
+        var community = new FakeCommunityProvider("public"u8.ToArray());
+        var client = new BoundedSnmpV1PrinterClient(
+            community,
+            new ThrowingTransport(new IOException("simulated transport failure")),
+            new FixedRequestIdSource(1));
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            client.GetAsync(Profile(), SystemDescriptionOid, CancellationToken.None));
+
+        Assert.All(community.LastLeaseBytes.ToArray(), value => Assert.Equal(0, value));
+    }
+
     public static TheoryData<byte[]> InvalidResponses
     {
         get
@@ -397,13 +429,17 @@ public sealed class BoundedSnmpV1PrinterClientTests
 
         public CancellationToken LastCancellationToken { get; private set; }
 
-        public ValueTask<ReadOnlyMemory<byte>> GetCommunityAsync(
+        public ReadOnlyMemory<byte> LastLeaseBytes { get; private set; }
+
+        public ValueTask<SnmpV1CommunitySecret> GetCommunityAsync(
             PrinterProfile profile,
             CancellationToken cancellationToken)
         {
             CallCount++;
             LastCancellationToken = cancellationToken;
-            return ValueTask.FromResult<ReadOnlyMemory<byte>>(community);
+            var secret = new SnmpV1CommunitySecret(community);
+            LastLeaseBytes = secret.Bytes;
+            return ValueTask.FromResult(secret);
         }
     }
 

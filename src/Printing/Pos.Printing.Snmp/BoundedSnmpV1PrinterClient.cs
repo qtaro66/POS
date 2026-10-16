@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Pos.Printing.Abstractions;
 
 namespace Pos.Printing.Snmp;
@@ -28,12 +29,12 @@ public sealed class BoundedSnmpV1PrinterClient : ISnmpV1PrinterClient
     {
         ArgumentNullException.ThrowIfNull(profile);
         var normalizedOid = SnmpObjectIdentifier.Normalize(oid);
-        var community = await ResolveCommunityAsync(profile, cancellationToken);
+        using var community = await ResolveCommunityAsync(profile, cancellationToken);
         return await ExchangeAsync(
             profile,
             SnmpV1RequestType.Get,
             normalizedOid,
-            community,
+            community.Bytes,
             cancellationToken);
     }
 
@@ -50,7 +51,7 @@ public sealed class BoundedSnmpV1PrinterClient : ISnmpV1PrinterClient
         }
 
         var normalizedSubtree = SnmpObjectIdentifier.Normalize(subtreeOid);
-        var community = await ResolveCommunityAsync(profile, cancellationToken);
+        using var community = await ResolveCommunityAsync(profile, cancellationToken);
         var currentOid = normalizedSubtree;
         var variables = new List<SnmpV1Variable>();
         for (var index = 0; index < maximumVariables; index++)
@@ -59,7 +60,7 @@ public sealed class BoundedSnmpV1PrinterClient : ISnmpV1PrinterClient
                 profile,
                 SnmpV1RequestType.GetNext,
                 currentOid,
-                community,
+                community.Bytes,
                 cancellationToken);
             if (SnmpObjectIdentifier.Compare(variable.Oid, currentOid) <= 0)
             {
@@ -96,21 +97,36 @@ public sealed class BoundedSnmpV1PrinterClient : ISnmpV1PrinterClient
             requestId,
             community.Span,
             oid);
-        var response = await _transport.ExchangeAsync(profile, request, cancellationToken);
-        return SnmpV1MessageCodec.DecodeResponse(response, requestId, community.Span);
+        try
+        {
+            var response = (await _transport.ExchangeAsync(
+                profile,
+                request,
+                cancellationToken)).ToArray();
+            try
+            {
+                return SnmpV1MessageCodec.DecodeResponse(
+                    response,
+                    requestId,
+                    community.Span);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(response);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(request);
+        }
     }
 
-    private async ValueTask<ReadOnlyMemory<byte>> ResolveCommunityAsync(
+    private async ValueTask<SnmpV1CommunitySecret> ResolveCommunityAsync(
         PrinterProfile profile,
         CancellationToken cancellationToken)
     {
-        var resolved = await _communityProvider.GetCommunityAsync(profile, cancellationToken);
-        if (resolved.IsEmpty || resolved.Length > 255)
-        {
-            throw new InvalidOperationException(
-                "The SNMP community provider returned an invalid byte length.");
-        }
-
-        return resolved.ToArray();
+        return await _communityProvider.GetCommunityAsync(profile, cancellationToken)
+            ?? throw new InvalidOperationException(
+                "The SNMP community provider returned no secret lease.");
     }
 }
