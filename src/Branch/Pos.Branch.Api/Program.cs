@@ -4,6 +4,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
+builder.Services.AddEscPosRasterRendering(builder.Configuration);
 
 var app = builder.Build();
 
