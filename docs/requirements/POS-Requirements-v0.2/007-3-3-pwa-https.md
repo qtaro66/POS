@@ -1,0 +1,44 @@
+
+### 3.3 PWA, HTTPS และการค้นหาบริการสาขา
+
+- Mobile ที่เปิดบริการสาขาผ่าน LAN ไม่ได้อยู่บน `localhost` ของโทรศัพท์ จึงต้องใช้ HTTPS ที่ Android และ iOS เชื่อถือเพื่อรองรับ PWA/Service Worker และป้องกันการดักแก้ข้อมูลในเครือข่ายร้าน
+- **D11 ยืนยันสำหรับ Phase 0:** ใช้ Private CA โดยติดตั้ง Root CA certificate ให้เป็น trusted certificate บนอุปกรณ์ Android/iOS ที่ใช้ทดสอบ
+- Private CA private key ต้องเก็บบนเครื่องดูแลระบบที่ควบคุมสิทธิ์และมี backup ที่เข้ารหัส ห้ามคัดลอก private key ของ CA ไปยัง PC สาขา, Mobile, source code หรือ repository
+- Network Gateway เช่น TP-Link ER707-M2 ไม่เก็บ Root/Intermediate CA private key ใช้เฉพาะงานเครือข่าย เช่น DHCP reservation, firewall, VLAN, routing และ VPN ตามความจำเป็น
+- แต่ละสาขาได้รับ server certificate และ private key ของสาขาตนเอง โดย certificate ต้องมี SAN ตรงกับ hostname ที่ Mobile ใช้จริง เช่น `branch-001.pos.internal`
+- PC สาขาเก็บเฉพาะ private key ของ server certificate ตนเอง ไม่สามารถออก certificate ให้สาขาหรืออุปกรณ์อื่น
+- การติดตั้ง Root CA ใน Phase 0 ทำด้วยตนเองได้ แต่ต้องบันทึกขั้นตอนติดตั้ง/เปิด Full Trust/ถอน certificate สำหรับ Android และ iOS และต้องทดสอบใหม่เมื่อเปลี่ยนอุปกรณ์
+- ห้ามใช้การกดยอมรับ certificate warning, ปิด certificate validation หรือ fallback ไป HTTP หาก certificate ผิด หมดอายุ หรือยังไม่ trusted
+- ก่อน production ต้องทบทวนว่าจะใช้ Private CA ต่อพร้อมระบบจัดการอุปกรณ์/CA lifecycle หรือเปลี่ยนเป็น public domain และ Public CA
+- ต้องกำหนด hostname ของบริการสาขา วิธีออก/ติดตั้ง/ต่ออายุ certificate, local DNS หรือ discovery, port และ firewall rule ของระบบปฏิบัติการที่ใช้
+- **D11 ยืนยันสำหรับ Phase 0:** ใช้ QR pairing เป็นวิธีจับคู่ Mobile กับสาขา
+- QR ต้องสร้างโดย Branch Service ภายในร้านและเปิดแสดงผ่านหน้าที่มีสิทธิ์บน PC POS ประกอบด้วย HTTPS URL/branch identifier, `pairingId` และ random one-time token อายุ 5 นาที
+- ผู้ใช้ทุกคนที่ authentication เข้าใช้งาน POS สำเร็จมีสิทธิ์สร้าง QR pairing ไม่กำหนด role หรือ PIN ยืนยันซ้ำเป็นพิเศษ แต่ต้องบันทึก employee/user ID ผู้สร้างใน audit log
+- QR ห้ามบรรจุ PIN พนักงาน, CA private key, server private key, รหัสผ่านฐานข้อมูล หรือ device credential แบบถาวร
+- Token ต้องใช้ได้ครั้งเดียว ตรวจสอบและใช้โดย Branch Service ได้แม้อินเทอร์เน็ตขาดแต่ LAN ยังทำงาน และต้องปฏิเสธเมื่อหมดอายุหรือถูกใช้แล้ว
+- ผู้สร้าง QR แต่ละคนมี token ที่ยัง active ได้ครั้งละหนึ่งชุด การสร้าง QR ใหม่ต้องยกเลิก token เก่าที่ยังไม่ได้ใช้ของผู้สร้างคนนั้นโดยอัตโนมัติ
+- การจับคู่ Mobile หลายเครื่องต้องสร้าง QR แยกต่ออุปกรณ์ ห้ามใช้ QR เดียวแบบหลายครั้ง
+- Token ต้องสร้างจาก cryptographically secure random อย่างน้อย 128 บิต และ Branch Service เก็บเฉพาะ hash หลังแสดง QR
+- เมื่อ pairing สำเร็จ Branch Service สร้าง device record และออก device credential ที่เพิกถอนได้ให้ Mobile โดยบันทึก device ID, ชื่ออุปกรณ์, สาขา, ผู้อนุมัติ และเวลา
+- Device authentication แยกจาก employee login; การ pair อุปกรณ์ไม่ได้ให้สิทธิ์ทำรายการแทนพนักงานโดยอัตโนมัติ
+- หากผู้ใช้ล้าง browser data, สูญเสีย device credential หรือเปลี่ยนอุปกรณ์ ต้อง pair ใหม่
+- การจับคู่ครั้งแรกต้องยืนยันตัวตนของสาขาและอุปกรณ์ ไม่เชื่อถือเพียงการอยู่ใน Wi-Fi เดียวกัน
+- **D11 ยืนยันสำหรับ Phase 0:** Branch Service ใช้ IP ที่ทำ DHCP reservation เป็น URL เช่น `https://192.168.1.10` และ server certificate ต้องมี IP address นั้นใน Subject Alternative Name (SAN) ห้ามเชื่อมด้วย IP อื่นที่ certificate ไม่ครอบคลุม
+- Phase 0 ยังไม่บังคับ Local DNS/hostname เมื่อเปลี่ยน IP ต้องออก server certificate ใหม่และอัปเดต QR/การตั้งค่าที่เกี่ยวข้องก่อนใช้งาน
+- Branch Database เก็บ employee record, role/status และ PIN verifier ล่าสุดไว้โดยไม่กำหนดวันหมดอายุ เพื่อให้ login ได้ขณะ Cloud/อินเทอร์เน็ตใช้งานไม่ได้
+- การเพิกถอนพนักงานจากส่วนกลางมีผลทันทีเมื่อ Branch Service ออนไลน์และได้รับการเปลี่ยนแปลง หากสาขา offline จะมีผลทันทีในการซิงก์ครั้งแรกหลังเชื่อมต่อกลับ การรับผลจากส่วนกลางแบบทันทีขณะไม่มีเส้นทางสื่อสารเป็นไปไม่ได้
+- การเพิกถอนพนักงานจาก PC POS ภายในสาขามีผลต่อ Branch Service ได้ทันทีแม้อินเทอร์เน็ตขาด และต้องซิงก์เหตุการณ์กลับส่วนกลางเมื่อออนไลน์
+- POS/Mobile ต้องแสดงเวลา sync ข้อมูลพนักงานล่าสุดและสถานะ Offline เพื่อให้ผู้ใช้ทราบว่าการเพิกถอนจากส่วนกลางอาจยังมาไม่ถึง
+- **D11 ยืนยันสำหรับ Phase 0:** Device credential ไม่มีวันหมดอายุตายตัว ใช้ได้จนถูกเพิกถอน สูญหายจาก browser storage หรือมีการ reset ระบบ โดย Branch Service ต้องตรวจสถานะ Active/Revoked ของ device ในทุก protected request และสามารถ rotate credential แบบโปร่งใสได้
+- ต้องเพิกถอน Mobile รายเครื่องได้ โดยการเพิกถอนในสาขามีผลทันที และการเพิกถอนจากส่วนกลางอยู่ภายใต้ข้อจำกัดการเชื่อมต่อเดียวกับข้อมูลพนักงาน
+- Device record มีสถานะขั้นต่ำ `Active`, `Revoked`, `Lost` และเก็บ device ID, ชื่ออุปกรณ์, ผู้สร้าง QR, วันที่ pair, ผู้ใช้ล่าสุด, last seen, ผู้เพิกถอน, เวลาและเหตุผล
+- ผู้ใช้ที่ authentication เข้า POS สำเร็จทุกคนมีสิทธิ์เพิกถอนอุปกรณ์ตามนโยบายเดียวกับการสร้าง QR และทุกการกระทำต้องมี audit log
+- Credential ที่ถูก revoke ห้ามนำกลับมา Active อีก หากต้องการใช้ Mobile เดิมต้อง pair ใหม่และออก credential ใหม่ โดยไม่ลบประวัติ device record เดิม
+- หาก Mobile ล้าง browser data หรือ credential สูญหาย ให้ mark/revoke record เก่าและ pair ใหม่
+- **D11 ยืนยัน CA lifecycle สำหรับ Phase 0:** ใช้ Root CA อายุ 10 ปี, Intermediate Issuing CA อายุ 3 ปี และ Branch Server Certificate อายุ 1 ปี ค่าเหล่านี้เป็นนโยบายของต้นแบบและต้องทบทวนอีกครั้งก่อน production
+- Root CA private key เก็บ offline พร้อม backup เข้ารหัส 2 ชุดแยกสถานที่; Intermediate private key เก็บบนเครื่องดูแลระบบ; Branch PC เก็บเฉพาะ server certificate/private key ของสาขา; Mobile เก็บเฉพาะ Root CA public certificate
+- ต้องมี certificate inventory ซึ่งบันทึก serial number, fingerprint, SAN/IP, สาขา, วันที่ออก, วันหมดอายุ และสถานะ
+- แจ้งเตือน certificate ล่วงหน้า 60, 30, 14 และ 7 วัน และต่ออายุ Branch certificate อย่างช้าที่ 30 วันก่อนหมดอายุ โดยมีช่วงทับซ้อนเพื่อทดสอบ certificate ใหม่ก่อนสลับ
+- การต่ออายุ Branch certificate ภายใต้ Root เดิมต้องไม่บังคับติดตั้ง Root CA ใหม่บน Mobile
+- หาก Branch private key รั่วให้ออก key/certificate ใหม่และหยุดใช้ของเดิม; หาก Intermediate key รั่วให้ออก Intermediate และ Branch certificate ใหม่; หาก Root key สูญหายหรือรั่วให้สร้าง Root ใหม่ ติดตั้ง trust ใหม่บน Mobile และ reissue certificate ทั้งหมด โดยกรณีรั่วต้องนำ Root เดิมออกจากทุกอุปกรณ์
+- ห้ามสมมติว่า browser จะส่งงานเบื้องหลังได้เสมอ Mobile ต้องแสดง outbox และตรวจสถานะอีกครั้งเมื่อผู้ใช้กลับเข้าแอป
