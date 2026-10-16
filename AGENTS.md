@@ -10,6 +10,12 @@
 - After sending begins, an uncertain print result is `Unknown` and must not be retried automatically.
 - Never commit secrets, private keys, real device identifiers, customer data, production databases, or local hardware evidence.
 
+## Communication
+
+- Reply to the user in concise English unless the user asks for another language. Requirements stay in their original language; quote Thai text only when the exact wording matters.
+- Report outcomes, not process: what changed, the validation result, and any blocker or decision needed. Do not paste full command output, diffs, or file contents unless asked; reference the file, line, or log path instead.
+- Keep handoff files, commit messages, pull request text, and code comments in English.
+
 ## OpenAI and Antigravity responsibilities
 
 OpenAI agents are responsible for local development, analysis, and verification:
