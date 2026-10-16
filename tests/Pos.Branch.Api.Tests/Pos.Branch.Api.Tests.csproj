@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Branch\Pos.Branch.Api\Pos.Branch.Api.csproj" />
     <ProjectReference Include="..\..\src\Printing\Pos.Printing.EscPosTcp\Pos.Printing.EscPosTcp.csproj" />
+    <ProjectReference Include="..\..\src\Printing\Pos.Printing.Snmp\Pos.Printing.Snmp.csproj" />
   </ItemGroup>
 
 </Project>
