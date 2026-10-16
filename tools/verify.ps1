@@ -33,6 +33,12 @@
     Run the checks on uncommitted work while iterating. The working-tree step is
     then reported as SKIPPED (requested), so the report is never valid for handoff.
 
+.PARAMETER Quiet
+    For agents: print one line per step instead of full tool output. A failing
+    step also prints a short excerpt (error lines, then the last lines). Full
+    output of every step is saved under .handoff/<branch-dir>/verify-logs/.
+    The checks and the report are identical to a normal run.
+
 .PARAMETER ReportPath
     Where to write the markdown report. Defaults to .handoff/<branch-slug>--<branch-id>/validation.md
     outside CI. Use '' to disable.
@@ -46,7 +52,8 @@
 param(
     [string[]]$Skip = @(),
     [string]$ReportPath,
-    [switch]$AllowDirty
+    [switch]$AllowDirty,
+    [switch]$Quiet
 )
 
 Set-StrictMode -Version Latest
@@ -138,20 +145,44 @@ function Invoke-Step {
     if ($Skip -contains $Name) { Add-Result $Name $Display 'SKIPPED' 'requested with -Skip' 0; return }
     if ($Tool -and -not (Test-Tool $Tool)) { Add-Result $Name $Display 'FAIL' "required tool '$Tool' is not installed" 0; return }
 
-    Write-Host "`n==> $Name : $Display" -ForegroundColor Cyan
+    if (-not $Quiet) { Write-Host "`n==> $Name : $Display" -ForegroundColor Cyan }
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $global:LASTEXITCODE = 0
     $captured = @()
-    & $Run 2>&1 | Tee-Object -Variable captured | Out-Host
+    if ($Quiet) { $captured = @(& $Run *>&1) }
+    else { & $Run *>&1 | Tee-Object -Variable captured | Out-Host }
     $code = $global:LASTEXITCODE
     $sw.Stop()
-    $text = ($captured | Out-String)
+    $text = ($captured | Out-String -Width 400)
+    if ($Quiet) { Save-StepLog $Name $text }
 
     $note = ''
     if ($code -eq 0 -and $Check) { $note = & $Check $text }
     if ($code -ne 0) { Add-Result $Name $Display 'FAIL' "exit code $code" $sw.Elapsed.TotalSeconds }
     elseif ($note) { Add-Result $Name $Display 'FAIL' $note $sw.Elapsed.TotalSeconds }
     else { Add-Result $Name $Display 'PASS' '' $sw.Elapsed.TotalSeconds }
+    if ($Quiet -and $results[$results.Count - 1].Status -eq 'FAIL') { Write-Excerpt $Name $text }
+}
+
+# --- Quiet mode helpers --------------------------------------------------------
+$script:logDir = $null
+function Save-StepLog([string]$Name, [string]$Text) {
+    if ($isCI) { return }
+    if (-not $script:logDir) {
+        $script:logDir = Join-Path (Get-HandoffDir (& git rev-parse --abbrev-ref HEAD)).Path 'verify-logs'
+        New-Item -ItemType Directory -Force -Path $script:logDir | Out-Null
+    }
+    Set-Content -Path (Join-Path $script:logDir "$Name.log") -Value $Text -Encoding utf8NoBOM
+}
+# Error-looking lines first (max 25), then the last 15 lines, without duplicates.
+function Write-Excerpt([string]$Name, [string]$Text) {
+    $all = @($Text -split "`r?`n" | Where-Object { $_.Trim() })
+    $pattern = '(?i)\berror\b|\bfailed\b|\bfail\b|exception|\bwarn(ing)?\b|: (CS|NU|MSB|NETSDK|IDE|CA)\d{4}|leaks? found|vulnerab|trailing whitespace|blank line at EOF'
+    $picked = [System.Collections.Generic.List[string]]::new()
+    foreach ($l in ($all | Where-Object { $_ -match $pattern } | Select-Object -First 25)) { if (-not $picked.Contains($l)) { $picked.Add($l) } }
+    foreach ($l in ($all | Select-Object -Last 15)) { if (-not $picked.Contains($l)) { $picked.Add($l) } }
+    foreach ($l in $picked) { Write-Host "    | $($l.TrimEnd())" -ForegroundColor DarkGray }
+    if ($script:logDir) { Write-Host "    full log: $(Join-Path $script:logDir "$Name.log")" -ForegroundColor DarkGray }
 }
 
 function Skip-Absent([string]$Name, [string]$Display, [string]$Why) { Add-Result $Name $Display 'SKIPPED' $Why 0 }
@@ -245,6 +276,23 @@ Invoke-Step -Name 'secret-scan' -Tool 'gitleaks' `
     }
 
 # ---------------------------------------------------------------------------
+# Requirements reading copy (tools/split-requirements.ps1) must match its source
+# ---------------------------------------------------------------------------
+$reqSources = @()
+if ((Test-Path 'tools/split-requirements.ps1') -and (Test-Path 'docs/requirements')) {
+    $reqSources = @(Get-ChildItem -Path 'docs/requirements' -File -Filter '*.md' | Sort-Object Name)
+}
+if ($reqSources.Count -eq 0) {
+    Skip-Absent 'requirements-split' 'split-requirements.ps1 -Check' 'no split script or no requirements documents'
+}
+foreach ($src in $reqSources) {
+    $rel = "docs/requirements/$($src.Name)"
+    $stepName = 'requirements-split-' + ([IO.Path]::GetFileNameWithoutExtension($src.Name) -replace '[^A-Za-z0-9.]+', '-').ToLowerInvariant()
+    Invoke-Step -Name $stepName -Tool 'pwsh' -Display "split-requirements.ps1 -Check -Source $rel" `
+        -Run { & pwsh -NoProfile -File tools/split-requirements.ps1 -Check -Source $rel }.GetNewClosure()
+}
+
+# ---------------------------------------------------------------------------
 # 3. License headers (D21.2 / D21.4: REUSE / SPDX)
 # ---------------------------------------------------------------------------
 if ((Test-Path 'REUSE.toml') -or (Test-Path 'LICENSES')) {
@@ -282,7 +330,9 @@ if (Test-Path 'package.json') {
     if (-not $pm) {
         Add-Result 'node-install' 'lockfile' 'FAIL' 'package.json exists but no pnpm-lock.yaml or package-lock.json is committed' 0
     } else {
-        $scripts = (Get-Content 'package.json' -Raw | ConvertFrom-Json).scripts
+        $scripts = $null
+        try { $scripts = (Get-Content 'package.json' -Raw | ConvertFrom-Json).scripts }
+        catch { Add-Result 'node-package-json' 'parse package.json' 'FAIL' "package.json is not valid JSON: $($_.Exception.Message)" 0 }
         $has = { param($s) $scripts -and ($scripts.PSObject.Properties.Name -contains $s) }
 
         if ($pm -eq 'pnpm') {

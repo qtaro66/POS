@@ -19,7 +19,7 @@ The temporary checkout is `C:\POS`. When the second internal NVMe is ready, crea
 - `src/Printing` — printer abstractions and protocol adapters
 - `src/Platform` — Windows/Linux hosting integrations only
 - `tests` — automated tests that are safe by default
-- `docs/requirements` — versioned product requirements
+- `docs/requirements` — versioned product requirements; read them through the generated reading copy index (for example `docs/requirements/POS-Requirements-v0.2/README.md`), regenerated with `tools/split-requirements.ps1`
 - `deploy` — Windows Service and Linux systemd packaging assets
 
 ## Toolchain

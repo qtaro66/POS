@@ -1,6 +1,7 @@
 # Repository instructions
 
 - Base decisions on facts, tests, and the versioned requirements in `docs/requirements`.
+- Read requirements through the index of the reading copy, for example `docs/requirements/POS-Requirements-v0.2/README.md`: find the requirement ID or section number and open only those parts. Do not open the full source document; it is too large to read whole. After changing a requirements source, run `pwsh tools/split-requirements.ps1 -Source <source file>` and commit the regenerated reading copy with it.
 - Do not change confirmed business rules silently. Record conflicts and obtain a decision before changing behavior.
 - Keep domain and application code independent of Windows, Linux, database, browser, and printer implementations.
 - The Branch API is the only process allowed to write the branch SQLite database.
@@ -56,9 +57,10 @@ Both agents must stop and obtain explicit user approval before force-pushing, re
 
 ## Verification gate
 
-`tools/verify.ps1` is the single local verification gate. `.github/workflows/verify.yml` runs the same script on `ubuntu-latest` and `windows-latest`, so a local pass predicts a CI pass. It covers repository hygiene, whitespace, secret scanning, license headers (once REUSE is configured), .NET restore/format/build/test/vulnerable-package checks, and Node install/lint/test/build/audit.
+`tools/verify.ps1` is the single local verification gate. `.github/workflows/verify.yml` runs the same script on `ubuntu-latest` and `windows-latest`, so a local pass predicts a CI pass. It covers repository hygiene, whitespace, secret scanning, the requirements reading copy, license headers (once REUSE is configured), .NET restore/format/build/test/vulnerable-package checks, and Node install/lint/test/build/audit.
 
-- OpenAI must run `pwsh tools/verify.ps1` (or double-click `tools/verify.cmd`) on the final local commit with a clean working tree before every handoff. It writes `validation.md` into the branch's handoff directory. A commit is validated only when that report shows `Commit` equal to the branch HEAD, `Working tree clean: yes`, and `Overall: PASS`.
+- Agents run `pwsh tools/verify.ps1 -Quiet`: one line per step, plus a short excerpt for a failing step. Full output is saved under the branch's handoff directory in `verify-logs/`; open a log only when the excerpt is not enough. `-Quiet` changes only what is printed, not what is checked or reported.
+- OpenAI must run `pwsh tools/verify.ps1 -Quiet` (or, for a person, double-click `tools/verify.cmd`) on the final local commit with a clean working tree before every handoff. It writes `validation.md` into the branch's handoff directory. A commit is validated only when that report shows `Commit` equal to the branch HEAD, `Working tree clean: yes`, and `Overall: PASS`.
 - `verify.ps1` fails when the working tree has uncommitted or untracked files. While iterating, `-AllowDirty` runs the checks anyway, but such a report is never valid for handoff.
 - Do not hand off with a failing step or with a step skipped on request (`-Skip` or `-AllowDirty`). A step reported `SKIPPED` because its component does not exist yet is acceptable.
 - When CI fails on something `verify.ps1` did not catch, add that check to `verify.ps1` in the same correction round so it is caught locally next time.
