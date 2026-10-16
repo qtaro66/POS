@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\BuildingBlocks\Pos.Contracts\Pos.Contracts.csproj" />
     <ProjectReference Include="..\..\Printing\Pos.Printing.Abstractions\Pos.Printing.Abstractions.csproj" />
     <ProjectReference Include="..\..\Printing\Pos.Printing.EscPosTcp\Pos.Printing.EscPosTcp.csproj" />
+    <ProjectReference Include="..\..\Printing\Pos.Printing.Snmp\Pos.Printing.Snmp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
