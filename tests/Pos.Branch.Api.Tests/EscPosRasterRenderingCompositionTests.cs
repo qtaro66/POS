@@ -141,6 +141,7 @@ public sealed class EscPosRasterRenderingCompositionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddPrintSpoolPolling(configuration);
+        services.AddPrintSpoolRetention(configuration);
 
         services.AddEscPosRasterRendering(configuration);
 
@@ -171,6 +172,7 @@ public sealed class EscPosRasterRenderingCompositionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddPrintSpoolPolling(configuration);
+        services.AddPrintSpoolRetention(configuration);
         services.AddEscPosRasterRendering(configuration);
         return services.BuildServiceProvider();
     }
