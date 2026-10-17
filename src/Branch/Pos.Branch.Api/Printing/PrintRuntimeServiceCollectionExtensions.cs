@@ -29,6 +29,22 @@ public static class PrintRuntimeServiceCollectionExtensions
         var pollingEnabled = configuration
             .GetSection(PrintSpoolPollingOptions.SectionName)
             .GetValue<bool>(nameof(PrintSpoolPollingOptions.Enabled));
+        var retentionEnabled = configuration
+            .GetSection(PrintSpoolRetentionOptions.SectionName)
+            .GetValue<bool>(nameof(PrintSpoolRetentionOptions.Enabled));
+        if (!pollingEnabled && !retentionEnabled)
+        {
+            return services;
+        }
+
+        if (retentionEnabled)
+        {
+            services.TryAddSingleton(provider =>
+                new SqliteRenderedPrintPayloadRetentionStore(DatabasePath(provider)));
+            services.TryAddSingleton<IPrintSpoolRetentionProcessor,
+                PersistedPrintSpoolRetentionProcessor>();
+        }
+
         if (!pollingEnabled)
         {
             return services;

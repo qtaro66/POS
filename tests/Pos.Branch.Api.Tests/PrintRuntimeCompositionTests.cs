@@ -26,6 +26,7 @@ public sealed class PrintRuntimeCompositionTests
         Assert.Null(provider.GetService<IPrinterConfigurationProvider>());
         Assert.Null(provider.GetService<IPrintDispatcher>());
         Assert.Null(provider.GetService<IPrintSpoolCycleProcessor>());
+        Assert.Null(provider.GetService<IPrintSpoolRetentionProcessor>());
         Assert.Empty(provider.GetServices<IPrintTransportAdapter>());
     }
 
@@ -41,6 +42,7 @@ public sealed class PrintRuntimeCompositionTests
                 Enabled = true,
                 PrinterIds = ["PRINTER-01"]
             }),
+            Options.Create(new PrintSpoolRetentionOptions()),
             new SqliteBranchDatabaseReadinessProbe());
 
         var result = validator.Validate(null, new PrintRuntimeOptions
@@ -63,6 +65,7 @@ public sealed class PrintRuntimeCompositionTests
         {
             var validator = new PrintRuntimeOptionsValidator(
                 Options.Create(new PrintSpoolPollingOptions { Enabled = true }),
+                Options.Create(new PrintSpoolRetentionOptions()),
                 new SqliteBranchDatabaseReadinessProbe());
 
             var result = validator.Validate(null, new PrintRuntimeOptions
@@ -79,6 +82,35 @@ public sealed class PrintRuntimeCompositionTests
         {
             File.Delete(databasePath);
         }
+    }
+
+    [Fact]
+    public void Enabled_retention_fails_closed_without_existing_database()
+    {
+        var missingDatabase = Path.Combine(
+            Path.GetTempPath(),
+            $"missing-{Guid.NewGuid():N}.db");
+        var validator = new PrintRuntimeOptionsValidator(
+            Options.Create(new PrintSpoolPollingOptions()),
+            Options.Create(new PrintSpoolRetentionOptions
+            {
+                Enabled = true,
+                TerminalPayloadRetention = TimeSpan.FromDays(30),
+                MaximumTotalBytes = 5_368_709_120,
+                MaximumDeletesPerRun = 1_000,
+                RunInterval = TimeSpan.FromHours(1)
+            }),
+            new SqliteBranchDatabaseReadinessProbe());
+
+        var result = validator.Validate(null, new PrintRuntimeOptions
+        {
+            DatabasePath = missingDatabase
+        });
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            result.Failures,
+            failure => failure.Contains("existing Branch database file", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -108,6 +140,7 @@ public sealed class PrintRuntimeCompositionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddPrintSpoolPolling(configuration);
+        services.AddPrintSpoolRetention(configuration);
         services.AddSnmpPrinterStatus(configuration);
 
         services.AddPrintRuntime(configuration);
@@ -139,6 +172,7 @@ public sealed class PrintRuntimeCompositionTests
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddPrintSpoolPolling(configuration);
+            services.AddPrintSpoolRetention(configuration);
             services.AddEscPosRasterRendering(configuration);
             services.AddSnmpPrinterStatus(configuration);
 
@@ -160,7 +194,8 @@ public sealed class PrintRuntimeCompositionTests
             Assert.DoesNotContain(
                 services,
                 descriptor => descriptor.ServiceType == typeof(IHostedService) &&
-                    descriptor.ImplementationType != typeof(PrintSpoolPollingService));
+                    descriptor.ImplementationType != typeof(PrintSpoolPollingService) &&
+                    descriptor.ImplementationType != typeof(PrintSpoolRetentionService));
 
             using var provider = services.BuildServiceProvider();
             provider.GetRequiredService<IStartupValidator>().Validate();
@@ -174,12 +209,52 @@ public sealed class PrintRuntimeCompositionTests
         }
     }
 
+    [Fact]
+    public async Task Enabled_retention_only_composes_no_dispatch_runtime()
+    {
+        var databasePath = CreateDatabaseCandidate();
+        try
+        {
+            await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
+            var configuration = Configuration(new Dictionary<string, string?>
+            {
+                ["PrintSpoolPolling:Enabled"] = "false",
+                ["PrintSpoolRetention:Enabled"] = "true",
+                ["PrintSpoolRetention:TerminalPayloadRetention"] = "30.00:00:00",
+                ["PrintSpoolRetention:MaximumTotalBytes"] = "5368709120",
+                ["PrintSpoolRetention:MaximumDeletesPerRun"] = "1000",
+                ["PrintSpoolRetention:RunInterval"] = "01:00:00",
+                ["PrintRuntime:DatabasePath"] = databasePath
+            });
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddPrintSpoolPolling(configuration);
+            services.AddPrintSpoolRetention(configuration);
+
+            services.AddPrintRuntime(configuration);
+
+            using var provider = services.BuildServiceProvider();
+            provider.GetRequiredService<IStartupValidator>().Validate();
+            Assert.NotNull(provider.GetService<SqliteRenderedPrintPayloadRetentionStore>());
+            Assert.IsType<PersistedPrintSpoolRetentionProcessor>(
+                provider.GetRequiredService<IPrintSpoolRetentionProcessor>());
+            Assert.Null(provider.GetService<IPrintSpoolCycleProcessor>());
+            Assert.Null(provider.GetService<IPrintDispatcher>());
+            Assert.Empty(provider.GetServices<IPrintTransportAdapter>());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private static ServiceProvider Provider(IReadOnlyDictionary<string, string?> values)
     {
         var configuration = Configuration(values);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddPrintSpoolPolling(configuration);
+        services.AddPrintSpoolRetention(configuration);
         services.AddEscPosRasterRendering(configuration);
         services.AddSnmpPrinterStatus(configuration);
         services.AddPrintRuntime(configuration);

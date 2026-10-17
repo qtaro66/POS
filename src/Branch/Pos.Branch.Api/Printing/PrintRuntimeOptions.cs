@@ -14,13 +14,17 @@ public sealed class PrintRuntimeOptions
 public sealed class PrintRuntimeOptionsValidator : IValidateOptions<PrintRuntimeOptions>
 {
     private readonly IOptions<PrintSpoolPollingOptions> _pollingOptions;
+    private readonly IOptions<PrintSpoolRetentionOptions> _retentionOptions;
     private readonly IBranchDatabaseReadinessProbe _databaseReadiness;
 
     public PrintRuntimeOptionsValidator(
         IOptions<PrintSpoolPollingOptions> pollingOptions,
+        IOptions<PrintSpoolRetentionOptions> retentionOptions,
         IBranchDatabaseReadinessProbe databaseReadiness)
     {
         _pollingOptions = pollingOptions ?? throw new ArgumentNullException(nameof(pollingOptions));
+        _retentionOptions = retentionOptions
+            ?? throw new ArgumentNullException(nameof(retentionOptions));
         _databaseReadiness = databaseReadiness ??
             throw new ArgumentNullException(nameof(databaseReadiness));
     }
@@ -28,7 +32,7 @@ public sealed class PrintRuntimeOptionsValidator : IValidateOptions<PrintRuntime
     public ValidateOptionsResult Validate(string? name, PrintRuntimeOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        if (!_pollingOptions.Value.Enabled)
+        if (!_pollingOptions.Value.Enabled && !_retentionOptions.Value.Enabled)
         {
             return ValidateOptionsResult.Success;
         }
@@ -45,7 +49,7 @@ public sealed class PrintRuntimeOptionsValidator : IValidateOptions<PrintRuntime
     {
         if (string.IsNullOrWhiteSpace(configuredPath))
         {
-            errors.Add("DatabasePath is required when print spool polling is enabled.");
+            errors.Add("DatabasePath is required when a print runtime service is enabled.");
             return;
         }
 
