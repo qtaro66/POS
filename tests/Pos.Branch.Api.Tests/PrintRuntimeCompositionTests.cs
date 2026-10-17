@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Pos.Application.Printing;
 using Pos.Branch.Api.Printing;
 using Pos.Branch.Infrastructure.Sqlite;
 using Pos.Printing.Abstractions;
@@ -12,11 +13,13 @@ namespace Pos.Branch.Api.Tests;
 public sealed class PrintRuntimeCompositionTests
 {
     [Fact]
-    public void Disabled_polling_registers_no_runtime_services_and_requires_no_database()
+    public void Disabled_features_register_no_runtime_services_and_require_no_database()
     {
         using var provider = Provider(new Dictionary<string, string?>
         {
             ["PrintSpoolPolling:Enabled"] = "false",
+            ["PrintSpoolRetention:Enabled"] = "false",
+            ["PrintStatusQueries:Enabled"] = "false",
             ["PrintRuntime:DatabasePath"] = string.Empty,
             ["SnmpPrinterStatus:Enabled"] = "false"
         });
@@ -27,6 +30,8 @@ public sealed class PrintRuntimeCompositionTests
         Assert.Null(provider.GetService<IPrintDispatcher>());
         Assert.Null(provider.GetService<IPrintSpoolCycleProcessor>());
         Assert.Null(provider.GetService<IPrintSpoolRetentionProcessor>());
+        Assert.Null(provider.GetService<IPrintJobStatusQuery>());
+        Assert.Null(provider.GetService<IPrintJobAttentionQuery>());
         Assert.Empty(provider.GetServices<IPrintTransportAdapter>());
     }
 
@@ -43,6 +48,7 @@ public sealed class PrintRuntimeCompositionTests
                 PrinterIds = ["PRINTER-01"]
             }),
             Options.Create(new PrintSpoolRetentionOptions()),
+            Options.Create(new PrintStatusQueryOptions()),
             new SqliteBranchDatabaseReadinessProbe());
 
         var result = validator.Validate(null, new PrintRuntimeOptions
@@ -66,6 +72,7 @@ public sealed class PrintRuntimeCompositionTests
             var validator = new PrintRuntimeOptionsValidator(
                 Options.Create(new PrintSpoolPollingOptions { Enabled = true }),
                 Options.Create(new PrintSpoolRetentionOptions()),
+                Options.Create(new PrintStatusQueryOptions()),
                 new SqliteBranchDatabaseReadinessProbe());
 
             var result = validator.Validate(null, new PrintRuntimeOptions
@@ -100,6 +107,30 @@ public sealed class PrintRuntimeCompositionTests
                 MaximumDeletesPerRun = 1_000,
                 RunInterval = TimeSpan.FromHours(1)
             }),
+            Options.Create(new PrintStatusQueryOptions()),
+            new SqliteBranchDatabaseReadinessProbe());
+
+        var result = validator.Validate(null, new PrintRuntimeOptions
+        {
+            DatabasePath = missingDatabase
+        });
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            result.Failures,
+            failure => failure.Contains("existing Branch database file", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Enabled_status_queries_fail_closed_without_existing_database()
+    {
+        var missingDatabase = Path.Combine(
+            Path.GetTempPath(),
+            $"missing-{Guid.NewGuid():N}.db");
+        var validator = new PrintRuntimeOptionsValidator(
+            Options.Create(new PrintSpoolPollingOptions()),
+            Options.Create(new PrintSpoolRetentionOptions()),
+            Options.Create(new PrintStatusQueryOptions { Enabled = true }),
             new SqliteBranchDatabaseReadinessProbe());
 
         var result = validator.Validate(null, new PrintRuntimeOptions
@@ -239,6 +270,44 @@ public sealed class PrintRuntimeCompositionTests
             Assert.IsType<PersistedPrintSpoolRetentionProcessor>(
                 provider.GetRequiredService<IPrintSpoolRetentionProcessor>());
             Assert.Null(provider.GetService<IPrintSpoolCycleProcessor>());
+            Assert.Null(provider.GetService<IPrintDispatcher>());
+            Assert.Empty(provider.GetServices<IPrintTransportAdapter>());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Enabled_status_queries_only_compose_read_only_query_boundaries()
+    {
+        var databasePath = CreateDatabaseCandidate();
+        try
+        {
+            await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
+            var configuration = Configuration(new Dictionary<string, string?>
+            {
+                ["PrintSpoolPolling:Enabled"] = "false",
+                ["PrintSpoolRetention:Enabled"] = "false",
+                ["PrintStatusQueries:Enabled"] = "true",
+                ["PrintRuntime:DatabasePath"] = databasePath
+            });
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddPrintSpoolPolling(configuration);
+            services.AddPrintSpoolRetention(configuration);
+
+            services.AddPrintRuntime(configuration);
+
+            using var provider = services.BuildServiceProvider();
+            provider.GetRequiredService<IStartupValidator>().Validate();
+            Assert.IsType<SqlitePrintJobStatusQuery>(
+                provider.GetRequiredService<IPrintJobStatusQuery>());
+            Assert.IsType<SqlitePrintJobAttentionQuery>(
+                provider.GetRequiredService<IPrintJobAttentionQuery>());
+            Assert.Null(provider.GetService<IPrintSpoolCycleProcessor>());
+            Assert.Null(provider.GetService<IPrintSpoolRetentionProcessor>());
             Assert.Null(provider.GetService<IPrintDispatcher>());
             Assert.Empty(provider.GetServices<IPrintTransportAdapter>());
         }

@@ -15,16 +15,20 @@ public sealed class PrintRuntimeOptionsValidator : IValidateOptions<PrintRuntime
 {
     private readonly IOptions<PrintSpoolPollingOptions> _pollingOptions;
     private readonly IOptions<PrintSpoolRetentionOptions> _retentionOptions;
+    private readonly IOptions<PrintStatusQueryOptions> _statusQueryOptions;
     private readonly IBranchDatabaseReadinessProbe _databaseReadiness;
 
     public PrintRuntimeOptionsValidator(
         IOptions<PrintSpoolPollingOptions> pollingOptions,
         IOptions<PrintSpoolRetentionOptions> retentionOptions,
+        IOptions<PrintStatusQueryOptions> statusQueryOptions,
         IBranchDatabaseReadinessProbe databaseReadiness)
     {
         _pollingOptions = pollingOptions ?? throw new ArgumentNullException(nameof(pollingOptions));
         _retentionOptions = retentionOptions
             ?? throw new ArgumentNullException(nameof(retentionOptions));
+        _statusQueryOptions = statusQueryOptions
+            ?? throw new ArgumentNullException(nameof(statusQueryOptions));
         _databaseReadiness = databaseReadiness ??
             throw new ArgumentNullException(nameof(databaseReadiness));
     }
@@ -32,7 +36,9 @@ public sealed class PrintRuntimeOptionsValidator : IValidateOptions<PrintRuntime
     public ValidateOptionsResult Validate(string? name, PrintRuntimeOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        if (!_pollingOptions.Value.Enabled && !_retentionOptions.Value.Enabled)
+        if (!_pollingOptions.Value.Enabled &&
+            !_retentionOptions.Value.Enabled &&
+            !_statusQueryOptions.Value.Enabled)
         {
             return ValidateOptionsResult.Success;
         }
@@ -49,7 +55,7 @@ public sealed class PrintRuntimeOptionsValidator : IValidateOptions<PrintRuntime
     {
         if (string.IsNullOrWhiteSpace(configuredPath))
         {
-            errors.Add("DatabasePath is required when a print runtime service is enabled.");
+            errors.Add("DatabasePath is required when a print runtime feature is enabled.");
             return;
         }
 
