@@ -60,6 +60,162 @@ public sealed class SqlitePrintDispatchStoreTests
     }
 
     [Fact]
+    public async Task Active_lease_can_be_extended_atomically()
+    {
+        await using var database = new DispatchDatabase();
+        await database.InitializeAsync();
+        var store = new SqlitePrintDispatchStore(database.Path);
+        var lease = Assert.IsType<PrintJobLease>(await store.ClaimNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            Now,
+            TimeSpan.FromSeconds(30)));
+
+        var renewed = await store.RenewLeaseAsync(
+            lease,
+            Now.AddSeconds(20),
+            TimeSpan.FromSeconds(30));
+
+        Assert.Equal(Now.AddSeconds(50), renewed.LeaseExpiresAt);
+        Assert.Equal(
+            "2026-10-15T09:00:50.0000000+00:00",
+            await database.ScalarAsync<string>(
+                "SELECT lease_expires_at FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+    }
+
+    [Fact]
+    public async Task Stale_lease_token_cannot_replace_a_renewed_expiry()
+    {
+        await using var database = new DispatchDatabase();
+        await database.InitializeAsync();
+        var store = new SqlitePrintDispatchStore(database.Path);
+        var lease = Assert.IsType<PrintJobLease>(await store.ClaimNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            Now,
+            TimeSpan.FromSeconds(30)));
+        var renewed = await store.RenewLeaseAsync(
+            lease,
+            Now.AddSeconds(20),
+            TimeSpan.FromSeconds(30));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.RenewLeaseAsync(
+                lease,
+                Now.AddSeconds(25),
+                TimeSpan.FromSeconds(60)));
+
+        Assert.Contains("lease token", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            renewed.LeaseExpiresAt.ToUniversalTime().ToString("O"),
+            await database.ScalarAsync<string>(
+                "SELECT lease_expires_at FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+    }
+
+    [Fact]
+    public async Task Expired_or_released_lease_cannot_be_renewed()
+    {
+        await using var database = new DispatchDatabase();
+        await database.InitializeAsync();
+        var store = new SqlitePrintDispatchStore(database.Path);
+        var lease = Assert.IsType<PrintJobLease>(await store.ClaimNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            Now,
+            TimeSpan.FromSeconds(30)));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.RenewLeaseAsync(
+                lease,
+                Now.AddSeconds(30),
+                TimeSpan.FromSeconds(30)));
+
+        var recovered = await store.RecoverExpiredLeasesAsync(Now.AddSeconds(30));
+        var replacement = Assert.IsType<PrintJobLease>(await store.ClaimNextAsync(
+            "PRINTER-01",
+            "WORKER-02",
+            Now.AddSeconds(30),
+            TimeSpan.FromSeconds(30)));
+        await store.ReleaseBlockedAsync(replacement, "PaperOut");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.RenewLeaseAsync(
+                replacement,
+                Now.AddSeconds(40),
+                TimeSpan.FromSeconds(30)));
+        Assert.Equal(1, recovered.ReleasedBeforeAttempt);
+    }
+
+    [Fact]
+    public async Task Dispatching_lease_can_be_renewed_but_terminal_job_cannot()
+    {
+        await using var database = new DispatchDatabase();
+        await database.InitializeAsync();
+        var store = new SqlitePrintDispatchStore(database.Path);
+        var lease = Assert.IsType<PrintJobLease>(await store.ClaimNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            Now,
+            TimeSpan.FromSeconds(30)));
+        await store.StartAttemptAsync(
+            lease,
+            "ATTEMPT-01",
+            new string('A', 64),
+            Now);
+        await store.MarkFirstByteSendingAsync(
+            lease,
+            "ATTEMPT-01",
+            Now.AddSeconds(1));
+
+        var renewed = await store.RenewLeaseAsync(
+            lease,
+            Now.AddSeconds(20),
+            TimeSpan.FromSeconds(30));
+        var result = new PrintDispatchResult(
+            renewed.PrintJobId,
+            renewed.PrinterId,
+            PrintDispatchOutcome.PrintDispatched,
+            true,
+            false,
+            null,
+            null);
+        await store.CompleteAttemptAsync(
+            renewed,
+            "ATTEMPT-01",
+            result,
+            Now.AddSeconds(21));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.RenewLeaseAsync(
+                renewed,
+                Now.AddSeconds(25),
+                TimeSpan.FromSeconds(60)));
+        Assert.Equal("PrintDispatched", await database.ScalarAsync<string>(
+            "SELECT status FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+    }
+
+    [Fact]
+    public async Task Renewal_rejects_nonpositive_or_nonextending_duration()
+    {
+        await using var database = new DispatchDatabase();
+        await database.InitializeAsync();
+        var store = new SqlitePrintDispatchStore(database.Path);
+        var lease = Assert.IsType<PrintJobLease>(await store.ClaimNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            Now,
+            TimeSpan.FromSeconds(30)));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            store.RenewLeaseAsync(lease, Now.AddSeconds(5), TimeSpan.Zero));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            store.RenewLeaseAsync(
+                lease,
+                Now.AddSeconds(5),
+                TimeSpan.FromSeconds(20)));
+    }
+
+    [Fact]
     public async Task Blocked_preflight_releases_lease_without_creating_attempt()
     {
         await using var database = new DispatchDatabase();

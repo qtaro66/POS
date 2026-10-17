@@ -108,6 +108,64 @@ public sealed class SqlitePrintDispatchStore
         }
     }
 
+    public async Task<PrintJobLease> RenewLeaseAsync(
+        PrintJobLease lease,
+        DateTimeOffset renewedAt,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        if (leaseDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(leaseDuration));
+        }
+
+        var leaseExpiresAt = renewedAt.Add(leaseDuration);
+        if (leaseExpiresAt <= lease.LeaseExpiresAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(leaseDuration),
+                "The renewed lease must extend the current lease expiry.");
+        }
+
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        try
+        {
+            using var renew = connection.CreateCommand();
+            renew.Transaction = transaction;
+            renew.CommandText = """
+                UPDATE print_jobs
+                SET lease_expires_at = $leaseExpiresAt
+                WHERE print_job_id = $printJobId
+                  AND assigned_printer_id = $printerId
+                  AND lease_owner = $workerId
+                  AND lease_expires_at = $currentLeaseExpiresAt
+                  AND lease_expires_at > $renewedAt
+                  AND status IN ('PrintQueued', 'Dispatching');
+                """;
+            AddLeaseParameters(renew, lease);
+            renew.Parameters.AddWithValue(
+                "$currentLeaseExpiresAt",
+                Timestamp(lease.LeaseExpiresAt));
+            renew.Parameters.AddWithValue("$renewedAt", Timestamp(renewedAt));
+            renew.Parameters.AddWithValue("$leaseExpiresAt", Timestamp(leaseExpiresAt));
+            if (await renew.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException(
+                    "The print-job lease is no longer active or is not owned by this lease token.");
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return lease with { LeaseExpiresAt = leaseExpiresAt };
+        }
+        catch
+        {
+            await RollbackQuietlyAsync(transaction);
+            throw;
+        }
+    }
+
     public async Task<int> StartAttemptAsync(
         PrintJobLease lease,
         string printAttemptId,
