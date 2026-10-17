@@ -15,6 +15,9 @@ public static class PrintRuntimeServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        services.TryAddSingleton<
+            IBranchDatabaseReadinessProbe,
+            SqliteBranchDatabaseReadinessProbe>();
         services
             .AddOptions<PrintRuntimeOptions>()
             .Bind(configuration.GetSection(PrintRuntimeOptions.SectionName))

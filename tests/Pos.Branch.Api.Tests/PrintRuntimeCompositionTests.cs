@@ -40,7 +40,8 @@ public sealed class PrintRuntimeCompositionTests
             {
                 Enabled = true,
                 PrinterIds = ["PRINTER-01"]
-            }));
+            }),
+            new SqliteBranchDatabaseReadinessProbe());
 
         var result = validator.Validate(null, new PrintRuntimeOptions
         {
@@ -51,6 +52,33 @@ public sealed class PrintRuntimeCompositionTests
         Assert.Contains(
             result.Failures,
             failure => failure.Contains("existing Branch database file", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Enabled_polling_rejects_unmigrated_database()
+    {
+        var databasePath = CreateDatabaseCandidate();
+        File.WriteAllBytes(databasePath, []);
+        try
+        {
+            var validator = new PrintRuntimeOptionsValidator(
+                Options.Create(new PrintSpoolPollingOptions { Enabled = true }),
+                new SqliteBranchDatabaseReadinessProbe());
+
+            var result = validator.Validate(null, new PrintRuntimeOptions
+            {
+                DatabasePath = databasePath
+            });
+
+            Assert.True(result.Failed);
+            Assert.Contains(
+                result.Failures,
+                failure => failure.Contains("schema version must be", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
     }
 
     [Fact]
@@ -91,11 +119,12 @@ public sealed class PrintRuntimeCompositionTests
     }
 
     [Fact]
-    public void Enabled_polling_composes_one_inert_persisted_runtime()
+    public async Task Enabled_polling_composes_one_inert_persisted_runtime()
     {
         var databasePath = CreateDatabaseCandidate();
         try
         {
+            await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
             var configuration = Configuration(new Dictionary<string, string?>
             {
                 ["PrintSpoolPolling:Enabled"] = "true",
@@ -163,7 +192,6 @@ public sealed class PrintRuntimeCompositionTests
     private static string CreateDatabaseCandidate()
     {
         var path = Path.Combine(Path.GetTempPath(), $"branch-{Guid.NewGuid():N}.db");
-        File.WriteAllBytes(path, []);
         return path;
     }
 
