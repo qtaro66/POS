@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Pos.Application.Printing;
 using Pos.Branch.Infrastructure.Sqlite;
 using Pos.Printing.Abstractions;
 using Pos.Printing.EscPosTcp;
@@ -22,6 +23,9 @@ public static class PrintRuntimeServiceCollectionExtensions
             .AddOptions<PrintRuntimeOptions>()
             .Bind(configuration.GetSection(PrintRuntimeOptions.SectionName))
             .ValidateOnStart();
+        services
+            .AddOptions<PrintStatusQueryOptions>()
+            .Bind(configuration.GetSection(PrintStatusQueryOptions.SectionName));
         services.AddSingleton<
             IValidateOptions<PrintRuntimeOptions>,
             PrintRuntimeOptionsValidator>();
@@ -32,9 +36,20 @@ public static class PrintRuntimeServiceCollectionExtensions
         var retentionEnabled = configuration
             .GetSection(PrintSpoolRetentionOptions.SectionName)
             .GetValue<bool>(nameof(PrintSpoolRetentionOptions.Enabled));
-        if (!pollingEnabled && !retentionEnabled)
+        var statusQueriesEnabled = configuration
+            .GetSection(PrintStatusQueryOptions.SectionName)
+            .GetValue<bool>(nameof(PrintStatusQueryOptions.Enabled));
+        if (!pollingEnabled && !retentionEnabled && !statusQueriesEnabled)
         {
             return services;
+        }
+
+        if (statusQueriesEnabled)
+        {
+            services.TryAddSingleton<IPrintJobStatusQuery>(provider =>
+                new SqlitePrintJobStatusQuery(DatabasePath(provider)));
+            services.TryAddSingleton<IPrintJobAttentionQuery>(provider =>
+                new SqlitePrintJobAttentionQuery(DatabasePath(provider)));
         }
 
         if (retentionEnabled)
