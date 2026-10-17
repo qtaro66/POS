@@ -129,6 +129,7 @@ public sealed class PrintSpoolPollingServiceTests
         Assert.True(disabled.Succeeded);
         Assert.True(invalid.Failed);
         Assert.Contains(invalid.Failures, value => value.Contains("unique", StringComparison.Ordinal));
+        Assert.Contains(invalid.Failures, value => value.Contains("normalized", StringComparison.Ordinal));
         Assert.Contains(invalid.Failures, value => value.Contains("prefix", StringComparison.Ordinal));
         Assert.Contains(invalid.Failures, value => value.Contains("LeaseDuration", StringComparison.Ordinal));
     }

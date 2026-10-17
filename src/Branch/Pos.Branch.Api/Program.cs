@@ -6,6 +6,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
 builder.Services.AddEscPosRasterRendering(builder.Configuration);
 builder.Services.AddSnmpPrinterStatus(builder.Configuration);
+builder.Services.AddPrintRuntime(builder.Configuration);
 
 var app = builder.Build();
 
