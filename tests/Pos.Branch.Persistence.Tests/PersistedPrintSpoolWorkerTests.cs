@@ -146,6 +146,130 @@ public sealed class PersistedPrintSpoolWorkerTests
     }
 
     [Fact]
+    public async Task Slow_rendering_renews_lease_before_it_expires()
+    {
+        await using var database = new SpoolDatabase();
+        await database.InitializeAsync();
+        var time = new MutableTimeProvider(Now);
+        var renderer = new BlockingRenderer([0x1B, 0x40, 0x0A]);
+        var heartbeatDelay = new ControlledHeartbeatDelay();
+        var adapter = new FakeAdapter { SignalFirstByte = true };
+        var worker = Worker(
+            database.Path,
+            time,
+            renderer,
+            adapter,
+            new MutableConditionProbe(PrinterCondition.Ready),
+            heartbeatDelay.DelayAsync);
+
+        var cycle = worker.ProcessNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30));
+        await renderer.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        await heartbeatDelay.FirstDelayEntered.WaitAsync(TimeSpan.FromSeconds(5));
+        time.Advance(TimeSpan.FromSeconds(10));
+        heartbeatDelay.ReleaseFirstDelay();
+        await heartbeatDelay.SecondDelayEntered.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(TimeSpan.FromSeconds(10), heartbeatDelay.RequestedDelays[0]);
+        Assert.Equal(
+            "2026-10-15T10:00:40.0000000+00:00",
+            await database.ScalarAsync<string>(
+                "SELECT lease_expires_at FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+
+        renderer.Release();
+        var result = await cycle.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(PrintSpoolCycleOutcome.PrintDispatched, result.Outcome);
+        Assert.Equal(1, adapter.SendCount);
+    }
+
+    [Fact]
+    public async Task Lost_lease_cancels_slow_work_and_defers_to_recovery()
+    {
+        await using var database = new SpoolDatabase();
+        await database.InitializeAsync();
+        var time = new MutableTimeProvider(Now);
+        var renderer = new BlockingRenderer([0x1B, 0x40, 0x0A]);
+        var heartbeatDelay = new ControlledHeartbeatDelay();
+        var adapter = new FakeAdapter { SignalFirstByte = true };
+        var worker = Worker(
+            database.Path,
+            time,
+            renderer,
+            adapter,
+            new MutableConditionProbe(PrinterCondition.Ready),
+            heartbeatDelay.DelayAsync);
+
+        var cycle = worker.ProcessNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30));
+        await renderer.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        await heartbeatDelay.FirstDelayEntered.WaitAsync(TimeSpan.FromSeconds(5));
+        await database.ExecuteAsync("""
+            UPDATE print_jobs
+            SET lease_owner = NULL, lease_expires_at = NULL
+            WHERE print_job_id = 'PRINT-01';
+            """);
+        time.Advance(TimeSpan.FromSeconds(10));
+        heartbeatDelay.ReleaseFirstDelay();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            cycle.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        Assert.Contains("heartbeat", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, adapter.SendCount);
+        Assert.Equal(0L, await database.ScalarAsync<long>(
+            "SELECT COUNT(*) FROM print_attempts;"));
+        Assert.Equal("PrintQueued", await database.ScalarAsync<string>(
+            "SELECT status FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+    }
+
+    [Fact]
+    public async Task Expired_lease_during_send_is_recovered_as_unknown()
+    {
+        await using var database = new SpoolDatabase();
+        await database.InitializeAsync();
+        var time = new MutableTimeProvider(Now);
+        var heartbeatDelay = new ControlledHeartbeatDelay();
+        var adapter = new FakeAdapter
+        {
+            SignalFirstByte = true,
+            BlockAfterFirstByte = true
+        };
+        var worker = Worker(
+            database.Path,
+            time,
+            new FakeRenderer([0x1B, 0x40, 0x0A]),
+            adapter,
+            new MutableConditionProbe(PrinterCondition.Ready),
+            heartbeatDelay.DelayAsync);
+
+        var cycle = worker.ProcessNextAsync(
+            "PRINTER-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30));
+        await adapter.SendBlocked.WaitAsync(TimeSpan.FromSeconds(5));
+        await heartbeatDelay.FirstDelayEntered.WaitAsync(TimeSpan.FromSeconds(5));
+        time.Advance(TimeSpan.FromSeconds(30));
+        heartbeatDelay.ReleaseFirstDelay();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            cycle.WaitAsync(TimeSpan.FromSeconds(5)));
+        var recovery = await new SqlitePrintDispatchStore(database.Path)
+            .RecoverExpiredLeasesAsync(time.GetUtcNow());
+
+        Assert.Contains("heartbeat", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, recovery.MarkedUnknownAfterFirstByte);
+        Assert.Equal("Unknown", await database.ScalarAsync<string>(
+            "SELECT status FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+        Assert.Equal("Unknown", await database.ScalarAsync<string>(
+            "SELECT status FROM print_attempts WHERE print_attempt_id = 'ATTEMPT-01';"));
+    }
+
+    [Fact]
     public async Task Persisted_payload_is_immutable_and_hash_verified_on_read()
     {
         await using var database = new SpoolDatabase();
@@ -178,7 +302,7 @@ public sealed class PersistedPrintSpoolWorkerTests
     private static PersistedPrintSpoolWorker Worker(
         string databasePath,
         MutableTimeProvider time,
-        FakeRenderer renderer,
+        IPrintPayloadRenderer renderer,
         FakeAdapter adapter,
         PrinterCondition condition) =>
         Worker(databasePath, time, renderer, adapter, new MutableConditionProbe(condition));
@@ -186,9 +310,10 @@ public sealed class PersistedPrintSpoolWorkerTests
     private static PersistedPrintSpoolWorker Worker(
         string databasePath,
         MutableTimeProvider time,
-        FakeRenderer renderer,
+        IPrintPayloadRenderer renderer,
         FakeAdapter adapter,
-        MutableConditionProbe condition)
+        MutableConditionProbe condition,
+        Func<TimeSpan, CancellationToken, Task>? heartbeatDelay = null)
     {
         var configuration = new SqlitePrinterConfigurationProvider(databasePath);
         return new PersistedPrintSpoolWorker(
@@ -198,7 +323,8 @@ public sealed class PersistedPrintSpoolWorkerTests
             renderer,
             new SafePrintDispatcher(configuration, condition, [adapter]),
             time,
-            () => $"ATTEMPT-{adapter.SendCount + 1:00}");
+            () => $"ATTEMPT-{adapter.SendCount + 1:00}",
+            heartbeatDelay);
     }
 
     private sealed class FakeRenderer(byte[] bytes) : IPrintPayloadRenderer
@@ -217,6 +343,61 @@ public sealed class PersistedPrintSpoolWorkerTests
         }
     }
 
+    private sealed class BlockingRenderer(byte[] bytes) : IPrintPayloadRenderer
+    {
+        private readonly TaskCompletionSource _entered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        public async Task<RenderedPrintPayload> RenderAsync(
+            PrintRenderRequest request,
+            CancellationToken cancellationToken)
+        {
+            _entered.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return new RenderedPrintPayload(request.Document.DocumentId, bytes);
+        }
+
+        public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class ControlledHeartbeatDelay
+    {
+        private readonly TaskCompletionSource _firstDelayEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseFirstDelay = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _secondDelayEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _callCount;
+
+        public Task FirstDelayEntered => _firstDelayEntered.Task;
+
+        public Task SecondDelayEntered => _secondDelayEntered.Task;
+
+        public List<TimeSpan> RequestedDelays { get; } = [];
+
+        public async Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            RequestedDelays.Add(delay);
+            var call = Interlocked.Increment(ref _callCount);
+            if (call == 1)
+            {
+                _firstDelayEntered.TrySetResult();
+                await _releaseFirstDelay.Task.WaitAsync(cancellationToken);
+                return;
+            }
+
+            _secondDelayEntered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        public void ReleaseFirstDelay() => _releaseFirstDelay.TrySetResult();
+    }
+
     private sealed class MutableConditionProbe(PrinterCondition condition) : IPrinterConditionProbe
     {
         public PrinterCondition Condition { get; set; } = condition;
@@ -229,13 +410,20 @@ public sealed class PersistedPrintSpoolWorkerTests
 
     private sealed class FakeAdapter : IPrintTransportAdapter
     {
+        private readonly TaskCompletionSource _sendBlocked = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
         public PrinterProtocol Protocol => PrinterProtocol.RawTcpEscPos;
 
         public bool SignalFirstByte { get; init; }
 
+        public bool BlockAfterFirstByte { get; init; }
+
         public Queue<Exception?> Failures { get; init; } = [];
 
         public int SendCount { get; private set; }
+
+        public Task SendBlocked => _sendBlocked.Task;
 
         public async Task SendAsync(
             PrinterProfile profile,
@@ -253,6 +441,12 @@ public sealed class PersistedPrintSpoolWorkerTests
             if (SignalFirstByte)
             {
                 await observer.OnFirstByteSendingAsync(cancellationToken);
+            }
+
+            if (BlockAfterFirstByte)
+            {
+                _sendBlocked.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             }
         }
     }
