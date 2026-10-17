@@ -1,8 +1,10 @@
+using Pos.Branch.Api.Commands;
 using Pos.Branch.Api.Printing;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddBranchCommandStatusQuery(builder.Configuration);
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
 builder.Services.AddPrintSpoolRetention(builder.Configuration);
 builder.Services.AddEscPosRasterRendering(builder.Configuration);
