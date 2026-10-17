@@ -44,6 +44,13 @@ public sealed class PrintSpoolPollingOptionsValidator : IValidateOptions<PrintSp
                 errors.Add("Printer identifiers cannot be empty.");
             }
 
+            if (printerIds.Any(value =>
+                    !string.IsNullOrWhiteSpace(value) &&
+                    !string.Equals(value, value.Trim(), StringComparison.Ordinal)))
+            {
+                errors.Add("Printer identifiers must already be normalized.");
+            }
+
             var normalized = printerIds
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => value.Trim())
