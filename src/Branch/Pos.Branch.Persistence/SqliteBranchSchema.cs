@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 11;
+    public const int CurrentVersion = 12;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -739,6 +739,75 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion12 = """
+        CREATE TABLE IF NOT EXISTS branch_pairing_tokens (
+            pairing_id TEXT NOT NULL PRIMARY KEY CHECK (
+                length(pairing_id) = 22
+                AND pairing_id NOT GLOB '*[^A-Za-z0-9_-]*'),
+            branch_id TEXT NOT NULL CHECK (length(trim(branch_id)) > 0),
+            created_by_employee_id TEXT NOT NULL CHECK (
+                length(trim(created_by_employee_id)) > 0),
+            secret_hash BLOB NOT NULL CHECK (
+                typeof(secret_hash) = 'blob' AND length(secret_hash) = 32),
+            issued_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            lifecycle_status TEXT NOT NULL CHECK (
+                lifecycle_status IN ('Active', 'Replaced', 'Consumed')),
+            terminal_at TEXT NULL,
+            terminal_reason TEXT NULL CHECK (
+                terminal_reason IS NULL OR length(trim(terminal_reason)) > 0),
+            replaced_by_pairing_id TEXT NULL,
+            FOREIGN KEY (replaced_by_pairing_id)
+                REFERENCES branch_pairing_tokens (pairing_id)
+                DEFERRABLE INITIALLY DEFERRED,
+            CHECK (expires_at > issued_at),
+            CHECK (
+                (lifecycle_status = 'Active'
+                    AND terminal_at IS NULL
+                    AND terminal_reason IS NULL
+                    AND replaced_by_pairing_id IS NULL)
+                OR
+                (lifecycle_status = 'Replaced'
+                    AND terminal_at IS NOT NULL
+                    AND terminal_reason = 'ReplacedByNewChallenge'
+                    AND replaced_by_pairing_id IS NOT NULL
+                    AND replaced_by_pairing_id <> pairing_id)
+                OR
+                (lifecycle_status = 'Consumed'
+                    AND terminal_at IS NOT NULL
+                    AND terminal_reason = 'Consumed'
+                    AND replaced_by_pairing_id IS NULL))
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_branch_pairing_tokens_active_creator
+            ON branch_pairing_tokens (branch_id, created_by_employee_id)
+            WHERE lifecycle_status = 'Active';
+
+        CREATE INDEX IF NOT EXISTS ix_branch_pairing_tokens_lookup
+            ON branch_pairing_tokens (branch_id, pairing_id, lifecycle_status);
+
+        CREATE TRIGGER IF NOT EXISTS branch_pairing_token_identity_immutable
+        BEFORE UPDATE OF pairing_id, branch_id, created_by_employee_id,
+                         secret_hash, issued_at, expires_at
+            ON branch_pairing_tokens
+        BEGIN
+            SELECT RAISE(ABORT, 'Branch Pairing Token identity is immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS branch_pairing_token_terminal_status_immutable
+        BEFORE UPDATE ON branch_pairing_tokens
+        WHEN OLD.lifecycle_status IN ('Replaced', 'Consumed')
+        BEGIN
+            SELECT RAISE(ABORT, 'Terminal Branch Pairing Token is immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS branch_pairing_token_history_preserved
+        BEFORE DELETE ON branch_pairing_tokens
+        BEGIN
+            SELECT RAISE(ABORT, 'Branch Pairing Token history cannot be deleted');
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -808,6 +877,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 11)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion11, cancellationToken);
+        }
+
+        if (storedVersion < 12)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion12, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
