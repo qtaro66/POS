@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 
 namespace Pos.Application.Security;
@@ -83,7 +84,7 @@ public static class BranchDeviceCredentialFormat
 
     public static bool TryParse(
         string? token,
-        out ParsedBranchDeviceCredential? credential)
+        [NotNullWhen(true)] out ParsedBranchDeviceCredential? credential)
     {
         credential = null;
         if (token is null || token.Length != TokenLength)
