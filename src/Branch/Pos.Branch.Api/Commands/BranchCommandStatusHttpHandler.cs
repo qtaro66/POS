@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Pos.Application.TableSessions;
+using Pos.Branch.Api.Security;
 using Pos.Contracts.Commands;
 
 namespace Pos.Branch.Api.Commands;
@@ -9,23 +10,21 @@ public static class BranchCommandStatusHttpHandler
     public static async Task<Results<
         Ok<BranchCommandStatusResponse>,
         NotFound<BranchCommandStatusResponse>>> HandleAsync(
-        string authenticatedBranchId,
+        AuthenticatedBranchRequestIdentity identity,
         string requestId,
         IBranchCommandStatusQuery query,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(query);
-        authenticatedBranchId = RequireIdentifier(
-            authenticatedBranchId,
-            nameof(authenticatedBranchId));
         requestId = RequireIdentifier(requestId, nameof(requestId));
 
         var receipt = await query.FindAsync(
-            authenticatedBranchId,
+            identity.BranchId,
             requestId,
             cancellationToken);
         var response = BranchCommandStatusResponseMapper.Map(
-            authenticatedBranchId,
+            identity.BranchId,
             requestId,
             receipt);
 

@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Pos.Application.TableSessions;
 using Pos.Branch.Api.Commands;
+using Pos.Branch.Api.Security;
 using Pos.Contracts.Commands;
 using Pos.Domain.TableSessions;
 
@@ -19,7 +21,7 @@ public sealed class BranchCommandStatusHttpHandlerTests
         var query = new RecordingQuery(Receipt(outcome));
 
         var result = await BranchCommandStatusHttpHandler.HandleAsync(
-            " BRANCH-01 ",
+            Identity(),
             " REQ-01 ",
             query,
             CancellationToken.None);
@@ -38,7 +40,7 @@ public sealed class BranchCommandStatusHttpHandlerTests
         var query = new RecordingQuery((BranchCommandReceipt?)null);
 
         var result = await BranchCommandStatusHttpHandler.HandleAsync(
-            "BRANCH-01",
+            Identity(),
             "REQ-MISSING",
             query,
             CancellationToken.None);
@@ -57,7 +59,7 @@ public sealed class BranchCommandStatusHttpHandlerTests
         var query = new RecordingQuery((BranchCommandReceipt?)null);
 
         await BranchCommandStatusHttpHandler.HandleAsync(
-            "BRANCH-01",
+            Identity(),
             "REQ-01",
             query,
             source.Token);
@@ -65,19 +67,31 @@ public sealed class BranchCommandStatusHttpHandlerTests
         Assert.Equal(source.Token, query.CancellationToken);
     }
 
-    [Theory]
-    [InlineData("", "REQ-01")]
-    [InlineData("BRANCH-01", " ")]
-    public async Task Missing_identity_is_rejected_before_query(
-        string branchId,
-        string requestId)
+    [Fact]
+    public async Task Missing_request_identity_is_rejected_before_query()
+    {
+        var query = new RecordingQuery((BranchCommandReceipt?)null);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            BranchCommandStatusHttpHandler.HandleAsync(
+                null!,
+                "REQ-01",
+                query,
+                CancellationToken.None));
+
+        Assert.Null(query.BranchId);
+        Assert.Null(query.RequestId);
+    }
+
+    [Fact]
+    public async Task Missing_request_id_is_rejected_before_query()
     {
         var query = new RecordingQuery((BranchCommandReceipt?)null);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             BranchCommandStatusHttpHandler.HandleAsync(
-                branchId,
-                requestId,
+                Identity(),
+                " ",
                 query,
                 CancellationToken.None));
 
@@ -93,7 +107,7 @@ public sealed class BranchCommandStatusHttpHandlerTests
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             BranchCommandStatusHttpHandler.HandleAsync(
-                "BRANCH-01",
+                Identity(),
                 "REQ-01",
                 query,
                 CancellationToken.None));
@@ -116,6 +130,23 @@ public sealed class BranchCommandStatusHttpHandlerTests
             DateTimeOffset.Parse("2026-10-19T01:00:01Z"),
             null,
             9);
+
+    private static AuthenticatedBranchRequestIdentity Identity()
+    {
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+            [
+                new Claim(BranchPosClaimTypes.BranchId, " BRANCH-01 "),
+                new Claim(BranchPosClaimTypes.DeviceId, "DEVICE-01"),
+                new Claim(BranchPosClaimTypes.EmployeeId, "EMPLOYEE-01")
+            ],
+            "TestAuthentication"));
+        Assert.True(
+            AuthenticatedBranchRequestIdentityResolver.TryResolve(
+                principal,
+                out var identity));
+        return identity!;
+    }
 
     private sealed class RecordingQuery : IBranchCommandStatusQuery
     {
