@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 11;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -624,6 +624,121 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion11 = """
+        CREATE TABLE IF NOT EXISTS branch_devices (
+            branch_id TEXT NOT NULL CHECK (length(trim(branch_id)) > 0),
+            device_id TEXT NOT NULL CHECK (length(trim(device_id)) > 0),
+            display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
+            lifecycle_status TEXT NOT NULL CHECK (
+                lifecycle_status IN ('Active', 'Revoked', 'Lost')),
+            paired_by_employee_id TEXT NOT NULL CHECK (
+                length(trim(paired_by_employee_id)) > 0),
+            paired_at TEXT NOT NULL,
+            last_employee_id TEXT NULL CHECK (
+                last_employee_id IS NULL OR length(trim(last_employee_id)) > 0),
+            last_seen_at TEXT NULL,
+            retired_by_employee_id TEXT NULL CHECK (
+                retired_by_employee_id IS NULL OR
+                length(trim(retired_by_employee_id)) > 0),
+            retired_at TEXT NULL,
+            retirement_reason TEXT NULL CHECK (
+                retirement_reason IS NULL OR length(trim(retirement_reason)) > 0),
+            PRIMARY KEY (branch_id, device_id),
+            CHECK (
+                (lifecycle_status = 'Active'
+                    AND retired_by_employee_id IS NULL
+                    AND retired_at IS NULL
+                    AND retirement_reason IS NULL)
+                OR
+                (lifecycle_status IN ('Revoked', 'Lost')
+                    AND retired_by_employee_id IS NOT NULL
+                    AND retired_at IS NOT NULL
+                    AND retirement_reason IS NOT NULL))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_branch_devices_status
+            ON branch_devices (branch_id, lifecycle_status, device_id);
+
+        CREATE TABLE IF NOT EXISTS branch_device_credentials (
+            credential_id TEXT NOT NULL PRIMARY KEY CHECK (
+                length(credential_id) = 22
+                AND credential_id NOT GLOB '*[^A-Za-z0-9_-]*'),
+            branch_id TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            secret_hash BLOB NOT NULL CHECK (
+                typeof(secret_hash) = 'blob' AND length(secret_hash) = 32),
+            lifecycle_status TEXT NOT NULL CHECK (
+                lifecycle_status IN ('Active', 'Revoked', 'Lost', 'Replaced')),
+            issued_at TEXT NOT NULL,
+            retired_at TEXT NULL,
+            retirement_reason TEXT NULL CHECK (
+                retirement_reason IS NULL OR length(trim(retirement_reason)) > 0),
+            replaced_by_credential_id TEXT NULL,
+            FOREIGN KEY (branch_id, device_id)
+                REFERENCES branch_devices (branch_id, device_id),
+            FOREIGN KEY (replaced_by_credential_id)
+                REFERENCES branch_device_credentials (credential_id)
+                DEFERRABLE INITIALLY DEFERRED,
+            CHECK (
+                (lifecycle_status = 'Active'
+                    AND retired_at IS NULL
+                    AND retirement_reason IS NULL
+                    AND replaced_by_credential_id IS NULL)
+                OR
+                (lifecycle_status IN ('Revoked', 'Lost')
+                    AND retired_at IS NOT NULL
+                    AND retirement_reason IS NOT NULL
+                    AND replaced_by_credential_id IS NULL)
+                OR
+                (lifecycle_status = 'Replaced'
+                    AND retired_at IS NOT NULL
+                    AND retirement_reason IS NOT NULL
+                    AND replaced_by_credential_id IS NOT NULL
+                    AND replaced_by_credential_id <> credential_id))
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_branch_device_credentials_active
+            ON branch_device_credentials (branch_id, device_id)
+            WHERE lifecycle_status = 'Active';
+
+        CREATE INDEX IF NOT EXISTS ix_branch_device_credentials_device
+            ON branch_device_credentials (
+                branch_id, device_id, lifecycle_status, credential_id);
+
+        CREATE TRIGGER IF NOT EXISTS branch_device_terminal_status_immutable
+        BEFORE UPDATE ON branch_devices
+        WHEN OLD.lifecycle_status IN ('Revoked', 'Lost')
+        BEGIN
+            SELECT RAISE(ABORT, 'Terminal Branch Device is immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS branch_device_history_preserved
+        BEFORE DELETE ON branch_devices
+        BEGIN
+            SELECT RAISE(ABORT, 'Branch Device history cannot be deleted');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS branch_device_credential_identity_immutable
+        BEFORE UPDATE OF credential_id, branch_id, device_id, secret_hash, issued_at
+            ON branch_device_credentials
+        BEGIN
+            SELECT RAISE(ABORT, 'Branch Device Credential identity is immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS branch_device_credential_terminal_status_immutable
+        BEFORE UPDATE ON branch_device_credentials
+        WHEN OLD.lifecycle_status IN ('Revoked', 'Lost', 'Replaced')
+        BEGIN
+            SELECT RAISE(ABORT, 'Terminal Branch Device Credential is immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS branch_device_credential_history_preserved
+        BEFORE DELETE ON branch_device_credentials
+        BEGIN
+            SELECT RAISE(ABORT, 'Branch Device Credential history cannot be deleted');
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -688,6 +803,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 10)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion10, cancellationToken);
+        }
+
+        if (storedVersion < 11)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion11, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
