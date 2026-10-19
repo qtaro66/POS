@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +25,7 @@ public sealed class BranchDeviceAuthenticationCompositionTests
         provider.GetRequiredService<IStartupValidator>().Validate();
         Assert.Null(provider.GetService<IBranchDeviceCredentialValidator>());
         Assert.Null(provider.GetService<BranchDeviceTokenAuthenticationService>());
+        Assert.Null(provider.GetService<IAuthorizationPolicyProvider>());
     }
 
     [Fact]
@@ -107,10 +110,41 @@ public sealed class BranchDeviceAuthenticationCompositionTests
         var device = Assert.IsType<VerifiedBranchDevice>(result);
         Assert.Equal("BRANCH-01", device.BranchId);
         Assert.Equal("DEVICE-01", device.DeviceId);
+        var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
+        var policy = Assert.IsType<AuthorizationPolicy>(
+            await policyProvider.GetPolicyAsync(
+                BranchDeviceAuthenticationDefaults.AuthorizationPolicyName));
+        Assert.Equal(
+            [BranchDeviceAuthenticationDefaults.SchemeName],
+            policy.AuthenticationSchemes);
+        Assert.Contains(
+            policy.Requirements,
+            requirement => requirement is DenyAnonymousAuthorizationRequirement);
+        Assert.Contains(
+            policy.Requirements,
+            requirement => HasClaimRequirement(
+                requirement,
+                BranchPosClaimTypes.BranchId));
+        Assert.Contains(
+            policy.Requirements,
+            requirement => HasClaimRequirement(
+                requirement,
+                BranchPosClaimTypes.DeviceId));
+        Assert.DoesNotContain(
+            policy.Requirements,
+            requirement => HasClaimRequirement(
+                requirement,
+                BranchPosClaimTypes.EmployeeId));
         Assert.DoesNotContain(
             provider.GetServices<IHostedService>(),
             service => service.GetType().Assembly == typeof(Program).Assembly);
     }
+
+    private static bool HasClaimRequirement(
+        IAuthorizationRequirement requirement,
+        string claimType) =>
+        requirement is ClaimsAuthorizationRequirement claims &&
+        string.Equals(claims.ClaimType, claimType, StringComparison.Ordinal);
 
     private static ServiceProvider Provider(IReadOnlyDictionary<string, string?> values)
     {

@@ -10,6 +10,7 @@ namespace Pos.Branch.Api.Security;
 public static class BranchDeviceAuthenticationDefaults
 {
     public const string SchemeName = "BranchDevice";
+    public const string AuthorizationPolicyName = "BranchDeviceAuthenticated";
     public const string AuthorizationScheme = "Device";
 }
 
