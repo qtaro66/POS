@@ -1,9 +1,11 @@
 using Pos.Branch.Api.Commands;
 using Pos.Branch.Api.Printing;
+using Pos.Branch.Api.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
 builder.Services.AddBranchCommandStatusQuery(builder.Configuration);
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
 builder.Services.AddPrintSpoolRetention(builder.Configuration);
