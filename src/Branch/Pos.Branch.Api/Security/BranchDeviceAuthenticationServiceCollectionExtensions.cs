@@ -47,6 +47,18 @@ public static class BranchDeviceAuthenticationServiceCollectionExtensions
             .AddScheme<AuthenticationSchemeOptions, BranchDeviceAuthenticationHandler>(
                 BranchDeviceAuthenticationDefaults.SchemeName,
                 _ => { });
+        services
+            .AddAuthorizationBuilder()
+            .AddPolicy(
+                BranchDeviceAuthenticationDefaults.AuthorizationPolicyName,
+                policy =>
+                {
+                    policy.AddAuthenticationSchemes(
+                        BranchDeviceAuthenticationDefaults.SchemeName);
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireClaim(BranchPosClaimTypes.BranchId);
+                    policy.RequireClaim(BranchPosClaimTypes.DeviceId);
+                });
         return services;
     }
 }
