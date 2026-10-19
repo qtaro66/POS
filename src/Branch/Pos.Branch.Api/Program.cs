@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
+builder.Services.AddBranchPairing(builder.Configuration);
 builder.Services.AddBranchCommandStatusQuery(builder.Configuration);
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
 builder.Services.AddPrintSpoolRetention(builder.Configuration);

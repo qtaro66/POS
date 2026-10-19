@@ -1,0 +1,45 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Pos.Application.Security;
+using Pos.Branch.Infrastructure.Sqlite;
+
+namespace Pos.Branch.Api.Security;
+
+public static class BranchPairingServiceCollectionExtensions
+{
+    public static IServiceCollection AddBranchPairing(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.TryAddSingleton<IBranchPairingReadinessProbe, SqliteBranchPairingReadinessProbe>();
+        services
+            .AddOptions<BranchPairingOptions>()
+            .Bind(configuration.GetSection(BranchPairingOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<
+            IValidateOptions<BranchPairingOptions>,
+            BranchPairingOptionsValidator>();
+
+        var enabled = configuration
+            .GetSection(BranchPairingOptions.SectionName)
+            .GetValue<bool>(nameof(BranchPairingOptions.Enabled));
+        if (!enabled)
+        {
+            return services;
+        }
+
+        services.TryAddSingleton<IBranchPairingTokenIssuanceStore>(provider =>
+        {
+            var options = provider
+                .GetRequiredService<IOptions<BranchPairingOptions>>()
+                .Value;
+            return new SqliteBranchPairingTokenIssuanceStore(options.DatabasePath.Trim());
+        });
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton<BranchPairingTokenIssuanceService>();
+        return services;
+    }
+}
