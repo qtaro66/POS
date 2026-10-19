@@ -35,6 +35,8 @@ public sealed class BranchPairingChallengeResponseMapperTests
     [InlineData("https://192.168.2.2/pair")]
     [InlineData("https://192.168.2.2/?branch=01")]
     [InlineData("https://192.168.2.2/#pair")]
+    [InlineData("https://192.168.2.2:0")]
+    [InlineData(" https://192.168.2.2")]
     [InlineData("192.168.2.2")]
     public void Non_phase_zero_service_url_is_rejected(string serviceUrl)
     {
