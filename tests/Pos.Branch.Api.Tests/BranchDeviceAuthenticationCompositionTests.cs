@@ -56,7 +56,7 @@ public sealed class BranchDeviceAuthenticationCompositionTests
     {
         await using var database = new AuthenticationDatabase();
         await database.InitializeAsync();
-        await database.ExecuteAsync("PRAGMA user_version = 10;");
+        await database.ExecuteAsync("PRAGMA user_version = 11;");
         using var provider = Provider(database.Configuration(enabled: true));
 
         var exception = Assert.Throws<OptionsValidationException>(
@@ -65,7 +65,7 @@ public sealed class BranchDeviceAuthenticationCompositionTests
         Assert.Contains(
             exception.Failures,
             failure => failure.Contains(
-                "schema version must be 11; actual version is 10",
+                "schema version must be 12; actual version is 11",
                 StringComparison.Ordinal));
     }
 
@@ -73,7 +73,7 @@ public sealed class BranchDeviceAuthenticationCompositionTests
     public async Task Enabled_authentication_rejects_missing_device_tables()
     {
         await using var database = new AuthenticationDatabase();
-        await database.CreateEmptyVersionElevenAsync();
+        await database.CreateEmptyVersionTwelveAsync();
         using var provider = Provider(database.Configuration(enabled: true));
 
         var exception = Assert.Throws<OptionsValidationException>(
@@ -178,10 +178,10 @@ public sealed class BranchDeviceAuthenticationCompositionTests
             await new SqliteTableSessionCommandStore(Path).InitializeAsync();
         }
 
-        public async Task CreateEmptyVersionElevenAsync()
+        public async Task CreateEmptyVersionTwelveAsync()
         {
             Directory.CreateDirectory(_directory);
-            await ExecuteAsync("PRAGMA user_version = 11;", SqliteOpenMode.ReadWriteCreate);
+            await ExecuteAsync("PRAGMA user_version = 12;", SqliteOpenMode.ReadWriteCreate);
         }
 
         public async Task SeedActiveCredentialAsync(IssuedBranchDeviceCredential credential)
