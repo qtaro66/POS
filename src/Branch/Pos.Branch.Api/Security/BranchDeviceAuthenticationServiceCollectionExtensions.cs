@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Pos.Application.Security;
@@ -41,6 +42,11 @@ public static class BranchDeviceAuthenticationServiceCollectionExtensions
             return new SqliteBranchDeviceCredentialValidator(options.DatabasePath.Trim());
         });
         services.TryAddSingleton<BranchDeviceTokenAuthenticationService>();
+        services
+            .AddAuthentication()
+            .AddScheme<AuthenticationSchemeOptions, BranchDeviceAuthenticationHandler>(
+                BranchDeviceAuthenticationDefaults.SchemeName,
+                _ => { });
         return services;
     }
 }
