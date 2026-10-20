@@ -23,24 +23,27 @@ attempt throttling, and transport remain unresolved.
 ## Decision
 
 - Add `IBranchEmployeeSessionValidator.ValidateActiveAsync`, scoped by trusted
-  Branch and device identifiers plus an opaque presented session token.
+  Branch and device identifiers plus a parsed session identifier and decoded
+  presented secret.
 - Return `VerifiedBranchEmployeeSession` containing canonical Branch, device,
   and employee identifiers only after the session and employee are currently
   valid. Return one null result for invalid, expired, revoked, inactive, or
   ambiguous outcomes.
 - Add `BranchEmployeeSessionAuthenticationService` as the application boundary.
-  It canonicalizes trusted identifiers but passes token characters exactly as
-  presented, without trimming, normalizing, logging, or converting them to a
-  managed string.
+  It canonicalizes trusted identifiers and owns bounded token parsing. It
+  rejects malformed tokens before validator access and passes only the public
+  session identifier and an operation-scoped decoded secret to the validator.
 - Reject a validator result whose Branch or device differs from the trusted
   request identity.
-- Copy the token for validator use and zero the working buffer after success or
-  failure. The caller remains responsible for its original input buffer.
+- Copy the presented token for parsing, dispose the parsed secret after success
+  or failure, and zero the working character buffer. The caller remains
+  responsible for its original input buffer.
 - Forward cancellation and propagate operational failures rather than treating
   them as invalid credentials.
-- Do not define token syntax, cryptography, storage, expiry duration, renewal,
-  cookie or header transport, PIN login HTTP contracts, dependency injection,
-  an authentication handler, or route activation in this slice.
+- ADR 0071 defines token syntax and cryptography. Do not define storage, expiry
+  duration, renewal, cookie or header transport, PIN login HTTP contracts,
+  dependency injection, an authentication handler, or route activation in this
+  slice.
 
 ## Consequences
 
