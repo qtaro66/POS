@@ -12,8 +12,10 @@ public static class BranchPairingRedemptionHttpHandler
         UnauthorizedHttpResult>> HandleAsync(
         BranchPairingRedemptionRequest request,
         BranchPairingRedemptionService redemptionService,
+        HttpResponse httpResponse,
         CancellationToken cancellationToken)
     {
+        BranchPairingSecretResponseHeaders.Apply(httpResponse);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(redemptionService);
 

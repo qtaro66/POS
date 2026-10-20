@@ -11,8 +11,10 @@ public static class BranchPairingIssuanceHttpHandler
         AuthenticatedBranchRequestIdentity identity,
         IOptions<BranchPairingOptions> pairingOptions,
         BranchPairingTokenIssuanceService issuanceService,
+        HttpResponse httpResponse,
         CancellationToken cancellationToken)
     {
+        BranchPairingSecretResponseHeaders.Apply(httpResponse);
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(pairingOptions);
         ArgumentNullException.ThrowIfNull(issuanceService);
