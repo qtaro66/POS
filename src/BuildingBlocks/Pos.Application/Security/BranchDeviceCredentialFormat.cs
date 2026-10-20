@@ -82,6 +82,27 @@ public static class BranchDeviceCredentialFormat
         }
     }
 
+    public static bool IsCanonicalCredentialId(string? credentialId)
+    {
+        if (credentialId is null ||
+            credentialId.Length != CredentialIdEncodedLength ||
+            !IsBase64Url(credentialId))
+        {
+            return false;
+        }
+
+        Span<byte> decoded = stackalloc byte[CredentialIdByteLength];
+        try
+        {
+            return TryDecodeBase64Url(credentialId, decoded) &&
+                credentialId.AsSpan().SequenceEqual(EncodeBase64Url(decoded));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(decoded);
+        }
+    }
+
     public static bool TryParse(
         string? token,
         [NotNullWhen(true)] out ParsedBranchDeviceCredential? credential)
