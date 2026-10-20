@@ -110,26 +110,34 @@ public static class BranchEmployeeSessionTokenFormat
         string? token,
         [NotNullWhen(true)] out ParsedBranchEmployeeSessionToken? session)
     {
+        if (token is null)
+        {
+            session = null;
+            return false;
+        }
+
+        return TryParse(token.AsSpan(), out session);
+    }
+
+    public static bool TryParse(
+        ReadOnlySpan<char> token,
+        [NotNullWhen(true)] out ParsedBranchEmployeeSessionToken? session)
+    {
         session = null;
-        if (token is null || token.Length != TokenLength)
+        var firstSeparator = Version.Length;
+        var secondSeparator = Version.Length + 1 + SessionIdEncodedLength;
+        if (token.Length != TokenLength ||
+            !token[..Version.Length].SequenceEqual(Version) ||
+            token[firstSeparator] != '.' ||
+            token[secondSeparator] != '.')
         {
             return false;
         }
 
-        var firstSeparator = token.IndexOf('.', StringComparison.Ordinal);
-        var secondSeparator = token.IndexOf('.', firstSeparator + 1);
-        if (firstSeparator != Version.Length ||
-            secondSeparator != Version.Length + 1 + SessionIdEncodedLength ||
-            token.IndexOf('.', secondSeparator + 1) >= 0 ||
-            !token.AsSpan(0, firstSeparator).SequenceEqual(Version))
-        {
-            return false;
-        }
-
-        var sessionIdSpan = token.AsSpan(
+        var sessionIdSpan = token.Slice(
             firstSeparator + 1,
             SessionIdEncodedLength);
-        var secretSpan = token.AsSpan(secondSeparator + 1, SecretEncodedLength);
+        var secretSpan = token.Slice(secondSeparator + 1, SecretEncodedLength);
         if (!IsBase64Url(sessionIdSpan) || !IsBase64Url(secretSpan))
         {
             return false;

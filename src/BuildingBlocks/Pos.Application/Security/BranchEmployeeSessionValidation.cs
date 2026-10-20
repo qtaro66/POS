@@ -32,7 +32,8 @@ public interface IBranchEmployeeSessionValidator
     Task<VerifiedBranchEmployeeSession?> ValidateActiveAsync(
         string branchId,
         string deviceId,
-        ReadOnlyMemory<char> sessionToken,
+        string sessionId,
+        ReadOnlyMemory<byte> presentedSecret,
         CancellationToken cancellationToken = default);
 }
 
@@ -64,20 +65,37 @@ public sealed class BranchEmployeeSessionAuthenticationService
         var workingToken = presentedToken.ToArray();
         try
         {
-            var session = await _validator.ValidateActiveAsync(
-                branchId,
-                deviceId,
+            if (!BranchEmployeeSessionTokenFormat.TryParse(
                 workingToken,
-                cancellationToken);
-            if (session is not null &&
-                (!string.Equals(session.BranchId, branchId, StringComparison.Ordinal) ||
-                 !string.Equals(session.DeviceId, deviceId, StringComparison.Ordinal)))
+                out var parsedToken))
             {
-                throw new InvalidOperationException(
-                    "The verified employee session belongs to a different Branch or device.");
+                return null;
             }
 
-            return session;
+            using (parsedToken)
+            {
+                var session = await _validator.ValidateActiveAsync(
+                    branchId,
+                    deviceId,
+                    parsedToken.SessionId,
+                    parsedToken.Secret,
+                    cancellationToken);
+                if (session is not null &&
+                    (!string.Equals(
+                        session.BranchId,
+                        branchId,
+                        StringComparison.Ordinal) ||
+                     !string.Equals(
+                         session.DeviceId,
+                         deviceId,
+                         StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException(
+                        "The verified employee session belongs to a different Branch or device.");
+                }
+
+                return session;
+            }
         }
         finally
         {
