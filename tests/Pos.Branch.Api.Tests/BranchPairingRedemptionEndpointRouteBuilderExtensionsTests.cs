@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Security;
 using Pos.Branch.Api.Security;
@@ -56,6 +57,57 @@ public sealed class BranchPairingRedemptionEndpointRouteBuilderExtensionsTests
             BranchPairingRedemptionEndpointRouteBuilderExtensions
                 .MapBranchPairingRedemptionEndpoint(null!));
     }
+
+    [Fact]
+    public void Disabled_pairing_does_not_map_redemption_route()
+    {
+        var app = WebApplication.CreateBuilder().Build();
+
+        app.MapBranchPairingRedemptionEndpointIfEnabled(Configuration(enabled: false));
+
+        Assert.Empty(
+            ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints));
+    }
+
+    [Fact]
+    public void Enabled_pairing_maps_one_redemption_route()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddSingleton(
+            new BranchPairingRedemptionService(
+                new RejectingStore(),
+                TimeProvider.System));
+        var app = builder.Build();
+
+        app.MapBranchPairingRedemptionEndpointIfEnabled(Configuration(enabled: true));
+
+        var route = Assert.IsType<RouteEndpoint>(Assert.Single(
+            ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)));
+        Assert.Equal(
+            BranchPairingRedemptionEndpointRouteBuilderExtensions.RoutePattern,
+            route.RoutePattern.RawText);
+    }
+
+    [Fact]
+    public void Conditional_mapping_rejects_null_arguments()
+    {
+        var configuration = Configuration(enabled: false);
+        var app = WebApplication.CreateBuilder().Build();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            BranchPairingRedemptionEndpointRouteBuilderExtensions
+                .MapBranchPairingRedemptionEndpointIfEnabled(null!, configuration));
+        Assert.Throws<ArgumentNullException>(() =>
+            app.MapBranchPairingRedemptionEndpointIfEnabled(null!));
+    }
+
+    private static IConfiguration Configuration(bool enabled) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BranchPairing:Enabled"] = enabled.ToString()
+            })
+            .Build();
 
     private sealed class RejectingStore : IBranchPairingRedemptionStore
     {
