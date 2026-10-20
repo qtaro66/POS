@@ -32,5 +32,6 @@ app.MapGet("/health", () => Results.Ok(new
     status = "Healthy",
     utc = DateTimeOffset.UtcNow,
 }));
+app.MapBranchPairingRedemptionEndpointIfEnabled(builder.Configuration);
 
 app.Run();

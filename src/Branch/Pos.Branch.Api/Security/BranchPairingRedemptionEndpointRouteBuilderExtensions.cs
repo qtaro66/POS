@@ -23,4 +23,22 @@ public static class BranchPairingRedemptionEndpointRouteBuilderExtensions
             .ExcludeFromDescription()
             .WithName(EndpointName);
     }
+
+    public static IEndpointRouteBuilder MapBranchPairingRedemptionEndpointIfEnabled(
+        this IEndpointRouteBuilder endpoints,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var enabled = configuration
+            .GetSection(BranchPairingOptions.SectionName)
+            .GetValue<bool>(nameof(BranchPairingOptions.Enabled));
+        if (enabled)
+        {
+            endpoints.MapBranchPairingRedemptionEndpoint();
+        }
+
+        return endpoints;
+    }
 }
