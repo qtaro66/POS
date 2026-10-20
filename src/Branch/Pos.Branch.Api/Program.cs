@@ -22,6 +22,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseRouting();
+app.UseBranchPairingRateLimiting(builder.Configuration);
 
 app.MapGet("/health", () => Results.Ok(new
 {
