@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc;
+
 namespace Pos.Branch.Api.Security;
 
 public static class BranchPairingRedemptionEndpointRouteBuilderExtensions
@@ -5,6 +7,8 @@ public static class BranchPairingRedemptionEndpointRouteBuilderExtensions
     public const string RoutePattern = "/api/v1/pairing/redemptions";
 
     public const string EndpointName = "RedeemBranchPairing";
+
+    public const long MaxRequestBodySize = 4 * 1024;
 
     public static RouteHandlerBuilder MapBranchPairingRedemptionEndpoint(
         this IEndpointRouteBuilder endpoints)
@@ -15,6 +19,7 @@ public static class BranchPairingRedemptionEndpointRouteBuilderExtensions
             .MapPost(RoutePattern, BranchPairingRedemptionHttpHandler.HandleAsync)
             .AllowAnonymous()
             .RequireRateLimiting(BranchPairingRedemptionRateLimitPolicy.PolicyName)
+            .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .ExcludeFromDescription()
             .WithName(EndpointName);
     }

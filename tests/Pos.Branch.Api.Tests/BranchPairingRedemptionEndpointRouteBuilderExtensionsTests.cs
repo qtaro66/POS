@@ -40,6 +40,9 @@ public sealed class BranchPairingRedemptionEndpointRouteBuilderExtensionsTests
         Assert.Equal(
             BranchPairingRedemptionRateLimitPolicy.PolicyName,
             route.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
+        Assert.Equal(
+            BranchPairingRedemptionEndpointRouteBuilderExtensions.MaxRequestBodySize,
+            route.Metadata.GetMetadata<IRequestSizeLimitMetadata>()?.MaxRequestBodySize);
         Assert.True(
             route.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>()
                 ?.ExcludeFromDescription);
