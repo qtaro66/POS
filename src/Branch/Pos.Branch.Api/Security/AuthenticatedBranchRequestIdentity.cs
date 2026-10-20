@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 
 namespace Pos.Branch.Api.Security;
@@ -32,7 +33,7 @@ public static class AuthenticatedBranchRequestIdentityResolver
 {
     public static bool TryResolve(
         ClaimsPrincipal? principal,
-        out AuthenticatedBranchRequestIdentity? identity)
+        [NotNullWhen(true)] out AuthenticatedBranchRequestIdentity? identity)
     {
         identity = null;
         if (principal is null)
