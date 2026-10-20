@@ -8,7 +8,8 @@ public static class BranchPairingIssuanceEndpointRouteBuilderExtensions
 
     public const string EndpointName = "IssueBranchPairingChallenge";
 
-    public const string AuthorizationPolicyName = "BranchPosAuthenticated";
+    public const string AuthorizationPolicyName =
+        BranchPosAuthorizationDefaults.CompleteIdentityPolicyName;
 
     public const long MaxRequestBodySize = 0;
 

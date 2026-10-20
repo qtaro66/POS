@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +27,7 @@ public sealed class BranchPairingCompositionTests
         Assert.Null(provider.GetService<BranchPairingTokenIssuanceService>());
         Assert.Null(provider.GetService<IBranchPairingRedemptionStore>());
         Assert.Null(provider.GetService<BranchPairingRedemptionService>());
+        Assert.Null(provider.GetService<IAuthorizationPolicyProvider>());
     }
 
     [Fact]
@@ -142,6 +145,10 @@ public sealed class BranchPairingCompositionTests
         var service = provider.GetRequiredService<BranchPairingTokenIssuanceService>();
         var redemptionStore = provider.GetRequiredService<IBranchPairingRedemptionStore>();
         var redemptionService = provider.GetRequiredService<BranchPairingRedemptionService>();
+        var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
+        var policy = Assert.IsType<AuthorizationPolicy>(
+            await policyProvider.GetPolicyAsync(
+                BranchPosAuthorizationDefaults.CompleteIdentityPolicyName));
         var challenge = await service.IssueAsync("BRANCH-01", "EMPLOYEE-01");
         var redeemed = await redemptionService.RedeemAsync(
             "BRANCH-01",
@@ -163,6 +170,16 @@ public sealed class BranchPairingCompositionTests
         Assert.Same(
             redemptionService,
             provider.GetRequiredService<BranchPairingRedemptionService>());
+        Assert.Empty(policy.AuthenticationSchemes);
+        Assert.Contains(
+            policy.Requirements,
+            requirement => requirement is DenyAnonymousAuthorizationRequirement);
+        Assert.Contains(
+            policy.Requirements,
+            requirement => requirement is BranchCompleteIdentityAuthorizationRequirement);
+        Assert.Contains(
+            provider.GetServices<IAuthorizationHandler>(),
+            handler => handler is BranchCompleteIdentityAuthorizationHandler);
         Assert.True(BranchPairingTokenFormat.IsCanonicalPairingId(challenge.PairingId));
         Assert.NotNull(redeemed);
         Assert.Equal(
