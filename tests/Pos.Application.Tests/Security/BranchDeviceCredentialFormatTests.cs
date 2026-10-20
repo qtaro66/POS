@@ -10,6 +10,8 @@ public sealed class BranchDeviceCredentialFormatTests
         var issued = BranchDeviceCredentialFormat.Generate();
 
         Assert.Equal(22, issued.CredentialId.Length);
+        Assert.True(BranchDeviceCredentialFormat.IsCanonicalCredentialId(
+            issued.CredentialId));
         Assert.Equal(69, issued.Token.Length);
         Assert.StartsWith($"v1.{issued.CredentialId}.", issued.Token, StringComparison.Ordinal);
         Assert.Equal(
@@ -26,6 +28,19 @@ public sealed class BranchDeviceCredentialFormatTests
                 issued.CopySecretHash(),
                 credential.Secret.Span));
         }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAA=")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAA!")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAB")]
+    public void Noncanonical_credential_identifier_is_rejected(string? credentialId)
+    {
+        Assert.False(BranchDeviceCredentialFormat.IsCanonicalCredentialId(credentialId));
     }
 
     [Fact]
