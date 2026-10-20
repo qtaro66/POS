@@ -21,6 +21,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseBranchPairingHttpsOnly(builder.Configuration);
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseBranchPairingRateLimiting(builder.Configuration);
