@@ -18,15 +18,18 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
     {
         var store = new RecordingStore();
         var service = Service(store);
+        var httpResponse = Response();
 
         var result = await BranchPairingIssuanceHttpHandler.HandleAsync(
             Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
             Options("https://192.168.2.2:8443"),
             service,
+            httpResponse,
             CancellationToken.None);
 
         var ok = Assert.IsType<Ok<BranchPairingChallengeResponse>>(result);
         Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
+        AssertSecretResponseHeaders(httpResponse);
         var response = Assert.IsType<BranchPairingChallengeResponse>(ok.Value);
         Assert.Equal("https://192.168.2.2:8443/", response.BranchServiceUrl);
         Assert.Equal("BRANCH-01", response.BranchId);
@@ -49,14 +52,17 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
     public async Task Invalid_service_origin_is_rejected_before_issuing_challenge()
     {
         var store = new RecordingStore();
+        var httpResponse = Response();
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             BranchPairingIssuanceHttpHandler.HandleAsync(
                 Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
                 Options("http://192.168.2.2"),
                 Service(store),
+                httpResponse,
                 CancellationToken.None));
 
+        AssertSecretResponseHeaders(httpResponse);
         Assert.Empty(store.Registrations);
     }
 
@@ -70,6 +76,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
                 null!,
                 Options("https://192.168.2.2"),
                 Service(store),
+                Response(),
                 CancellationToken.None));
 
         Assert.Empty(store.Registrations);
@@ -85,6 +92,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
             Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
             Options("https://192.168.2.2"),
             Service(store),
+            Response(),
             source.Token);
 
         Assert.Equal(source.Token, store.CancellationToken);
@@ -101,6 +109,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
                 Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
                 Options("https://192.168.2.2"),
                 Service(store),
+                Response(),
                 CancellationToken.None));
 
         Assert.Equal("Synthetic persistence failure.", exception.Message);
@@ -114,6 +123,14 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
         {
             ServiceOrigin = serviceOrigin
         });
+
+    private static HttpResponse Response() => new DefaultHttpContext().Response;
+
+    private static void AssertSecretResponseHeaders(HttpResponse response)
+    {
+        Assert.Equal("no-store", response.Headers.CacheControl);
+        Assert.Equal("no-cache", response.Headers.Pragma);
+    }
 
     private static AuthenticatedBranchRequestIdentity Identity(
         string branchId,

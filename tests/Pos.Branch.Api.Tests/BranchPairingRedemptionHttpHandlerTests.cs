@@ -16,14 +16,17 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
     {
         var pairing = BranchPairingTokenFormat.Generate();
         var store = new RecordingStore(redeemed: true);
+        var httpResponse = Response();
 
         var result = await BranchPairingRedemptionHttpHandler.HandleAsync(
             Request(pairing),
             Service(store),
+            httpResponse,
             CancellationToken.None);
 
         var ok = Assert.IsType<Ok<BranchPairingRedemptionResponse>>(result.Result);
         Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
+        AssertSecretResponseHeaders(httpResponse);
         var response = Assert.IsType<BranchPairingRedemptionResponse>(ok.Value);
         Assert.Equal(1, response.SchemaVersion);
         Assert.True(BranchDeviceIdentifierFormat.IsCanonical(response.DeviceId));
@@ -68,6 +71,7 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
         var result = await BranchPairingRedemptionHttpHandler.HandleAsync(
             request,
             Service(store),
+            Response(),
             CancellationToken.None);
 
         var badRequest = Assert.IsType<BadRequest>(result.Result);
@@ -79,6 +83,7 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
     public async Task Malformed_pairing_identity_returns_same_401_without_store_access()
     {
         var store = new RecordingStore(redeemed: true);
+        var httpResponse = Response();
         var request = new BranchPairingRedemptionRequest(
             1,
             "BRANCH-01",
@@ -89,10 +94,12 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
         var result = await BranchPairingRedemptionHttpHandler.HandleAsync(
             request,
             Service(store),
+            httpResponse,
             CancellationToken.None);
 
         var unauthorized = Assert.IsType<UnauthorizedHttpResult>(result.Result);
         Assert.Equal(StatusCodes.Status401Unauthorized, unauthorized.StatusCode);
+        AssertSecretResponseHeaders(httpResponse);
         Assert.Null(store.Registration);
     }
 
@@ -105,6 +112,7 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
         var result = await BranchPairingRedemptionHttpHandler.HandleAsync(
             Request(pairing),
             Service(store),
+            Response(),
             CancellationToken.None);
 
         var unauthorized = Assert.IsType<UnauthorizedHttpResult>(result.Result);
@@ -122,6 +130,7 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
         await BranchPairingRedemptionHttpHandler.HandleAsync(
             Request(pairing),
             Service(store),
+            Response(),
             source.Token);
 
         Assert.Equal(source.Token, store.CancellationToken);
@@ -138,6 +147,7 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
             BranchPairingRedemptionHttpHandler.HandleAsync(
                 Request(pairing),
                 Service(store),
+                Response(),
                 CancellationToken.None));
 
         Assert.Equal("Synthetic persistence failure.", exception.Message);
@@ -154,6 +164,14 @@ public sealed class BranchPairingRedemptionHttpHandlerTests
 
     private static BranchPairingRedemptionService Service(RecordingStore store) =>
         new(store, new FixedTimeProvider(RedeemedAt));
+
+    private static HttpResponse Response() => new DefaultHttpContext().Response;
+
+    private static void AssertSecretResponseHeaders(HttpResponse response)
+    {
+        Assert.Equal("no-store", response.Headers.CacheControl);
+        Assert.Equal("no-cache", response.Headers.Pragma);
+    }
 
     private sealed class RecordingStore : IBranchPairingRedemptionStore
     {
