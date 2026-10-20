@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Pos.Application.Security;
@@ -48,6 +49,13 @@ public static class BranchPairingServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<BranchPairingTokenIssuanceService>();
         services.TryAddSingleton<BranchPairingRedemptionService>();
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy(
+                BranchPairingRedemptionRateLimitPolicy.PolicyName,
+                new BranchPairingRedemptionRateLimitPolicy());
+        });
         return services;
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Security;
@@ -36,6 +37,9 @@ public sealed class BranchPairingRedemptionEndpointRouteBuilderExtensionsTests
             Assert.IsAssignableFrom<IHttpMethodMetadata>(
                 route.Metadata.GetMetadata<IHttpMethodMetadata>()).HttpMethods);
         Assert.NotNull(route.Metadata.GetMetadata<IAllowAnonymous>());
+        Assert.Equal(
+            BranchPairingRedemptionRateLimitPolicy.PolicyName,
+            route.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
         Assert.True(
             route.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>()
                 ?.ExcludeFromDescription);

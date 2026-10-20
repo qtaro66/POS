@@ -14,6 +14,7 @@ public static class BranchPairingRedemptionEndpointRouteBuilderExtensions
         return endpoints
             .MapPost(RoutePattern, BranchPairingRedemptionHttpHandler.HandleAsync)
             .AllowAnonymous()
+            .RequireRateLimiting(BranchPairingRedemptionRateLimitPolicy.PolicyName)
             .ExcludeFromDescription()
             .WithName(EndpointName);
     }
