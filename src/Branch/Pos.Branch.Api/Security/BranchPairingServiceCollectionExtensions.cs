@@ -38,8 +38,16 @@ public static class BranchPairingServiceCollectionExtensions
                 .Value;
             return new SqliteBranchPairingTokenIssuanceStore(options.DatabasePath.Trim());
         });
+        services.TryAddSingleton<IBranchPairingRedemptionStore>(provider =>
+        {
+            var options = provider
+                .GetRequiredService<IOptions<BranchPairingOptions>>()
+                .Value;
+            return new SqliteBranchPairingRedemptionStore(options.DatabasePath.Trim());
+        });
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<BranchPairingTokenIssuanceService>();
+        services.TryAddSingleton<BranchPairingRedemptionService>();
         return services;
     }
 }

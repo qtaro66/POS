@@ -23,6 +23,8 @@ public sealed class BranchPairingCompositionTests
         provider.GetRequiredService<IStartupValidator>().Validate();
         Assert.Null(provider.GetService<IBranchPairingTokenIssuanceStore>());
         Assert.Null(provider.GetService<BranchPairingTokenIssuanceService>());
+        Assert.Null(provider.GetService<IBranchPairingRedemptionStore>());
+        Assert.Null(provider.GetService<BranchPairingRedemptionService>());
     }
 
     [Fact]
@@ -87,7 +89,7 @@ public sealed class BranchPairingCompositionTests
     }
 
     [Fact]
-    public async Task Enabled_pairing_composes_one_sqlite_issuance_boundary()
+    public async Task Enabled_pairing_composes_sqlite_issuance_and_redemption_boundaries()
     {
         await using var database = new PairingDatabase();
         await database.InitializeAsync();
@@ -96,21 +98,60 @@ public sealed class BranchPairingCompositionTests
         provider.GetRequiredService<IStartupValidator>().Validate();
         var store = provider.GetRequiredService<IBranchPairingTokenIssuanceStore>();
         var service = provider.GetRequiredService<BranchPairingTokenIssuanceService>();
+        var redemptionStore = provider.GetRequiredService<IBranchPairingRedemptionStore>();
+        var redemptionService = provider.GetRequiredService<BranchPairingRedemptionService>();
         var challenge = await service.IssueAsync("BRANCH-01", "EMPLOYEE-01");
+        var redeemed = await redemptionService.RedeemAsync(
+            "BRANCH-01",
+            challenge.PairingId,
+            challenge.Token,
+            "Dining Tablet 01");
 
         Assert.IsType<SqliteBranchPairingTokenIssuanceStore>(store);
+        Assert.IsType<SqliteBranchPairingRedemptionStore>(redemptionStore);
         Assert.Same(
             store,
             provider.GetRequiredService<IBranchPairingTokenIssuanceStore>());
         Assert.Same(
             service,
             provider.GetRequiredService<BranchPairingTokenIssuanceService>());
+        Assert.Same(
+            redemptionStore,
+            provider.GetRequiredService<IBranchPairingRedemptionStore>());
+        Assert.Same(
+            redemptionService,
+            provider.GetRequiredService<BranchPairingRedemptionService>());
         Assert.True(BranchPairingTokenFormat.IsCanonicalPairingId(challenge.PairingId));
+        Assert.NotNull(redeemed);
         Assert.Equal(
             1L,
             await database.ScalarAsync<long>(
-                "SELECT COUNT(*) FROM branch_pairing_tokens WHERE pairing_id = $pairingId;",
+                """
+                SELECT COUNT(*) FROM branch_pairing_tokens
+                WHERE pairing_id = $pairingId AND lifecycle_status = 'Consumed';
+                """,
                 ("$pairingId", challenge.PairingId)));
+        Assert.Equal(
+            1L,
+            await database.ScalarAsync<long>(
+                """
+                SELECT COUNT(*) FROM branch_devices
+                WHERE branch_id = 'BRANCH-01'
+                  AND device_id = $deviceId
+                  AND display_name = 'Dining Tablet 01'
+                  AND lifecycle_status = 'Active';
+                """,
+                ("$deviceId", redeemed.DeviceId)));
+        Assert.Equal(
+            1L,
+            await database.ScalarAsync<long>(
+                """
+                SELECT COUNT(*) FROM branch_device_credentials
+                WHERE branch_id = 'BRANCH-01'
+                  AND device_id = $deviceId
+                  AND lifecycle_status = 'Active';
+                """,
+                ("$deviceId", redeemed.DeviceId)));
         Assert.DoesNotContain(
             provider.GetServices<IHostedService>(),
             hosted => hosted.GetType().Assembly == typeof(Program).Assembly);
