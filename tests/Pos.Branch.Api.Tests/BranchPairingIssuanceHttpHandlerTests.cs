@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
 using Pos.Application.Security;
 using Pos.Branch.Api.Security;
 using Pos.Contracts.Security;
@@ -20,7 +21,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
 
         var result = await BranchPairingIssuanceHttpHandler.HandleAsync(
             Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
-            "https://192.168.2.2:8443",
+            Options("https://192.168.2.2:8443"),
             service,
             CancellationToken.None);
 
@@ -52,7 +53,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
         await Assert.ThrowsAsync<ArgumentException>(() =>
             BranchPairingIssuanceHttpHandler.HandleAsync(
                 Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
-                "http://192.168.2.2",
+                Options("http://192.168.2.2"),
                 Service(store),
                 CancellationToken.None));
 
@@ -67,7 +68,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
             BranchPairingIssuanceHttpHandler.HandleAsync(
                 null!,
-                "https://192.168.2.2",
+                Options("https://192.168.2.2"),
                 Service(store),
                 CancellationToken.None));
 
@@ -82,7 +83,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
 
         await BranchPairingIssuanceHttpHandler.HandleAsync(
             Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
-            "https://192.168.2.2",
+            Options("https://192.168.2.2"),
             Service(store),
             source.Token);
 
@@ -98,7 +99,7 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             BranchPairingIssuanceHttpHandler.HandleAsync(
                 Identity("BRANCH-01", "DEVICE-01", "EMPLOYEE-01"),
-                "https://192.168.2.2",
+                Options("https://192.168.2.2"),
                 Service(store),
                 CancellationToken.None));
 
@@ -107,6 +108,12 @@ public sealed class BranchPairingIssuanceHttpHandlerTests
 
     private static BranchPairingTokenIssuanceService Service(RecordingStore store) =>
         new(store, new FixedTimeProvider(IssuedAt));
+
+    private static IOptions<BranchPairingOptions> Options(string serviceOrigin) =>
+        Microsoft.Extensions.Options.Options.Create(new BranchPairingOptions
+        {
+            ServiceOrigin = serviceOrigin
+        });
 
     private static AuthenticatedBranchRequestIdentity Identity(
         string branchId,

@@ -11,6 +11,8 @@ public sealed class BranchPairingOptions
     public bool Enabled { get; init; }
 
     public string DatabasePath { get; init; } = string.Empty;
+
+    public string ServiceOrigin { get; init; } = string.Empty;
 }
 
 public sealed class BranchPairingOptionsValidator :
@@ -48,6 +50,18 @@ public sealed class BranchPairingOptionsValidator :
         {
             return ValidateOptionsResult.Fail(
                 "DatabasePath must reference an existing Branch database file.");
+        }
+
+        try
+        {
+            BranchPairingPhaseZeroServiceOrigin.Require(
+                options.ServiceOrigin,
+                nameof(options.ServiceOrigin));
+        }
+        catch (ArgumentException)
+        {
+            return ValidateOptionsResult.Fail(
+                "ServiceOrigin must be an absolute HTTPS IP origin without credentials, path, query, or fragment.");
         }
 
         var readiness = _readiness.Check(path);

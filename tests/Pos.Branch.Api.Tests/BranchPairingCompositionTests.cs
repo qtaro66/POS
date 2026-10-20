@@ -89,6 +89,48 @@ public sealed class BranchPairingCompositionTests
     }
 
     [Fact]
+    public async Task Enabled_pairing_fails_closed_without_service_origin()
+    {
+        await using var database = new PairingDatabase();
+        await database.InitializeAsync();
+        var configuration = database.Configuration(enabled: true).ToDictionary();
+        configuration["BranchPairing:ServiceOrigin"] = string.Empty;
+        using var provider = Provider(configuration);
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IStartupValidator>().Validate());
+
+        Assert.Contains(
+            exception.Failures,
+            failure => failure.Contains(
+                "ServiceOrigin must be an absolute HTTPS IP origin",
+                StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("http://192.168.2.2")]
+    [InlineData("https://branch.local")]
+    [InlineData("https://192.168.2.2/pairing")]
+    public async Task Enabled_pairing_rejects_non_phase_zero_service_origin(
+        string serviceOrigin)
+    {
+        await using var database = new PairingDatabase();
+        await database.InitializeAsync();
+        var configuration = database.Configuration(enabled: true).ToDictionary();
+        configuration["BranchPairing:ServiceOrigin"] = serviceOrigin;
+        using var provider = Provider(configuration);
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IStartupValidator>().Validate());
+
+        Assert.Contains(
+            exception.Failures,
+            failure => failure.Contains(
+                "ServiceOrigin must be an absolute HTTPS IP origin",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Enabled_pairing_composes_sqlite_issuance_and_redemption_boundaries()
     {
         await using var database = new PairingDatabase();
@@ -181,7 +223,8 @@ public sealed class BranchPairingCompositionTests
             new Dictionary<string, string?>
             {
                 ["BranchPairing:Enabled"] = enabled.ToString(),
-                ["BranchPairing:DatabasePath"] = Path
+                ["BranchPairing:DatabasePath"] = Path,
+                ["BranchPairing:ServiceOrigin"] = "https://192.168.2.2:8443"
             };
 
         public Task InitializeAsync() =>
