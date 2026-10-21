@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 12;
+    public const int CurrentVersion = 13;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -808,6 +808,62 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion13 = """
+        CREATE TABLE IF NOT EXISTS branch_employee_sessions (
+            session_id TEXT NOT NULL PRIMARY KEY CHECK (
+                length(session_id) = 22
+                AND session_id NOT GLOB '*[^A-Za-z0-9_-]*'),
+            branch_id TEXT NOT NULL CHECK (length(trim(branch_id)) > 0),
+            device_id TEXT NOT NULL CHECK (length(trim(device_id)) > 0),
+            employee_id TEXT NOT NULL CHECK (length(trim(employee_id)) > 0),
+            secret_hash BLOB NOT NULL CHECK (
+                typeof(secret_hash) = 'blob' AND length(secret_hash) = 32),
+            issued_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            lifecycle_status TEXT NOT NULL CHECK (
+                lifecycle_status IN ('Active', 'Revoked')),
+            revoked_at TEXT NULL,
+            revocation_reason TEXT NULL CHECK (
+                revocation_reason IS NULL OR
+                length(trim(revocation_reason)) > 0),
+            FOREIGN KEY (branch_id, device_id)
+                REFERENCES branch_devices (branch_id, device_id),
+            CHECK (expires_at > issued_at),
+            CHECK (
+                (lifecycle_status = 'Active'
+                    AND revoked_at IS NULL
+                    AND revocation_reason IS NULL)
+                OR
+                (lifecycle_status = 'Revoked'
+                    AND revoked_at IS NOT NULL
+                    AND revocation_reason IS NOT NULL))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_branch_employee_sessions_lookup
+            ON branch_employee_sessions (
+                branch_id, session_id, lifecycle_status);
+
+        CREATE INDEX IF NOT EXISTS ix_branch_employee_sessions_principal
+            ON branch_employee_sessions (
+                branch_id, device_id, employee_id,
+                lifecycle_status, expires_at);
+
+        CREATE TRIGGER IF NOT EXISTS branch_employee_session_identity_immutable
+        BEFORE UPDATE OF session_id, branch_id, device_id, employee_id,
+                         secret_hash, issued_at, expires_at
+            ON branch_employee_sessions
+        BEGIN
+            SELECT RAISE(ABORT, 'Branch Employee Session identity is immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS branch_employee_session_terminal_status_immutable
+        BEFORE UPDATE ON branch_employee_sessions
+        WHEN OLD.lifecycle_status = 'Revoked'
+        BEGIN
+            SELECT RAISE(ABORT, 'Revoked Branch Employee Session is immutable');
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -882,6 +938,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 12)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion12, cancellationToken);
+        }
+
+        if (storedVersion < 13)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion13, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
