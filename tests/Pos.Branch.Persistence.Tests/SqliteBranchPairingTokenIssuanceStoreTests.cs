@@ -15,7 +15,7 @@ public sealed class SqliteBranchPairingTokenIssuanceStoreTests
         await using var database = new PairingDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(12L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(13L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'branch_pairing_tokens';
