@@ -37,6 +37,14 @@ public interface IBranchEmployeeSessionValidator
         CancellationToken cancellationToken = default);
 }
 
+public interface IBranchEmployeeStatusReader
+{
+    Task<bool> IsActiveAsync(
+        string branchId,
+        string employeeId,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed class BranchEmployeeSessionAuthenticationService
 {
     private readonly IBranchEmployeeSessionValidator _validator;
