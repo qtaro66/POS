@@ -43,7 +43,9 @@ public sealed class BranchEmployeeSessionLoginEndpointRouteBuilderExtensionsTest
             route.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>()
                 ?.ExcludeFromDescription);
         Assert.Null(route.Metadata.GetMetadata<EnableRateLimitingAttribute>());
-        Assert.Null(route.Metadata.GetMetadata<IRequestSizeLimitMetadata>());
+        Assert.Equal(
+            BranchEmployeeSessionLoginEndpointRouteBuilderExtensions.MaxRequestBodySize,
+            route.Metadata.GetMetadata<IRequestSizeLimitMetadata>()?.MaxRequestBodySize);
     }
 
     [Fact]
