@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +37,7 @@ public sealed class BranchEmployeeSessionCompositionTests
         Assert.Null(provider.GetService<BranchEmployeePinAuthenticationService>());
         Assert.Null(provider.GetService<BranchEmployeeSessionLoginService>());
         Assert.Null(provider.GetService<IAuthenticationSchemeProvider>());
+        Assert.Null(provider.GetService<IAuthorizationPolicyProvider>());
     }
 
     [Fact]
@@ -131,6 +134,24 @@ public sealed class BranchEmployeeSessionCompositionTests
         Assert.Equal(
             typeof(BranchEmployeeSessionAuthenticationHandler),
             scheme.HandlerType);
+        var policy = Assert.IsType<AuthorizationPolicy>(
+            await provider
+                .GetRequiredService<IAuthorizationPolicyProvider>()
+                .GetPolicyAsync(
+                    BranchPosAuthorizationDefaults.CompleteIdentityPolicyName));
+        Assert.Equal(
+            [BranchEmployeeSessionAuthenticationDefaults.SchemeName],
+            policy.AuthenticationSchemes);
+        Assert.Contains(
+            policy.Requirements,
+            requirement => requirement is DenyAnonymousAuthorizationRequirement);
+        Assert.Contains(
+            policy.Requirements,
+            requirement =>
+                requirement is BranchCompleteIdentityAuthorizationRequirement);
+        Assert.Contains(
+            provider.GetServices<IAuthorizationHandler>(),
+            handler => handler is BranchCompleteIdentityAuthorizationHandler);
         Assert.DoesNotContain(
             provider.GetServices<IHostedService>(),
             service => service.GetType().Assembly == typeof(Program).Assembly);

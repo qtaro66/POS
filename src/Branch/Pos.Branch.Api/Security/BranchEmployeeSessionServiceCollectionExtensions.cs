@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Pos.Application.Security;
@@ -87,6 +88,22 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
                 BranchEmployeeSessionAuthenticationHandler>(
                 BranchEmployeeSessionAuthenticationDefaults.SchemeName,
                 _ => { });
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IAuthorizationHandler,
+                BranchCompleteIdentityAuthorizationHandler>());
+        services
+            .AddAuthorizationBuilder()
+            .AddPolicy(
+                BranchPosAuthorizationDefaults.CompleteIdentityPolicyName,
+                policy =>
+                {
+                    policy.AddAuthenticationSchemes(
+                        BranchEmployeeSessionAuthenticationDefaults.SchemeName);
+                    policy.RequireAuthenticatedUser();
+                    policy.AddRequirements(
+                        new BranchCompleteIdentityAuthorizationRequirement());
+                });
         return services;
     }
 }
