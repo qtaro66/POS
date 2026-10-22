@@ -11,17 +11,22 @@ import { text } from './strings.ts'
 import './App.css'
 
 /** Mobile POS application shell: unpaired → paired (logged out) → employee authenticated. */
-function App({ services }: { readonly services: MobileServices }) {
-  const [state, dispatch] = useReducer(deviceSessionReducer, services.deviceStore, (store) =>
-    initialDeviceState(store.load()),
-  )
+function App({
+  services,
+  initialDevice,
+}: {
+  readonly services: MobileServices
+  /** Device restored from the device store before the first render. */
+  readonly initialDevice: PairedDevice | null
+}) {
+  const [state, dispatch] = useReducer(deviceSessionReducer, initialDevice, initialDeviceState)
   const sync = useSyncExternalStore(
     (listener) => services.syncStatus.subscribe(listener),
     () => services.syncStatus.getStatus(),
   )
 
+  // The pairing gateway has already stored the device and its credential.
   function handlePaired(device: PairedDevice) {
-    services.deviceStore.save(device)
     dispatch({ type: 'paired', device })
   }
 

@@ -13,6 +13,8 @@ export const text = {
     'Ask a signed-in POS user to open a pairing QR code on the PC POS, then scan it here.',
   pairingRules:
     'Each device needs its own QR code. A code works once and expires after 5 minutes.',
+  deviceNameLabel: 'Device name',
+  deviceNameRequired: 'Enter a name for this device.',
   pairingScan: 'Scan pairing QR code',
   pairingInProgress: 'Pairing with the branch…',
   pairingScanCancelled: 'Scanning was cancelled. Try again when the QR code is ready.',
@@ -25,7 +27,11 @@ export const text = {
     'This pairing code was made by a different POS version. Update this app or ask for a new QR code.',
   pairingExpired: 'This pairing code has expired. Ask for a new QR code.',
   pairingAlreadyUsed: 'This pairing code has already been used. Ask for a new QR code.',
-  pairingInvalid: 'The branch did not accept this pairing code. Ask for a new QR code.',
+  pairingInvalid:
+    'The branch did not accept this pairing code. It may have expired or already been used. Ask for a new QR code.',
+  pairingInvalidRequest:
+    'The branch could not accept this pairing request. Check the device name and try again.',
+  pairingRateLimited: 'Too many pairing attempts. Wait a moment, then try again.',
   pairingUnreachable:
     'The branch service cannot be reached. Check the shop network and try again.',
   pairingFailed: 'Pairing did not complete because of an unexpected error. Try again.',

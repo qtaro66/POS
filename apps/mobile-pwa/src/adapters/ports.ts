@@ -25,13 +25,27 @@ export interface QrScanner {
   scan(): Promise<QrScanResult>
 }
 
+export type PairingRejection =
+  | 'expired'
+  | 'alreadyUsed'
+  | 'invalid'
+  /** The Branch Service refused the request itself (HTTP 400), for example the device name. */
+  | 'invalidRequest'
+  /** Too many redemption attempts (HTTP 429). */
+  | 'rateLimited'
+
 export type PairingOutcome =
   | { readonly kind: 'paired'; readonly device: PairedDevice }
-  | { readonly kind: 'rejected'; readonly reason: 'expired' | 'alreadyUsed' | 'invalid' }
+  | { readonly kind: 'rejected'; readonly reason: PairingRejection }
   | { readonly kind: 'unreachable' }
 
+/**
+ * Redeems a pairing QR code. On success the gateway stores the device record
+ * and its credential in the `DeviceStore`; the UI only receives the public
+ * `PairedDevice` and never handles the credential.
+ */
 export interface PairingGateway {
-  pair(payload: PairingQrPayload): Promise<PairingOutcome>
+  pair(payload: PairingQrPayload, deviceDisplayName: string): Promise<PairingOutcome>
 }
 
 export type LoginOutcome =
@@ -59,10 +73,16 @@ export interface SyncStatusSource {
   subscribe(listener: () => void): () => void
 }
 
-/** Persists the paired-device record on this device. */
+/**
+ * Persists the paired device and its revocable device credential on this
+ * device (requirement 3.3 / D11). Clearing browser data loses both, and the
+ * device must then be paired again.
+ */
 export interface DeviceStore {
-  load(): PairedDevice | null
-  save(device: PairedDevice | null): void
+  load(): Promise<PairedDevice | null>
+  /** Credential for the stored device, or null when none is stored for that device ID. */
+  loadCredential(deviceId: string): Promise<string | null>
+  save(device: PairedDevice, credential: string): Promise<void>
 }
 
 export interface MobileServices {

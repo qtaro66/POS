@@ -124,20 +124,30 @@ export class FixtureSyncStatus implements SyncStatusSource {
   }
 }
 
-/** In-memory device store; a real store must persist the device credential on the device. */
+/** Placeholder credential for the fixture device. Not a real credential. */
+export const FIXTURE_DEVICE_CREDENTIAL = 'f'.repeat(32)
+
+/** In-memory device store for tests and the fixture build; see `IndexedDbDeviceStore` for the real one. */
 export class MemoryDeviceStore implements DeviceStore {
-  private device: PairedDevice | null
+  private record: { readonly device: PairedDevice; readonly credential: string } | null
 
-  constructor(device: PairedDevice | null = null) {
-    this.device = device
+  constructor(device: PairedDevice | null = null, credential = FIXTURE_DEVICE_CREDENTIAL) {
+    this.record = device ? { device, credential } : null
   }
 
-  load(): PairedDevice | null {
-    return this.device
+  load(): Promise<PairedDevice | null> {
+    return Promise.resolve(this.record?.device ?? null)
   }
 
-  save(device: PairedDevice | null): void {
-    this.device = device
+  loadCredential(deviceId: string): Promise<string | null> {
+    return Promise.resolve(
+      this.record?.device.deviceId === deviceId ? this.record.credential : null,
+    )
+  }
+
+  save(device: PairedDevice, credential: string): Promise<void> {
+    this.record = { device, credential }
+    return Promise.resolve()
   }
 }
 
@@ -157,16 +167,26 @@ export function createFixtureServices(options: FixtureOptions = {}): FixtureServ
   })
   const isOffline = () => syncStatus.getStatus().connection === 'offline'
 
+  const deviceStore = new MemoryDeviceStore(options.pairedDevice ?? null)
+
   return {
     syncStatus,
-    deviceStore: new MemoryDeviceStore(options.pairedDevice ?? null),
+    deviceStore,
     qrScanner: {
       scan: () =>
         Promise.resolve(options.scanResult ?? { kind: 'scanned', text: FIXTURE_PAIRING_QR_TEXT }),
     },
     pairing: {
-      pair: () =>
-        Promise.resolve(options.pairingOutcome ?? { kind: 'paired', device: FIXTURE_DEVICE }),
+      pair: async (_payload, deviceDisplayName): Promise<PairingOutcome> => {
+        const outcome: PairingOutcome = options.pairingOutcome ?? {
+          kind: 'paired',
+          device: { ...FIXTURE_DEVICE, deviceName: deviceDisplayName },
+        }
+        if (outcome.kind === 'paired') {
+          await deviceStore.save(outcome.device, FIXTURE_DEVICE_CREDENTIAL)
+        }
+        return outcome
+      },
     },
     auth: {
       login: (_device, pin): Promise<LoginOutcome> => {

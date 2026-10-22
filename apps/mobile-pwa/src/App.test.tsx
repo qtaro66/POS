@@ -16,7 +16,7 @@ import type { PairingQrPayload } from './domain/types.ts'
 function renderApp(options: FixtureOptions = {}) {
   const services = createFixtureServices(options)
   const user = userEvent.setup()
-  render(<App services={services} />)
+  render(<App services={services} initialDevice={options.pairedDevice ?? null} />)
   return { services, user }
 }
 
@@ -24,11 +24,18 @@ function renderApp(options: FixtureOptions = {}) {
 function renderWith(options: FixtureOptions, override: Partial<MobileServices>) {
   const services = { ...createFixtureServices(options), ...override }
   const user = userEvent.setup()
-  render(<App services={services} />)
+  render(<App services={services} initialDevice={options.pairedDevice ?? null} />)
   return { services, user }
 }
 
 const unexpected = () => Promise.reject(new Error('fixture: unexpected adapter failure'))
+
+async function startPairing(user: ReturnType<typeof userEvent.setup>, name = 'Fixture handheld 1') {
+  const field = screen.getByLabelText('Device name') as HTMLInputElement
+  await user.clear(field)
+  if (name) await user.type(field, name)
+  await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+}
 
 async function logIn(user: ReturnType<typeof userEvent.setup>, pin = FIXTURE_ACCEPTED_PIN) {
   await user.type(screen.getByLabelText('PIN'), pin)
@@ -50,24 +57,27 @@ describe('unpaired device', () => {
 
   it('pairs from a scanned QR code, stores the device and asks for a PIN', async () => {
     const { services, user } = renderApp()
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Employee login' })).toBeTruthy()
     expect(screen.getByText(/Fixture handheld 1 · Fixture Branch 001/)).toBeTruthy()
-    expect(services.deviceStore.load()).toEqual(FIXTURE_DEVICE)
+    expect(await services.deviceStore.load()).toEqual(FIXTURE_DEVICE)
   })
 
   it.each([
     [{ kind: 'rejected', reason: 'expired' } as const, 'This pairing code has expired.'],
     [{ kind: 'rejected', reason: 'alreadyUsed' } as const, 'already been used'],
+    [{ kind: 'rejected', reason: 'invalid' } as const, 'may have expired or already been used'],
+    [{ kind: 'rejected', reason: 'invalidRequest' } as const, 'Check the device name'],
+    [{ kind: 'rejected', reason: 'rateLimited' } as const, 'Too many pairing attempts'],
     [{ kind: 'unreachable' } as const, 'branch service cannot be reached'],
   ])('stays unpaired when the branch answers %o', async (pairingOutcome, message) => {
     const { services, user } = renderApp({ pairingOutcome })
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
 
     expect((await screen.findByRole('alert')).textContent).toContain(message)
     expect(screen.getByRole('heading', { level: 1, name: 'Pair this device' })).toBeTruthy()
-    expect(services.deviceStore.load()).toBeNull()
+    expect(await services.deviceStore.load()).toBeNull()
   })
 
   it.each([
@@ -83,21 +93,22 @@ describe('unpaired device', () => {
         services={{
           ...services,
           pairing: {
-            pair: (payload) => {
+            pair: (payload, name) => {
               pairCalls += 1
-              return services.pairing.pair(payload)
+              return services.pairing.pair(payload, name)
             },
           },
         }}
+        initialDevice={null}
       />,
     )
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
     expect((await screen.findByRole('alert')).textContent).toContain(message)
     expect(pairCalls).toBe(0)
   })
 
   it('sends the parsed contract fields to the pairing gateway', async () => {
-    const received: PairingQrPayload[] = []
+    const received: [PairingQrPayload, string][] = []
     const services = createFixtureServices()
     const user = userEvent.setup()
     render(
@@ -105,22 +116,54 @@ describe('unpaired device', () => {
         services={{
           ...services,
           pairing: {
-            pair: (payload) => {
-              received.push(payload)
-              return services.pairing.pair(payload)
+            pair: (payload, name) => {
+              received.push([payload, name])
+              return services.pairing.pair(payload, name)
             },
           },
         }}
+        initialDevice={null}
       />,
     )
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
     await screen.findByRole('heading', { level: 1, name: 'Employee login' })
-    expect(received).toEqual([FIXTURE_PAIRING_PAYLOAD])
+    expect(received).toEqual([[FIXTURE_PAIRING_PAYLOAD, 'Fixture handheld 1']])
+  })
+
+  it('requires a device name before scanning', async () => {
+    let scans = 0
+    const { user } = renderWith(
+      {},
+      {
+        qrScanner: {
+          scan: () => {
+            scans += 1
+            return Promise.resolve({ kind: 'cancelled' } as const)
+          },
+        },
+      },
+    )
+    await startPairing(user, '   ')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('Enter a name for this device.')
+    const field = screen.getByLabelText('Device name')
+    expect(field.getAttribute('aria-invalid')).toBe('true')
+    expect(field.getAttribute('aria-describedby')).toBe(alert.id)
+    expect(document.activeElement).toBe(field)
+    expect(scans).toBe(0)
+  })
+
+  it('sends the trimmed device name', async () => {
+    const { services, user } = renderApp()
+    await startPairing(user, '  Front handheld  ')
+    await screen.findByRole('heading', { level: 1, name: 'Employee login' })
+    expect((await services.deviceStore.load())?.deviceName).toBe('Front handheld')
   })
 
   it('reports a cancelled scan', async () => {
     const { user } = renderApp({ scanResult: { kind: 'cancelled' } })
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
     expect((await screen.findByRole('alert')).textContent).toContain('cancelled')
   })
 })
@@ -263,14 +306,14 @@ describe('employee authenticated', () => {
     await user.click(screen.getByRole('button', { name: 'Log out' }))
     expect(screen.getByRole('heading', { level: 1, name: 'Employee login' })).toBeTruthy()
     expect(screen.getByText('1 unsent item is saved on this device.')).toBeTruthy()
-    expect(services.deviceStore.load()).toEqual(FIXTURE_DEVICE)
+    expect(await services.deviceStore.load()).toEqual(FIXTURE_DEVICE)
   })
 })
 
 describe('recovery from unexpected adapter failures', () => {
   it('recovers when the QR scanner promise rejects', async () => {
     const { user } = renderWith({}, { qrScanner: { scan: unexpected } })
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
 
     expect((await screen.findByRole('alert')).textContent).toContain('unexpected error')
     const scan = screen.getByRole('button', { name: 'Scan pairing QR code' })
@@ -286,19 +329,20 @@ describe('recovery from unexpected adapter failures', () => {
         services={{
           ...services,
           pairing: {
-            pair: (payload) => {
+            pair: (payload, name) => {
               calls += 1
-              return calls === 1 ? unexpected() : services.pairing.pair(payload)
+              return calls === 1 ? unexpected() : services.pairing.pair(payload, name)
             },
           },
         }}
+        initialDevice={null}
       />,
     )
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
     expect((await screen.findByRole('alert')).textContent).toContain('unexpected error')
-    expect(services.deviceStore.load()).toBeNull()
+    expect(await services.deviceStore.load()).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Scan pairing QR code' }))
+    await startPairing(user)
     expect(await screen.findByRole('heading', { level: 1, name: 'Employee login' })).toBeTruthy()
   })
 
@@ -318,6 +362,7 @@ describe('recovery from unexpected adapter failures', () => {
             },
           },
         }}
+        initialDevice={FIXTURE_DEVICE}
       />,
     )
     await logIn(user)
@@ -372,6 +417,7 @@ describe('recovery from unexpected adapter failures', () => {
             },
           },
         }}
+        initialDevice={FIXTURE_DEVICE}
       />,
     )
     await logIn(user)
@@ -390,7 +436,12 @@ describe('recovery from unexpected adapter failures', () => {
   it('logs out locally even when notifying the branch rejects', async () => {
     const services = createFixtureServices({ pairedDevice: FIXTURE_DEVICE })
     const user = userEvent.setup()
-    render(<App services={{ ...services, auth: { ...services.auth, logout: unexpected } }} />)
+    render(
+      <App
+        services={{ ...services, auth: { ...services.auth, logout: unexpected } }}
+        initialDevice={FIXTURE_DEVICE}
+      />,
+    )
     await logIn(user)
     await screen.findByRole('list', { name: 'Active tables' })
 

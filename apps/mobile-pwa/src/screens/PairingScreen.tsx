@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { PairingGateway, QrScanner } from '../adapters/ports.ts'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import type { PairingGateway, PairingRejection, QrScanner } from '../adapters/ports.ts'
 import { useFocusOnMount } from '../components/useFocusOnMount.ts'
 import { parsePairingQrPayload, type PairingQrRejection } from '../domain/pairingQr.ts'
 import type { PairedDevice } from '../domain/types.ts'
@@ -9,6 +9,14 @@ interface PairingScreenProps {
   readonly scanner: QrScanner
   readonly pairing: PairingGateway
   readonly onPaired: (device: PairedDevice) => void
+}
+
+const pairingRejectionMessage: Record<PairingRejection, string> = {
+  expired: text.pairingExpired,
+  alreadyUsed: text.pairingAlreadyUsed,
+  invalid: text.pairingInvalid,
+  invalidRequest: text.pairingInvalidRequest,
+  rateLimited: text.pairingRateLimited,
 }
 
 const qrRejectionMessage: Record<PairingQrRejection, string> = {
@@ -24,10 +32,26 @@ type PairingUiState =
 
 export function PairingScreen({ scanner, pairing, onPaired }: PairingScreenProps) {
   const headingRef = useFocusOnMount<HTMLHeadingElement>()
+  const nameRef = useRef<HTMLInputElement>(null)
+  const nameId = useId()
+  const errorId = useId()
+  const [deviceName, setDeviceName] = useState('')
   const [ui, setUi] = useState<PairingUiState>({ phase: 'idle' })
+  const [focusName, setFocusName] = useState(0)
   const working = ui.phase === 'working'
 
-  async function scanAndPair() {
+  useEffect(() => {
+    if (focusName > 0) nameRef.current?.focus()
+  }, [focusName])
+
+  async function scanAndPair(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (working) return
+    if (deviceName.trim().length === 0) {
+      setUi({ phase: 'error', message: text.deviceNameRequired })
+      setFocusName((count) => count + 1)
+      return
+    }
     setUi({ phase: 'working' })
     let message: string
     try {
@@ -47,7 +71,7 @@ export function PairingScreen({ scanner, pairing, onPaired }: PairingScreenProps
     const parsed = parsePairingQrPayload(scan.text)
     if (!parsed.ok) return qrRejectionMessage[parsed.reason]
 
-    const outcome = await pairing.pair(parsed.payload)
+    const outcome = await pairing.pair(parsed.payload, deviceName.trim())
     switch (outcome.kind) {
       case 'paired':
         onPaired(outcome.device)
@@ -55,11 +79,7 @@ export function PairingScreen({ scanner, pairing, onPaired }: PairingScreenProps
       case 'unreachable':
         return text.pairingUnreachable
       case 'rejected':
-        return outcome.reason === 'expired'
-          ? text.pairingExpired
-          : outcome.reason === 'alreadyUsed'
-            ? text.pairingAlreadyUsed
-            : text.pairingInvalid
+        return pairingRejectionMessage[outcome.reason]
     }
   }
 
@@ -70,19 +90,30 @@ export function PairingScreen({ scanner, pairing, onPaired }: PairingScreenProps
       </h1>
       <p>{text.pairingIntro}</p>
       <p className="muted">{text.pairingRules}</p>
-      {ui.phase === 'error' && (
-        <p role="alert" className="alert">
-          {ui.message}
-        </p>
-      )}
-      <button
-        type="button"
-        className="button button--primary"
-        onClick={() => void scanAndPair()}
-        disabled={working}
-      >
-        {working ? text.pairingInProgress : text.pairingScan}
-      </button>
+      <form className="login-form" onSubmit={(event) => void scanAndPair(event)} noValidate>
+        <label htmlFor={nameId}>{text.deviceNameLabel}</label>
+        <input
+          ref={nameRef}
+          id={nameId}
+          className="text-input"
+          type="text"
+          autoComplete="off"
+          value={deviceName}
+          onChange={(event) => setDeviceName(event.target.value)}
+          aria-required="true"
+          aria-invalid={ui.phase === 'error' && ui.message === text.deviceNameRequired}
+          aria-describedby={ui.phase === 'error' ? errorId : undefined}
+          disabled={working}
+        />
+        {ui.phase === 'error' && (
+          <p id={errorId} role="alert" className="alert">
+            {ui.message}
+          </p>
+        )}
+        <button type="submit" className="button button--primary" disabled={working}>
+          {working ? text.pairingInProgress : text.pairingScan}
+        </button>
+      </form>
     </main>
   )
 }
