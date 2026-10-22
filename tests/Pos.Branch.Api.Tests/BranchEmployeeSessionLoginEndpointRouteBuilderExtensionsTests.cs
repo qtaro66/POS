@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Security;
 using Pos.Branch.Api.Security;
@@ -55,6 +56,62 @@ public sealed class BranchEmployeeSessionLoginEndpointRouteBuilderExtensionsTest
             BranchEmployeeSessionLoginEndpointRouteBuilderExtensions
                 .MapBranchEmployeeSessionLoginEndpoint(null!));
     }
+
+    [Fact]
+    public void Disabled_sessions_map_no_login_route()
+    {
+        var builder = WebApplication.CreateBuilder();
+        var app = builder.Build();
+
+        var returned = app.MapBranchEmployeeSessionLoginEndpointIfEnabled(
+            Configuration(enabled: false));
+
+        Assert.Same(app, returned);
+        Assert.Empty(((IEndpointRouteBuilder)app).DataSources);
+    }
+
+    [Fact]
+    public void Enabled_sessions_map_the_login_route()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddSingleton(LoginService());
+        var app = builder.Build();
+
+        var returned = app.MapBranchEmployeeSessionLoginEndpointIfEnabled(
+            Configuration(enabled: true));
+
+        Assert.Same(app, returned);
+        var route = Assert.IsType<RouteEndpoint>(Assert.Single(
+            ((IEndpointRouteBuilder)app).DataSources.SelectMany(
+                source => source.Endpoints)));
+        Assert.Equal(
+            BranchEmployeeSessionLoginEndpointRouteBuilderExtensions.RoutePattern,
+            route.RoutePattern.RawText);
+    }
+
+    [Fact]
+    public void Conditional_mapping_rejects_null_arguments()
+    {
+        var configuration = Configuration(enabled: false);
+        var builder = WebApplication.CreateBuilder();
+        var app = builder.Build();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            BranchEmployeeSessionLoginEndpointRouteBuilderExtensions
+                .MapBranchEmployeeSessionLoginEndpointIfEnabled(
+                    null!,
+                    configuration));
+        Assert.Throws<ArgumentNullException>(() =>
+            app.MapBranchEmployeeSessionLoginEndpointIfEnabled(null!));
+    }
+
+    private static IConfiguration Configuration(bool enabled) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BranchEmployeeSessions:Enabled"] = enabled.ToString()
+            })
+            .Build();
 
     private static BranchEmployeeSessionLoginService LoginService() =>
         new(
