@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc;
+
 namespace Pos.Branch.Api.Security;
 
 public static class BranchEmployeeSessionLoginEndpointRouteBuilderExtensions
@@ -9,6 +11,8 @@ public static class BranchEmployeeSessionLoginEndpointRouteBuilderExtensions
     public const string AuthorizationPolicyName =
         BranchDeviceAuthenticationDefaults.AuthorizationPolicyName;
 
+    public const long MaxRequestBodySize = 4 * 1024;
+
     public static RouteHandlerBuilder MapBranchEmployeeSessionLoginEndpoint(
         this IEndpointRouteBuilder endpoints)
     {
@@ -19,6 +23,7 @@ public static class BranchEmployeeSessionLoginEndpointRouteBuilderExtensions
                 RoutePattern,
                 BranchEmployeeSessionLoginRequestHttpHandler.HandleAsync)
             .RequireAuthorization(AuthorizationPolicyName)
+            .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .ExcludeFromDescription()
             .WithName(EndpointName);
     }
