@@ -24,6 +24,9 @@ export interface EmployeeSession {
   readonly employeeId: string
   readonly displayName: string
   readonly authenticatedAt: string
+  /** Branch session identifier; the session token itself never leaves the auth adapter. */
+  readonly sessionId?: string
+  readonly expiresAt?: string
 }
 
 /** The three device states the Mobile shell distinguishes. */

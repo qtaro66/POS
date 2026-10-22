@@ -28,10 +28,29 @@ When running the fixture build, the pairing button uses a built-in fixture QR
 payload (RFC 5737 documentation address) and the fixture PIN is
 `FIXTURE_ACCEPTED_PIN` in `fixtures.ts`.
 
+## Branch API adapters
+
+`VITE_MOBILE_ADAPTERS=branch` (build time) switches pairing and PIN login to
+the Branch API (`src/adapters/branchApi/`); any other value keeps fixtures.
+
+- `POST /api/v1/pairing/redemptions` and `POST /api/v1/employee-sessions`,
+  schema version 1, HTTPS only, no cookies, no cache, redirects refused,
+  10 s timeout. The device credential is sent as `Authorization: Device …`.
+- The contract types are hand-typed from `Pos.Contracts.Security` until the
+  endpoints are included in the OpenAPI description (D17).
+- The paired device and its credential are kept in IndexedDB
+  (`IndexedDbDeviceStore`); the employee session token is kept in memory only.
+- The Branch Service answers 401 for every rejected pairing code and for a
+  rejected PIN or revoked device, so those cases share one message each.
+- Camera scanning, the active-table list and sync status still use fixtures:
+  there is no camera adapter and no Branch endpoint for them yet.
+- End-to-end use needs the Branch Service to serve this app from its own
+  origin or to allow it through CORS; neither exists yet.
+
 ## Not implemented yet
 
-Camera QR scanning, Branch API adapters, persistent device-credential storage,
-IndexedDB draft/outbox, service worker and web app manifest, ordering,
+Camera QR scanning, active-table and logout endpoints, session expiry
+handling, IndexedDB draft/outbox, service worker and web app manifest, ordering,
 `RequestPayment`, cancellation requests, and Thai localization (no Mobile
 wording is confirmed in the requirements yet).
 
