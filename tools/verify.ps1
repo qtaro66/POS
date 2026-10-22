@@ -12,6 +12,7 @@
     Checks, in order:
       0. working-tree     no uncommitted or untracked files (fails unless -AllowDirty)
       1. repo-hygiene     forbidden files tracked/staged, .handoff/ ignored
+         gate-self-test   failing commands (native and npm/pnpm scripts) are reported as FAIL
          whitespace       git diff --check against main (as in ci.yml)
       2. secret-scan      gitleaks (history + staged changes)
       3. license-headers  reuse lint (once REUSE.toml or LICENSES/ exists)
@@ -43,6 +44,11 @@
     Where to write the markdown report. Defaults to .handoff/<branch-slug>--<branch-id>/validation.md
     outside CI. Use '' to disable.
 
+.PARAMETER SelfTest
+    Run only the gate self-test: known failing commands must be reported as FAIL and a
+    passing command as PASS. The gate-self-test step runs this in a child pwsh -File
+    process, the same way agents and CI start the gate.
+
 .EXAMPLE
     pwsh tools/verify.ps1
 .EXAMPLE
@@ -53,7 +59,8 @@ param(
     [string[]]$Skip = @(),
     [string]$ReportPath,
     [switch]$AllowDirty,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$SelfTest
 )
 
 Set-StrictMode -Version Latest
@@ -130,9 +137,27 @@ function Get-HandoffDir([string]$BranchName) {
     [pscustomobject]@{ Path = Join-Path '.handoff' "$slug--$id"; Id = $id }
 }
 
-function Test-Tool([string]$Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
+# Resolves a tool to its executable, never to a PowerShell script. On Windows,
+# Get-Command npm finds npm.ps1 before npm.cmd, and that shim ends with
+# "exit $LASTEXITCODE": when this script runs under pwsh -File, the shim reads a
+# stale 0 and resets the real exit code, so failing npm steps were reported as PASS.
+function Get-NativeCommand([string]$Name) {
+    $cmd = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) { $cmd.Source } else { $null }
+}
+$exe = @{}
+foreach ($t in 'git', 'gitleaks', 'reuse', 'dotnet', 'npm', 'pnpm', 'pwsh', 'node') { $exe[$t] = Get-NativeCommand $t }
+
+function Test-Tool([string]$Name) { [bool]$exe[$Name] }
+
+# Run block for "<npm|pnpm> run <script>", shared by the node-* steps and the self-test.
+function New-PackageScriptRun([string]$Pm, [string]$Script) {
+    $exePath = $exe[$Pm]
+    { & $exePath run $Script }.GetNewClosure()
+}
 
 # Runs a native command, streams its output, and records PASS/FAIL from the exit code.
+# Run blocks call tools through $exe so the exit code comes from the process itself.
 # -Check lets a step fail on output content even when the exit code is 0.
 function Invoke-Step {
     param(
@@ -188,6 +213,55 @@ function Write-Excerpt([string]$Name, [string]$Text) {
 function Skip-Absent([string]$Name, [string]$Display, [string]$Why) { Add-Result $Name $Display 'SKIPPED' $Why 0 }
 
 # ---------------------------------------------------------------------------
+# Self-test: the gate must report a failing command as FAIL
+# ---------------------------------------------------------------------------
+# Uses the same Invoke-Step and closure pattern as the real steps. Exits 0 only
+# when every case got its expected status.
+if ($SelfTest) {
+    $expected = [ordered]@{}
+    $Quiet = $true
+    function Save-StepLog([string]$Name, [string]$Text) { }
+
+    # A PowerShell shim between the gate and a tool can replace its exit code.
+    $expected['self-tools-native'] = 'PASS'
+    $shims = @($exe.GetEnumerator() | Where-Object { $_.Value -and (Get-Command $_.Value).CommandType -ne 'Application' } | ForEach-Object { "$($_.Key)=$($_.Value)" })
+    if ($shims) { Add-Result 'self-tools-native' 'tools resolve to executables' 'FAIL' "not an executable: $($shims -join ', ')" 0 }
+    else { Add-Result 'self-tools-native' 'tools resolve to executables' 'PASS' '' 0 }
+
+    $expected['self-native-fail'] = 'FAIL'
+    Invoke-Step -Name 'self-native-fail' -Tool 'pwsh' -Display 'pwsh exits 3' `
+        -Run { & $exe.pwsh -NoProfile -NonInteractive -Command 'exit 3' }
+    $expected['self-native-pass'] = 'PASS'
+    Invoke-Step -Name 'self-native-pass' -Tool 'pwsh' -Display 'pwsh exits 0' `
+        -Run { & $exe.pwsh -NoProfile -NonInteractive -Command 'exit 0' }
+
+    # A package script that fails, run like the node-* steps (npm on Windows goes through cmd).
+    $pkgDir = Join-Path ([IO.Path]::GetTempPath()) "verify-selftest-$PID"
+    New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
+    try {
+        '{"name":"verify-selftest","version":"0.0.0","private":true,"scripts":{"fail":"node -e \"process.exit(7)\"","pass":"node -e \"process.exit(0)\""}}' |
+            Set-Content -Path (Join-Path $pkgDir 'package.json') -Encoding utf8NoBOM
+        Push-Location $pkgDir
+        try {
+            foreach ($pm in 'npm', 'pnpm') {
+                if (-not (Test-Tool $pm)) { continue }
+                foreach ($s in 'fail', 'pass') {
+                    $stepName = "self-$pm-$s"
+                    $expected[$stepName] = if ($s -eq 'fail') { 'FAIL' } else { 'PASS' }
+                    Invoke-Step -Name $stepName -Tool $pm -Display "$pm run $s" -Run (New-PackageScriptRun $pm $s)
+                }
+            }
+        } finally { Pop-Location }
+    } finally { Remove-Item -Recurse -Force -Path $pkgDir -ErrorAction SilentlyContinue }
+
+    $wrong = @($results | Where-Object { $_.Status -ne $expected[$_.Name] })
+    foreach ($r in $wrong) { Write-Host "self-test: $($r.Name) was $($r.Status), expected $($expected[$r.Name])" -ForegroundColor Red }
+    if (-not $exe.npm -and -not $exe.pnpm) { Write-Host 'self-test: npm/pnpm not installed; package script cases not run' -ForegroundColor Yellow }
+    Write-Host "self-test: $(if ($wrong.Count) { 'FAIL' } else { 'PASS' }) ($($results.Count) cases)"
+    exit $(if ($wrong.Count) { 1 } else { 0 })
+}
+
+# ---------------------------------------------------------------------------
 # 0. Working tree must be clean: a report is only evidence for a commit
 # ---------------------------------------------------------------------------
 if (-not $dirty) {
@@ -224,7 +298,7 @@ if ($Skip -contains 'repo-hygiene') {
         ($forbidden | Where-Object { $p -match $_ }) -and -not ($allowed | Where-Object { $p -match $_ })
     }
     & git check-ignore -q '.handoff/probe' 2>$null
-    $handoffIgnored = ($LASTEXITCODE -eq 0)
+    $handoffIgnored = ($global:LASTEXITCODE -eq 0)
 
     $problems = @()
     if ($bad) { $problems += "forbidden paths tracked or staged: $(@($bad | Select-Object -First 10) -join ', ')" }
@@ -237,6 +311,11 @@ if ($Skip -contains 'repo-hygiene') {
     }
 }
 
+# The gate itself: a failing command must be reported as FAIL. Started with
+# pwsh -File, like agents and CI start this script.
+Invoke-Step -Name 'gate-self-test' -Tool 'pwsh' -Display 'verify.ps1 -SelfTest' `
+    -Run { & $exe.pwsh -NoProfile -NonInteractive -File $PSCommandPath -SelfTest }
+
 # Same whitespace rule as ci.yml ("git diff --check origin/main...HEAD"), plus uncommitted changes.
 $diffBase = $null
 foreach ($ref in 'origin/main', 'main') {
@@ -245,7 +324,7 @@ foreach ($ref in 'origin/main', 'main') {
 }
 if ($diffBase) {
     Invoke-Step -Name 'whitespace' -Tool 'git' -Display "git diff --check $($diffBase.Substring(0, 9))" `
-        -Run { & git diff --check $diffBase }
+        -Run { & $exe.git diff --check $diffBase }
 } else {
     Skip-Absent 'whitespace' 'git diff --check' 'no main or origin/main to compare against'
 }
@@ -269,10 +348,10 @@ Invoke-Step -Name 'secret-scan' -Tool 'gitleaks' `
     -Display "gitleaks git --redact [$scanLabel]; gitleaks git --staged --redact" `
     -Run {
         Write-Host "  scanning $scanLabel - large histories can take a few minutes..."
-        if ($scanRange) { & gitleaks git --redact --no-banner -v "--log-opts=$scanRange" . }
-        else { & gitleaks git --redact --no-banner -v . }
-        if ($LASTEXITCODE -ne 0) { return }
-        & gitleaks git --staged --redact --no-banner -v .
+        if ($scanRange) { & $exe.gitleaks git --redact --no-banner -v "--log-opts=$scanRange" . }
+        else { & $exe.gitleaks git --redact --no-banner -v . }
+        if ($global:LASTEXITCODE -ne 0) { return }
+        & $exe.gitleaks git --staged --redact --no-banner -v .
     }
 
 # ---------------------------------------------------------------------------
@@ -289,14 +368,14 @@ foreach ($src in $reqSources) {
     $rel = "docs/requirements/$($src.Name)"
     $stepName = 'requirements-split-' + ([IO.Path]::GetFileNameWithoutExtension($src.Name) -replace '[^A-Za-z0-9.]+', '-').ToLowerInvariant()
     Invoke-Step -Name $stepName -Tool 'pwsh' -Display "split-requirements.ps1 -Check -Source $rel" `
-        -Run { & pwsh -NoProfile -File tools/split-requirements.ps1 -Check -Source $rel }.GetNewClosure()
+        -Run { & $exe.pwsh -NoProfile -File tools/split-requirements.ps1 -Check -Source $rel }.GetNewClosure()
 }
 
 # ---------------------------------------------------------------------------
 # 3. License headers (D21.2 / D21.4: REUSE / SPDX)
 # ---------------------------------------------------------------------------
 if ((Test-Path 'REUSE.toml') -or (Test-Path 'LICENSES')) {
-    Invoke-Step -Name 'license-headers' -Tool 'reuse' -Display 'reuse lint' -Run { & reuse lint }
+    Invoke-Step -Name 'license-headers' -Tool 'reuse' -Display 'reuse lint' -Run { & $exe.reuse lint }
 } else {
     Skip-Absent 'license-headers' 'reuse lint' 'no REUSE.toml or LICENSES/ yet'
 }
@@ -307,16 +386,16 @@ if ((Test-Path 'REUSE.toml') -or (Test-Path 'LICENSES')) {
 $solution = Get-ChildItem -Path . -File | Where-Object Extension -in '.slnx', '.sln' | Sort-Object Name | Select-Object -First 1
 if ($solution) {
     $sln = $solution.Name
-    Invoke-Step -Name 'dotnet-restore' -Tool 'dotnet' -Display "dotnet restore $sln" -Run { & dotnet restore $sln }
+    Invoke-Step -Name 'dotnet-restore' -Tool 'dotnet' -Display "dotnet restore $sln" -Run { & $exe.dotnet restore $sln }
     Invoke-Step -Name 'dotnet-format'  -Tool 'dotnet' -Display "dotnet format $sln --verify-no-changes" `
-        -Run { & dotnet format $sln --verify-no-changes --no-restore }
+        -Run { & $exe.dotnet format $sln --verify-no-changes --no-restore }
     Invoke-Step -Name 'dotnet-build'   -Tool 'dotnet' -Display "dotnet build $sln -c Release -warnaserror" `
-        -Run { & dotnet build $sln -c Release --no-restore -warnaserror }
+        -Run { & $exe.dotnet build $sln -c Release --no-restore -warnaserror }
     Invoke-Step -Name 'dotnet-test'    -Tool 'dotnet' -Display "dotnet test $sln --filter Category!=Hardware" `
-        -Run { & dotnet test $sln -c Release --no-build --filter 'Category!=Hardware' }
+        -Run { & $exe.dotnet test $sln -c Release --no-build --filter 'Category!=Hardware' }
     Invoke-Step -Name 'dotnet-vulnerable' -Tool 'dotnet' `
         -Display "dotnet list $sln package --vulnerable --include-transitive" `
-        -Run { & dotnet list $sln package --vulnerable --include-transitive } `
+        -Run { & $exe.dotnet list $sln package --vulnerable --include-transitive } `
         -Check { param($out) if ($out -match '\b(Critical|High)\b') { 'Critical/High vulnerable package found' } }
 } else {
     Skip-Absent 'dotnet' 'dotnet restore/format/build/test' 'no .sln/.slnx at repository root yet'
@@ -336,25 +415,25 @@ if (Test-Path 'package.json') {
         $has = { param($s) $scripts -and ($scripts.PSObject.Properties.Name -contains $s) }
 
         if ($pm -eq 'pnpm') {
-            Invoke-Step -Name 'node-install' -Tool 'pnpm' -Display 'pnpm install --frozen-lockfile' -Run { & pnpm install --frozen-lockfile }
+            Invoke-Step -Name 'node-install' -Tool 'pnpm' -Display 'pnpm install --frozen-lockfile' -Run { & $exe.pnpm install --frozen-lockfile }
         } else {
-            Invoke-Step -Name 'node-install' -Tool 'npm' -Display 'npm ci' -Run { & npm ci }
+            Invoke-Step -Name 'node-install' -Tool 'npm' -Display 'npm ci' -Run { & $exe.npm ci }
         }
 
         # 'contracts:check' = OpenAPI/schema compatibility check required by D21.1
         foreach ($s in 'lint', 'typecheck', 'test', 'build', 'contracts:check') {
             $stepName = 'node-' + ($s -replace ':', '-')
             if (& $has $s) {
-                Invoke-Step -Name $stepName -Tool $pm -Display "$pm run $s" -Run { & $pm run $s }.GetNewClosure()
+                Invoke-Step -Name $stepName -Tool $pm -Display "$pm run $s" -Run (New-PackageScriptRun $pm $s)
             } else {
                 Skip-Absent $stepName "$pm run $s" "no '$s' script in root package.json"
             }
         }
 
         if ($pm -eq 'pnpm') {
-            Invoke-Step -Name 'node-audit' -Tool 'pnpm' -Display 'pnpm audit --audit-level high' -Run { & pnpm audit --audit-level high }
+            Invoke-Step -Name 'node-audit' -Tool 'pnpm' -Display 'pnpm audit --audit-level high' -Run { & $exe.pnpm audit --audit-level high }
         } else {
-            Invoke-Step -Name 'node-audit' -Tool 'npm' -Display 'npm audit --audit-level=high' -Run { & npm audit --audit-level=high }
+            Invoke-Step -Name 'node-audit' -Tool 'npm' -Display 'npm audit --audit-level=high' -Run { & $exe.npm audit --audit-level=high }
         }
     }
 } else {
