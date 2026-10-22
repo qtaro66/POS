@@ -170,7 +170,9 @@ public sealed class BranchPairingCompositionTests
         Assert.Same(
             redemptionService,
             provider.GetRequiredService<BranchPairingRedemptionService>());
-        Assert.Empty(policy.AuthenticationSchemes);
+        Assert.Equal(
+            [BranchEmployeeSessionAuthenticationDefaults.SchemeName],
+            policy.AuthenticationSchemes);
         Assert.Contains(
             policy.Requirements,
             requirement => requirement is DenyAnonymousAuthorizationRequirement);

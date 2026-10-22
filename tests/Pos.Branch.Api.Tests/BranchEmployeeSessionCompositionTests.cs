@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,7 @@ public sealed class BranchEmployeeSessionCompositionTests
         Assert.Null(provider.GetService<BranchEmployeeSessionAuthenticationService>());
         Assert.Null(provider.GetService<BranchEmployeePinAuthenticationService>());
         Assert.Null(provider.GetService<BranchEmployeeSessionLoginService>());
+        Assert.Null(provider.GetService<IAuthenticationSchemeProvider>());
     }
 
     [Fact]
@@ -122,6 +124,13 @@ public sealed class BranchEmployeeSessionCompositionTests
         Assert.Same(
             login,
             provider.GetRequiredService<BranchEmployeeSessionLoginService>());
+        var scheme = await provider
+            .GetRequiredService<IAuthenticationSchemeProvider>()
+            .GetSchemeAsync(BranchEmployeeSessionAuthenticationDefaults.SchemeName);
+        Assert.NotNull(scheme);
+        Assert.Equal(
+            typeof(BranchEmployeeSessionAuthenticationHandler),
+            scheme.HandlerType);
         Assert.DoesNotContain(
             provider.GetServices<IHostedService>(),
             service => service.GetType().Assembly == typeof(Program).Assembly);

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Pos.Application.Security;
@@ -79,6 +80,13 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
         services.TryAddSingleton<BranchEmployeeSessionAuthenticationService>();
         services.TryAddSingleton<BranchEmployeePinAuthenticationService>();
         services.TryAddSingleton<BranchEmployeeSessionLoginService>();
+        services
+            .AddAuthentication()
+            .AddScheme<
+                AuthenticationSchemeOptions,
+                BranchEmployeeSessionAuthenticationHandler>(
+                BranchEmployeeSessionAuthenticationDefaults.SchemeName,
+                _ => { });
         return services;
     }
 }
