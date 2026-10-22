@@ -31,6 +31,8 @@ public sealed class BranchEmployeeSessionCompositionTests
         Assert.Null(provider.GetService<IBranchEmployeeSessionValidator>());
         Assert.Null(provider.GetService<BranchEmployeeSessionIssuanceService>());
         Assert.Null(provider.GetService<BranchEmployeeSessionAuthenticationService>());
+        Assert.Null(provider.GetService<BranchEmployeePinAuthenticationService>());
+        Assert.Null(provider.GetService<BranchEmployeeSessionLoginService>());
     }
 
     [Fact]
@@ -41,8 +43,13 @@ public sealed class BranchEmployeeSessionCompositionTests
             $"missing-employee-sessions-{Guid.NewGuid():N}.db");
         using var provider = Provider(
             Configuration(path, enabled: true),
-            services => services.AddSingleton<IBranchEmployeeStatusReader>(
-                new ActiveEmployeeStatusReader()));
+            services =>
+            {
+                services.AddSingleton<IBranchEmployeeStatusReader>(
+                    new ActiveEmployeeStatusReader());
+                services.AddSingleton<IBranchEmployeePinValidator>(
+                    new ActiveEmployeePinValidator());
+            });
 
         var exception = Assert.Throws<OptionsValidationException>(
             () => provider.GetRequiredService<IStartupValidator>().Validate());
@@ -67,6 +74,8 @@ public sealed class BranchEmployeeSessionCompositionTests
             services =>
             {
                 services.AddSingleton<IBranchEmployeeStatusReader>(employeeStatus);
+                services.AddSingleton<IBranchEmployeePinValidator>(
+                    new ActiveEmployeePinValidator());
                 services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
             });
 
@@ -89,6 +98,13 @@ public sealed class BranchEmployeeSessionCompositionTests
         Assert.Equal("DEVICE-01", session.DeviceId);
         Assert.Equal("EMPLOYEE-01", session.EmployeeId);
         Assert.Equal(("BRANCH-01", "EMPLOYEE-01"), employeeStatus.LastRequest);
+        var login = provider.GetRequiredService<BranchEmployeeSessionLoginService>();
+        var loggedIn = await login.LoginAsync(
+            "BRANCH-01",
+            "DEVICE-01",
+            "1234".AsMemory());
+        Assert.NotNull(loggedIn);
+        Assert.Equal("EMPLOYEE-01", loggedIn.EmployeeId);
         Assert.IsType<FixedBranchEmployeeSessionLifetimePolicy>(
             provider.GetRequiredService<IBranchEmployeeSessionLifetimePolicy>());
         Assert.IsType<SqliteBranchEmployeeSessionIssuanceStore>(
@@ -101,6 +117,11 @@ public sealed class BranchEmployeeSessionCompositionTests
         Assert.Same(
             authentication,
             provider.GetRequiredService<BranchEmployeeSessionAuthenticationService>());
+        Assert.IsType<BranchEmployeePinAuthenticationService>(
+            provider.GetRequiredService<BranchEmployeePinAuthenticationService>());
+        Assert.Same(
+            login,
+            provider.GetRequiredService<BranchEmployeeSessionLoginService>());
         Assert.DoesNotContain(
             provider.GetServices<IHostedService>(),
             service => service.GetType().Assembly == typeof(Program).Assembly);
@@ -117,6 +138,24 @@ public sealed class BranchEmployeeSessionCompositionTests
 
         Assert.Contains(
             nameof(IBranchEmployeeStatusReader),
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Enabled_sessions_require_authoritative_employee_pin_validator()
+    {
+        await using var database = new SessionDatabase();
+        await database.InitializeAsync();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            Provider(
+                Configuration(database.Path, enabled: true),
+                services => services.AddSingleton<IBranchEmployeeStatusReader>(
+                    new ActiveEmployeeStatusReader())));
+
+        Assert.Contains(
+            nameof(IBranchEmployeePinValidator),
             exception.Message,
             StringComparison.Ordinal);
     }
@@ -162,6 +201,21 @@ public sealed class BranchEmployeeSessionCompositionTests
             cancellationToken.ThrowIfCancellationRequested();
             LastRequest = (branchId, employeeId);
             return Task.FromResult(true);
+        }
+    }
+
+    private sealed class ActiveEmployeePinValidator : IBranchEmployeePinValidator
+    {
+        public Task<VerifiedBranchEmployee?> ValidateActiveAsync(
+            string branchId,
+            ReadOnlyMemory<char> pin,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<VerifiedBranchEmployee?>(
+                pin.Span.SequenceEqual("1234")
+                    ? new VerifiedBranchEmployee(branchId, "EMPLOYEE-01")
+                    : null);
         }
     }
 

@@ -41,6 +41,14 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
                 "IBranchEmployeeStatusReader must be registered before enabling Branch employee sessions.");
         }
 
+        if (!services.Any(
+                descriptor => descriptor.ServiceType ==
+                    typeof(IBranchEmployeePinValidator)))
+        {
+            throw new InvalidOperationException(
+                "IBranchEmployeePinValidator must be registered before enabling Branch employee sessions.");
+        }
+
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IBranchEmployeeSessionLifetimePolicy>(provider =>
         {
@@ -69,6 +77,8 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
         });
         services.TryAddSingleton<BranchEmployeeSessionIssuanceService>();
         services.TryAddSingleton<BranchEmployeeSessionAuthenticationService>();
+        services.TryAddSingleton<BranchEmployeePinAuthenticationService>();
+        services.TryAddSingleton<BranchEmployeeSessionLoginService>();
         return services;
     }
 }
