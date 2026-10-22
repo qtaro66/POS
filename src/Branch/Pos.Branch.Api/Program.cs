@@ -23,6 +23,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseBranchPairingHttpsOnly(builder.Configuration);
+app.UseBranchEmployeeSessionHttpsOnly(builder.Configuration);
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseBranchPairingRateLimiting(builder.Configuration);
