@@ -60,6 +60,8 @@ public static class BranchPairingServiceCollectionExtensions
                 BranchPosAuthorizationDefaults.CompleteIdentityPolicyName,
                 policy =>
                 {
+                    policy.AddAuthenticationSchemes(
+                        BranchEmployeeSessionAuthenticationDefaults.SchemeName);
                     policy.RequireAuthenticatedUser();
                     policy.AddRequirements(
                         new BranchCompleteIdentityAuthorizationRequirement());
