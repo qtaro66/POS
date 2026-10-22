@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -50,20 +49,6 @@ public static class BranchPairingServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<BranchPairingTokenIssuanceService>();
         services.TryAddSingleton<BranchPairingRedemptionService>();
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IAuthorizationHandler,
-                BranchCompleteIdentityAuthorizationHandler>());
-        services
-            .AddAuthorizationBuilder()
-            .AddPolicy(
-                BranchPosAuthorizationDefaults.CompleteIdentityPolicyName,
-                policy =>
-                {
-                    policy.RequireAuthenticatedUser();
-                    policy.AddRequirements(
-                        new BranchCompleteIdentityAuthorizationRequirement());
-                });
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;

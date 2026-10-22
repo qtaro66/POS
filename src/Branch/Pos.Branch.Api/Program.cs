@@ -23,6 +23,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseBranchPairingHttpsOnly(builder.Configuration);
+app.UseBranchEmployeeSessionHttpsOnly(builder.Configuration);
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseBranchPairingRateLimiting(builder.Configuration);
@@ -34,5 +35,6 @@ app.MapGet("/health", () => Results.Ok(new
     utc = DateTimeOffset.UtcNow,
 }));
 app.MapBranchPairingRedemptionEndpointIfEnabled(builder.Configuration);
+app.MapBranchEmployeeSessionLoginEndpointIfEnabled(builder.Configuration);
 
 app.Run();

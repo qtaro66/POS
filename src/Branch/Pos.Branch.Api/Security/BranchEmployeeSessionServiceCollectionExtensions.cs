@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Pos.Application.Security;
@@ -41,6 +43,14 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
                 "IBranchEmployeeStatusReader must be registered before enabling Branch employee sessions.");
         }
 
+        if (!services.Any(
+                descriptor => descriptor.ServiceType ==
+                    typeof(IBranchEmployeePinValidator)))
+        {
+            throw new InvalidOperationException(
+                "IBranchEmployeePinValidator must be registered before enabling Branch employee sessions.");
+        }
+
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IBranchEmployeeSessionLifetimePolicy>(provider =>
         {
@@ -69,6 +79,31 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
         });
         services.TryAddSingleton<BranchEmployeeSessionIssuanceService>();
         services.TryAddSingleton<BranchEmployeeSessionAuthenticationService>();
+        services.TryAddSingleton<BranchEmployeePinAuthenticationService>();
+        services.TryAddSingleton<BranchEmployeeSessionLoginService>();
+        services
+            .AddAuthentication()
+            .AddScheme<
+                AuthenticationSchemeOptions,
+                BranchEmployeeSessionAuthenticationHandler>(
+                BranchEmployeeSessionAuthenticationDefaults.SchemeName,
+                _ => { });
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IAuthorizationHandler,
+                BranchCompleteIdentityAuthorizationHandler>());
+        services
+            .AddAuthorizationBuilder()
+            .AddPolicy(
+                BranchPosAuthorizationDefaults.CompleteIdentityPolicyName,
+                policy =>
+                {
+                    policy.AddAuthenticationSchemes(
+                        BranchEmployeeSessionAuthenticationDefaults.SchemeName);
+                    policy.RequireAuthenticatedUser();
+                    policy.AddRequirements(
+                        new BranchCompleteIdentityAuthorizationRequirement());
+                });
         return services;
     }
 }
