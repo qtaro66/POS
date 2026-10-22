@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
+using Pos.Application.Security;
 
 namespace Pos.Branch.Api.Security;
 
@@ -29,6 +30,57 @@ public sealed class AuthenticatedBranchRequestIdentity
     public string EmployeeId { get; }
 }
 
+public static class AuthenticatedBranchDeviceIdentityResolver
+{
+    public static bool TryResolve(
+        ClaimsPrincipal? principal,
+        [NotNullWhen(true)] out VerifiedBranchDevice? device)
+    {
+        device = null;
+        if (principal is null)
+        {
+            return false;
+        }
+
+        var authenticatedIdentities = principal.Identities
+            .Where(candidate => candidate.IsAuthenticated)
+            .ToArray();
+        var authenticatedClaims = authenticatedIdentities
+            .SelectMany(candidate => candidate.Claims)
+            .ToArray();
+        if (!AuthenticatedBranchClaimResolver.TryGetSingle(
+                authenticatedClaims,
+                BranchPosClaimTypes.BranchId,
+                out var branchId) ||
+            !AuthenticatedBranchClaimResolver.TryGetSingle(
+                authenticatedClaims,
+                BranchPosClaimTypes.DeviceId,
+                out var deviceId))
+        {
+            return false;
+        }
+
+        var completeIdentityCount = authenticatedIdentities.Count(candidate =>
+            AuthenticatedBranchClaimResolver.TryGetSingle(
+                candidate.Claims,
+                BranchPosClaimTypes.BranchId,
+                out var candidateBranchId) &&
+            AuthenticatedBranchClaimResolver.TryGetSingle(
+                candidate.Claims,
+                BranchPosClaimTypes.DeviceId,
+                out var candidateDeviceId) &&
+            string.Equals(candidateBranchId, branchId, StringComparison.Ordinal) &&
+            string.Equals(candidateDeviceId, deviceId, StringComparison.Ordinal));
+        if (completeIdentityCount != 1)
+        {
+            return false;
+        }
+
+        device = new VerifiedBranchDevice(branchId, deviceId);
+        return true;
+    }
+}
+
 public static class AuthenticatedBranchRequestIdentityResolver
 {
     public static bool TryResolve(
@@ -45,9 +97,18 @@ public static class AuthenticatedBranchRequestIdentityResolver
             .Where(candidate => candidate.IsAuthenticated)
             .SelectMany(candidate => candidate.Claims)
             .ToArray();
-        if (!TryGetSingle(authenticatedClaims, BranchPosClaimTypes.BranchId, out var branchId) ||
-            !TryGetSingle(authenticatedClaims, BranchPosClaimTypes.DeviceId, out var deviceId) ||
-            !TryGetSingle(authenticatedClaims, BranchPosClaimTypes.EmployeeId, out var employeeId))
+        if (!AuthenticatedBranchClaimResolver.TryGetSingle(
+                authenticatedClaims,
+                BranchPosClaimTypes.BranchId,
+                out var branchId) ||
+            !AuthenticatedBranchClaimResolver.TryGetSingle(
+                authenticatedClaims,
+                BranchPosClaimTypes.DeviceId,
+                out var deviceId) ||
+            !AuthenticatedBranchClaimResolver.TryGetSingle(
+                authenticatedClaims,
+                BranchPosClaimTypes.EmployeeId,
+                out var employeeId))
         {
             return false;
         }
@@ -55,8 +116,11 @@ public static class AuthenticatedBranchRequestIdentityResolver
         identity = new AuthenticatedBranchRequestIdentity(branchId, deviceId, employeeId);
         return true;
     }
+}
 
-    private static bool TryGetSingle(
+internal static class AuthenticatedBranchClaimResolver
+{
+    public static bool TryGetSingle(
         IEnumerable<Claim> claims,
         string claimType,
         out string value)
