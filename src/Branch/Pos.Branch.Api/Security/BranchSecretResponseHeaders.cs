@@ -1,6 +1,6 @@
 namespace Pos.Branch.Api.Security;
 
-internal static class BranchPairingSecretResponseHeaders
+internal static class BranchSecretResponseHeaders
 {
     public static void Apply(HttpResponse response)
     {

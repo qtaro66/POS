@@ -17,7 +17,7 @@ public static class BranchPairingIssuancePrincipalHttpHandler
         HttpResponse httpResponse,
         CancellationToken cancellationToken)
     {
-        BranchPairingSecretResponseHeaders.Apply(httpResponse);
+        BranchSecretResponseHeaders.Apply(httpResponse);
         ArgumentNullException.ThrowIfNull(pairingOptions);
         ArgumentNullException.ThrowIfNull(issuanceService);
 
