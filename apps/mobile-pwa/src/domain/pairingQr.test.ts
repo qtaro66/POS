@@ -89,7 +89,7 @@ describe('parsePairingQrPayload', () => {
     ['a duplicated field', `${FIXTURE_PAIRING_QR_TEXT}&branchId=FIXTURE-BRANCH-01`],
     [
       'lower-case percent encoding',
-      formatPairingQrPayload(payload({ branchId: 'BRANCH/01' })).replace('%2F', '%2f'),
+      formatPairingQrPayload(payload({ branchId: 'BRANCH/01' })).replaceAll('%2F', '%2f'),
     ],
     ['an invalid token', FIXTURE_PAIRING_QR_TEXT.replace(`v1.${SECRET}`, 'v1.invalid')],
     ['an invalid pairing identifier', FIXTURE_PAIRING_QR_TEXT.replace(PAIRING_ID, 'not-canonical')],
