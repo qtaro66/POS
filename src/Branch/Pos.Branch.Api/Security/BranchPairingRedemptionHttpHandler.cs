@@ -15,7 +15,7 @@ public static class BranchPairingRedemptionHttpHandler
         HttpResponse httpResponse,
         CancellationToken cancellationToken)
     {
-        BranchPairingSecretResponseHeaders.Apply(httpResponse);
+        BranchSecretResponseHeaders.Apply(httpResponse);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(redemptionService);
 
