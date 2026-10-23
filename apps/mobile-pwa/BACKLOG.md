@@ -56,6 +56,7 @@ reviewed pull requests. Requirements are cited by ID from
 | DEC-5 | Production Mobile stack: installable PWA, cross-platform or native (D17, CORE-08) | Final Mobile completion |
 | DEC-6 | Handling of Drafts after `Expired/NeedsReview` (deletion workflow) | MOB-11 deletion step only |
 | DEC-7 | Requirement conflict: D10.5 blocks a Draft for a `PaymentPending` session and forbids retrying it into that session, while D12.3 keeps the Draft so it can be sent again if the PC reopens ordering (`CancelPaymentRequest`). Can a blocked Draft be resubmitted to the same session after it returns to `Ordering`? | MOB-11 resubmit path only |
+| DEC-8 | Whether Mobile basket lines carry `fulfillmentType` (`DineIn`/`Takeaway`). D18.6 confirms it per Order Line for the PC POS menu page only; D10 does not mention it for Mobile | Mobile Draft line model and CAP-08 payload |
 
 Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
 30 days (D19.4, NFR-06).
@@ -98,8 +99,16 @@ Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
 
 ### MOB-02 App shell, navigation and accessibility baseline
 - Approved: yes
-- UI: not verified | Integration: n/a | Device validation: n/a
+- UI: verified (fixtures) | Integration: n/a | Device validation: n/a
+- UI evidence: PR #141 squash-merged as 0740091; `verify.ps1` PASS on
+  e1a08a1 (196 Mobile tests, including the static contrast and target-size
+  test); merged content identical to e1a08a1. Layout at 320x640 and 640x320,
+  100% and 200% text, checked in a desktop Chromium pane, not on a phone.
+  Shared components are `Screen`, `Alert` and `Notice`; buttons and lists
+  share CSS classes, and the existing sync bar is the live status region.
+  No manual screen-reader pass was made.
 - Depends on: none (no pending decision)
+- PR: https://github.com/qtaro66/POS/pull/141
 - Scope: authenticated shell with phone-first navigation between Tables,
   the current table, and Outbox/status; route state without new
   dependencies; shared accessible components (screen heading focus, live
@@ -131,7 +140,7 @@ Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
   with fixtures (D19.1).
 
 ### MOB-05 Menu and Draft editor
-- Approved: no
+- Approved: yes
 - UI: not verified | Integration: not verified | Device validation: n/a
 - Integration needs: CAP-07
 - Depends on: MOB-02

@@ -77,8 +77,11 @@ describe('authenticated shell navigation', () => {
     expect(document.activeElement).toBe(heading())
     expect(document.title).toBe('Table A2 · POS Mobile')
     expect(screen.getByText('Payment pending')).toBeTruthy()
-    expect(screen.getByText('Order lines and bill totals are not shown on this device yet.'))
-      .toBeTruthy()
+    expect(
+      screen.getByText(
+        'Order lines the branch has accepted and bill totals are not shown on this device yet.',
+      ),
+    ).toBeTruthy()
 
     expect(navButtons().map((button) => button.textContent)).toEqual([
       'Tables',

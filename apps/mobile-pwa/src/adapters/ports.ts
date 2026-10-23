@@ -1,3 +1,5 @@
+import type { Draft, DraftKey } from '../domain/draft.ts'
+import type { Menu } from '../domain/menu.ts'
 import type {
   ActiveTablesSnapshot,
   EmployeeSession,
@@ -72,6 +74,29 @@ export interface ActiveTablesGateway {
   listActiveTables(device: PairedDevice): Promise<ActiveTablesOutcome>
 }
 
+export type MenuOutcome =
+  | { readonly kind: 'ok'; readonly menu: Menu }
+  | { readonly kind: 'unreachable' }
+
+/**
+ * Menu of one table session, with the prices and option structure fixed when
+ * the session was opened and the current sellability (D08.3, D08.4, D09).
+ * No Branch endpoint exists yet (backlog CAP-07); only fixtures implement it.
+ */
+export interface MenuGateway {
+  loadMenu(device: PairedDevice, tableSessionId: string): Promise<MenuOutcome>
+}
+
+/**
+ * Holds the Draft (basket) of a table session on this device. The fixture
+ * implementation keeps it in memory only; persistence in IndexedDB is backlog
+ * MOB-06 (D10.5).
+ */
+export interface DraftRepository {
+  load(key: DraftKey): Promise<Draft | null>
+  save(draft: Draft): Promise<void>
+}
+
 /** Branch connectivity, employee-data sync time and local outbox counts. */
 export interface SyncStatusSource {
   getStatus(): SyncStatus
@@ -95,6 +120,8 @@ export interface MobileServices {
   readonly pairing: PairingGateway
   readonly auth: EmployeeAuthGateway
   readonly tables: ActiveTablesGateway
+  readonly menu: MenuGateway
+  readonly drafts: DraftRepository
   readonly syncStatus: SyncStatusSource
   readonly deviceStore: DeviceStore
 }

@@ -1,3 +1,4 @@
+import type { Menu } from '../domain/menu.ts'
 import { formatPairingQrPayload } from '../domain/pairingQr.ts'
 import type {
   ActiveTable,
@@ -12,11 +13,13 @@ import type {
   ActiveTablesOutcome,
   DeviceStore,
   LoginOutcome,
+  MenuOutcome,
   MobileServices,
   PairingOutcome,
   QrScanResult,
   SyncStatusSource,
 } from './ports.ts'
+import { FIXTURE_MENU, MemoryDraftRepository } from './fixtureMenu.ts'
 
 /*
  * Deterministic fixture data for development and tests. Every value is
@@ -100,6 +103,9 @@ export interface FixtureOptions {
   readonly employee?: EmployeeSession
   readonly tables?: readonly ActiveTable[]
   readonly tablesUnreachable?: boolean
+  /** Menu for every table session; defaults to `FIXTURE_MENU`. */
+  readonly menu?: Menu
+  readonly menuUnreachable?: boolean
   readonly connection?: BranchConnection
   readonly employeeDataSyncedAt?: string | null
   readonly outbox?: OutboxSummary
@@ -161,6 +167,7 @@ export class MemoryDeviceStore implements DeviceStore {
 export interface FixtureServices extends MobileServices {
   readonly syncStatus: FixtureSyncStatus
   readonly deviceStore: MemoryDeviceStore
+  readonly drafts: MemoryDraftRepository
 }
 
 export function createFixtureServices(options: FixtureOptions = {}): FixtureServices {
@@ -224,5 +231,14 @@ export function createFixtureServices(options: FixtureOptions = {}): FixtureServ
         })
       },
     },
+    menu: {
+      loadMenu: (): Promise<MenuOutcome> => {
+        if (options.menuUnreachable || isOffline()) {
+          return Promise.resolve({ kind: 'unreachable' })
+        }
+        return Promise.resolve({ kind: 'ok', menu: options.menu ?? FIXTURE_MENU })
+      },
+    },
+    drafts: new MemoryDraftRepository(),
   }
 }

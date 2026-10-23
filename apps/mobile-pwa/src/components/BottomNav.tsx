@@ -1,4 +1,4 @@
-import type { CurrentTable, ShellRoute } from '../domain/shellRoute.ts'
+import { isTableScreen, type CurrentTable, type ShellRoute } from '../domain/shellRoute.ts'
 import { text } from '../strings.ts'
 
 interface BottomNavProps {
@@ -33,7 +33,9 @@ export function BottomNav({ route, currentTable, onNavigate }: BottomNavProps) {
     <nav className="bottom-nav" aria-label={text.navLabel}>
       <ul className="bottom-nav__list">
         {items.map((item) => {
-          const current = item.route.screen === route.screen
+          // The table entry stays current on the table's menu and item screens.
+          const current =
+            item.route.screen === 'table' ? isTableScreen(route) : item.route.screen === route.screen
           return (
             <li key={item.key} className="bottom-nav__item">
               <button

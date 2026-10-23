@@ -84,8 +84,18 @@ describe('touch targets', () => {
     '.text-input',
     '.table-card__open',
     '.bottom-nav__button',
+    '.chip',
+    '.menu-item',
+    '.option',
+    '.stepper__button',
   ])('%s is at least 44 px high', (selector) => {
     expect(minHeightPx(selector)).toBeGreaterThanOrEqual(44)
+  })
+
+  it('makes stepper buttons at least 44 px wide', () => {
+    const rule = /\n\.stepper__button\s*\{([^}]*)\}/.exec(appCss)
+    const width = rule ? /min-width:\s*(\d+)px/.exec(rule[1]) : null
+    expect(Number(width?.[1] ?? 0)).toBeGreaterThanOrEqual(44)
   })
 })
 
