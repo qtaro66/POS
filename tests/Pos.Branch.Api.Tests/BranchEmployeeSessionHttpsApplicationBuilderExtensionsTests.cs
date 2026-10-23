@@ -34,10 +34,37 @@ public sealed class BranchEmployeeSessionHttpsApplicationBuilderExtensionsTests
         Assert.False(context.Response.Headers.ContainsKey(HeaderNames.Location));
     }
 
+    [Fact]
+    public async Task Enabled_sessions_reject_http_employee_sync_status_without_redirect()
+    {
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        var application = new ApplicationBuilder(provider);
+        var reachedTerminal = false;
+        application.UseBranchEmployeeSessionHttpsOnly(Configuration(enabled: true));
+        application.Run(_ =>
+        {
+            reachedTerminal = true;
+            return Task.CompletedTask;
+        });
+        var context = Context(
+            provider,
+            "http",
+            BranchEmployeeDataSyncStatusEndpointRouteBuilderExtensions.RoutePattern);
+
+        await application.Build()(context);
+
+        Assert.False(reachedTerminal);
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("no-store", context.Response.Headers.CacheControl);
+        Assert.False(context.Response.Headers.ContainsKey(HeaderNames.Location));
+    }
+
     [Theory]
     [InlineData("https", "/api/v1/employee-sessions")]
+    [InlineData("https", "/api/v1/employee-data-sync-status")]
     [InlineData("http", "/health")]
     [InlineData("http", "/api/v1/employee-session")]
+    [InlineData("http", "/api/v1/employee-data-sync-statuses")]
     public async Task Enabled_sessions_allow_https_and_unrelated_paths(
         string scheme,
         string path)
