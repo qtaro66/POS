@@ -22,6 +22,7 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbe :
     private static readonly string[] RequiredTables =
     [
         "branch_devices",
+        "branch_employee_status",
         "branch_employee_sessions"
     ];
 
@@ -93,7 +94,10 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbe :
             SELECT name
             FROM sqlite_schema
             WHERE type = 'table'
-              AND name IN ('branch_devices', 'branch_employee_sessions');
+              AND name IN (
+                  'branch_devices',
+                  'branch_employee_status',
+                  'branch_employee_sessions');
             """;
         using var reader = command.ExecuteReader();
         var found = new HashSet<string>(StringComparer.Ordinal);

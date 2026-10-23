@@ -44,13 +44,21 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
                 "BranchDeviceAuthentication must be enabled before enabling Branch employee sessions.");
         }
 
-        if (!services.Any(
-                descriptor => descriptor.ServiceType ==
-                    typeof(IBranchEmployeeStatusReader)))
+        services.TryAddSingleton<IBranchEmployeeStatusReader>(provider =>
         {
-            throw new InvalidOperationException(
-                "IBranchEmployeeStatusReader must be registered before enabling Branch employee sessions.");
-        }
+            var options = provider
+                .GetRequiredService<IOptions<BranchEmployeeSessionOptions>>()
+                .Value;
+            return new SqliteBranchEmployeeStatusReader(options.DatabasePath.Trim());
+        });
+        services.TryAddSingleton<IBranchEmployeeDataSyncStatusQuery>(provider =>
+        {
+            var options = provider
+                .GetRequiredService<IOptions<BranchEmployeeSessionOptions>>()
+                .Value;
+            return new SqliteBranchEmployeeDataSyncStatusQuery(
+                options.DatabasePath.Trim());
+        });
 
         if (!services.Any(
                 descriptor => descriptor.ServiceType ==

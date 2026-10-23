@@ -15,10 +15,10 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.True(result.IsReady);
-        Assert.Equal(13, result.ActualSchemaVersion);
+        Assert.Equal(14, result.ActualSchemaVersion);
         Assert.Empty(result.MissingTables);
         Assert.Null(result.ErrorCode);
-        Assert.Equal(13, probe.ExpectedSchemaVersion);
+        Assert.Equal(14, probe.ExpectedSchemaVersion);
     }
 
     [Fact]
@@ -47,9 +47,9 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.False(result.IsReady);
-        Assert.Equal(13, result.ActualSchemaVersion);
+        Assert.Equal(14, result.ActualSchemaVersion);
         Assert.Equal(
-            ["branch_devices", "branch_employee_sessions"],
+            ["branch_devices", "branch_employee_status", "branch_employee_sessions"],
             result.MissingTables);
         Assert.Equal("EmployeeSessionTablesMissing", result.ErrorCode);
     }
@@ -69,7 +69,7 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbeTests
         Assert.False(result.IsReady);
         Assert.Null(result.ActualSchemaVersion);
         Assert.Equal(
-            ["branch_devices", "branch_employee_sessions"],
+            ["branch_devices", "branch_employee_status", "branch_employee_sessions"],
             result.MissingTables);
         Assert.Equal("DatabaseUnreadable", result.ErrorCode);
         Assert.False(File.Exists(path));
@@ -100,7 +100,7 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbeTests
         public async Task CreateEmptyCurrentVersionAsync()
         {
             Directory.CreateDirectory(_directory);
-            await ExecuteAsync("PRAGMA user_version = 13;", create: true);
+            await ExecuteAsync("PRAGMA user_version = 14;", create: true);
         }
 
         public Task ExecuteAsync(string sql) => ExecuteAsync(sql, create: false);
