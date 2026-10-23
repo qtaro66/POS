@@ -32,6 +32,18 @@ public static class BranchPairingServiceCollectionExtensions
             return services;
         }
 
+        var deviceAuthenticationEnabled = configuration
+            .GetSection(BranchDeviceAuthenticationOptions.SectionName)
+            .GetValue<bool>(nameof(BranchDeviceAuthenticationOptions.Enabled));
+        var employeeSessionsEnabled = configuration
+            .GetSection(BranchEmployeeSessionOptions.SectionName)
+            .GetValue<bool>(nameof(BranchEmployeeSessionOptions.Enabled));
+        if (!deviceAuthenticationEnabled || !employeeSessionsEnabled)
+        {
+            throw new InvalidOperationException(
+                "Branch pairing requires BranchDeviceAuthentication and BranchEmployeeSessions to be enabled.");
+        }
+
         services.TryAddSingleton<IBranchPairingTokenIssuanceStore>(provider =>
         {
             var options = provider
