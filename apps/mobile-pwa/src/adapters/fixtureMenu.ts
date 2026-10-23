@@ -128,10 +128,11 @@ function keyOf(key: DraftKey): string {
 }
 
 /**
- * Draft repository that keeps baskets in memory only: they are lost when the
- * app closes or reloads. IndexedDB persistence is backlog MOB-06.
+ * Draft repository that keeps baskets in memory only, for tests: they are
+ * lost when the app closes or reloads. The app uses `IndexedDbOrderStore`.
  */
 export class MemoryDraftRepository implements DraftRepository {
+  readonly persistence = 'memory'
   private readonly drafts = new Map<string, Draft>()
 
   load(key: DraftKey): Promise<Draft | null> {

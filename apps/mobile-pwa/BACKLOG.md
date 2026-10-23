@@ -59,7 +59,9 @@ reviewed pull requests. Requirements are cited by ID from
 | DEC-8 | Whether Mobile basket lines carry `fulfillmentType` (`DineIn`/`Takeaway`). D18.6 confirms it per Order Line for the PC POS menu page only; D10 does not mention it for Mobile | Mobile Draft line model and CAP-08 payload |
 
 Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
-30 days (D19.4, NFR-06).
+30 days (D19.4, NFR-06). D19.4 does not say where the 30 days start; Mobile
+counts them from when the Draft was started, the literal reading of "kept
+30 days". Pending and Submitted requests never expire.
 
 ## Required Backend capabilities
 

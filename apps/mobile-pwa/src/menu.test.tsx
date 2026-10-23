@@ -324,7 +324,10 @@ describe('basket', () => {
       <Basket
         lines={[{ lineId: 'l1', sellableItemId: 'fixture-item-water', quantity: 1, selections: [], comment: '' }]}
         menu={soldOutWater}
+        persistence="memory"
+        saving={false}
         saveFailed={false}
+        needsReview={false}
         onQuantity={() => undefined}
         onEdit={() => undefined}
         onRemove={() => undefined}

@@ -24,14 +24,57 @@ export interface DraftKey {
   readonly tableSessionId: string
 }
 
+/**
+ * `ExpiredNeedsReview` is set once an unsent Draft is older than the
+ * retention period (D19.4, NFR-06). It is never cleared automatically, so
+ * moving the device clock back does not revive it. What happens next
+ * (deletion workflow) is pending decision DEC-6; nothing is deleted.
+ */
+export type DraftReviewState = 'Active' | 'ExpiredNeedsReview'
+
 export interface Draft extends DraftKey {
   /** Master Data version of the table session the lines were chosen from (D09). */
   readonly sessionMasterDataVersion: string
   readonly lines: readonly DraftLine[]
+  /** Device time the Draft was started (ISO 8601 UTC); reference only (D12.9). */
+  readonly createdAt: string
+  /** Device time of the last change (ISO 8601 UTC). */
+  readonly updatedAt: string
+  readonly reviewState: DraftReviewState
 }
 
-export function emptyDraft(key: DraftKey, sessionMasterDataVersion: string): Draft {
-  return { ...key, sessionMasterDataVersion, lines: [] }
+/** Unsent Drafts are kept 30 days before they need review (D19.4, NFR-06). */
+export const DRAFT_RETENTION_DAYS = 30
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export function emptyDraft(key: DraftKey, sessionMasterDataVersion: string, now: Date): Draft {
+  const at = now.toISOString()
+  return {
+    ...key,
+    sessionMasterDataVersion,
+    lines: [],
+    createdAt: at,
+    updatedAt: at,
+    reviewState: 'Active',
+  }
+}
+
+/** Records that the Draft was changed at `now`. */
+export function touchDraft(draft: Draft, now: Date): Draft {
+  return { ...draft, updatedAt: now.toISOString() }
+}
+
+/**
+ * Marks a Draft `ExpiredNeedsReview` once 30 days have passed since it was
+ * started. The period is counted from `createdAt`, the literal reading of
+ * "kept 30 days" in D19.4; the device clock is the only one available
+ * offline. Returns the same object when nothing changes.
+ */
+export function applyDraftExpiry(draft: Draft, now: Date): Draft {
+  if (draft.reviewState === 'ExpiredNeedsReview') return draft
+  const started = Date.parse(draft.createdAt)
+  const expired = Number.isNaN(started) || now.getTime() - started >= DRAFT_RETENTION_DAYS * DAY_MS
+  return expired ? { ...draft, reviewState: 'ExpiredNeedsReview' } : draft
 }
 
 export function addLine(draft: Draft, line: DraftLine): Draft {
