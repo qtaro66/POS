@@ -37,6 +37,8 @@ public sealed class BranchPairingCompositionTests
             $"missing-pairing-{Guid.NewGuid():N}.db");
         using var provider = Provider(new Dictionary<string, string?>
         {
+            ["BranchDeviceAuthentication:Enabled"] = "true",
+            ["BranchEmployeeSessions:Enabled"] = "true",
             ["BranchPairing:Enabled"] = "true",
             ["BranchPairing:DatabasePath"] = path
         });
@@ -50,6 +52,28 @@ public sealed class BranchPairingCompositionTests
                 "existing Branch database file",
                 StringComparison.Ordinal));
         Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData(false, true, "BranchDeviceAuthentication")]
+    [InlineData(true, false, "BranchEmployeeSessions")]
+    public async Task Enabled_pairing_requires_complete_identity_configuration(
+        bool deviceAuthenticationEnabled,
+        bool employeeSessionsEnabled,
+        string missingSection)
+    {
+        await using var database = new PairingDatabase();
+        await database.InitializeAsync();
+        var configuration = database.Configuration(enabled: true).ToDictionary();
+        configuration["BranchDeviceAuthentication:Enabled"] =
+            deviceAuthenticationEnabled.ToString();
+        configuration["BranchEmployeeSessions:Enabled"] =
+            employeeSessionsEnabled.ToString();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            Provider(configuration));
+
+        Assert.Contains(missingSection, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -225,6 +249,8 @@ public sealed class BranchPairingCompositionTests
         public IReadOnlyDictionary<string, string?> Configuration(bool enabled) =>
             new Dictionary<string, string?>
             {
+                ["BranchDeviceAuthentication:Enabled"] = "true",
+                ["BranchEmployeeSessions:Enabled"] = "true",
                 ["BranchPairing:Enabled"] = enabled.ToString(),
                 ["BranchPairing:DatabasePath"] = Path,
                 ["BranchPairing:ServiceOrigin"] = "https://192.168.2.2:8443"
