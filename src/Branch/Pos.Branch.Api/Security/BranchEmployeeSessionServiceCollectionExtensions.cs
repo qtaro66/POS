@@ -51,6 +51,14 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
                 .Value;
             return new SqliteBranchEmployeeStatusReader(options.DatabasePath.Trim());
         });
+        services.TryAddSingleton<IBranchEmployeeDataSyncStatusQuery>(provider =>
+        {
+            var options = provider
+                .GetRequiredService<IOptions<BranchEmployeeSessionOptions>>()
+                .Value;
+            return new SqliteBranchEmployeeDataSyncStatusQuery(
+                options.DatabasePath.Trim());
+        });
 
         if (!services.Any(
                 descriptor => descriptor.ServiceType ==
