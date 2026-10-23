@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
 import {
   createFixtureServices,
@@ -69,17 +69,46 @@ async function expectExpiredLogin() {
 }
 
 describe('employee session expiry', () => {
-  it('returns to the PIN login when the session expires and keeps pairing and unsent items', async () => {
-    const employee = sessionExpiringAt(Date.now() + 300)
-    const { services, discarded, user } = renderApp(
-      { employee, outbox: { draft: 2, pending: 1, submitted: 0, unknown: 0 } },
-      () => new Date(),
-    )
-    await logIn(user)
-    expect(await screen.findByRole('list', { name: 'Active tables' })).toBeTruthy()
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
-    await screen.findByText(EXPIRY_MESSAGE, undefined, { timeout: 3_000 })
-    await expectExpiredLogin()
+  it('returns to the PIN login when the session expires and keeps pairing and unsent items', async () => {
+    // Fake timers drive both the expiry timer and the clock, so no real time passes.
+    vi.useFakeTimers({ now: LOGIN_AT, toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const employee = sessionExpiringAt(LOGIN_AT + HOUR_MS)
+    const fixtures = createFixtureServices({
+      pairedDevice: FIXTURE_DEVICE,
+      employee,
+      outbox: { draft: 2, pending: 1, submitted: 0, unknown: 0 },
+    })
+    const discarded: EmployeeSession[] = []
+    const services = {
+      ...fixtures,
+      auth: {
+        ...fixtures.auth,
+        discardExpiredSession: (session: EmployeeSession) => {
+          discarded.push(session)
+        },
+      },
+    }
+    render(<App services={services} initialDevice={FIXTURE_DEVICE} now={() => new Date()} />)
+
+    // fireEvent instead of user-event, which waits on timers between steps.
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: FIXTURE_ACCEPTED_PIN } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+    })
+    expect(screen.getByRole('list', { name: 'Active tables' })).toBeTruthy()
+
+    act(() => vi.advanceTimersByTime(HOUR_MS - 1))
+    expect(screen.getByRole('list', { name: 'Active tables' })).toBeTruthy()
+    expect(discarded).toEqual([])
+
+    act(() => vi.advanceTimersByTime(1))
+    expect(screen.getByRole('heading', { level: 1, name: 'Employee login' })).toBeTruthy()
+    expect(screen.getByText(EXPIRY_MESSAGE)).toBeTruthy()
+    expect(screen.queryByRole('list', { name: 'Active tables' })).toBeNull()
     expect(discarded).toEqual([employee])
     expect((screen.getByLabelText('PIN') as HTMLInputElement).value).toBe('')
     expect(await services.deviceStore.load()).toEqual(FIXTURE_DEVICE)
