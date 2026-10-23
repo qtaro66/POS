@@ -84,7 +84,10 @@ Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
 
 ### MOB-01 Employee-session expiry
 - Approved: yes
-- UI: not verified | Integration: not verified | Device validation: not verified
+- UI: verified (fixtures) | Integration: not verified | Device validation: not verified
+- UI evidence: PR #139 squash-merged as 27bba11; `verify.ps1` PASS on
+  db1d4e0 (135 Mobile tests); merged `apps/mobile-pwa` content identical to
+  db1d4e0. The Branch adapter is covered by unit tests with a fake fetch only.
 - Integration needs: CAP-01 (end-to-end login against a running Branch Service)
 - Depends on: none
 - PR: https://github.com/qtaro66/POS/pull/139

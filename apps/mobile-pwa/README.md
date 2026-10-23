@@ -13,6 +13,28 @@ foundation covers the application shell only:
 The delivery plan, pending decisions and required Backend capabilities are in
 [BACKLOG.md](BACKLOG.md).
 
+## Authenticated shell and accessibility
+
+After login, `src/screens/AuthenticatedShell.tsx` shows three screens with a
+bottom navigation (`src/components/BottomNav.tsx`): Tables, the current table
+(after one is opened) and Status. The table list is loaded once per login
+and shared by the screens; Refresh reloads it.
+
+- Route state is kept in the browser history (`useShellNavigation.ts`), so
+  the Android back gesture and the browser back button return to the previous
+  screen. The URL never changes and a reload starts at the PIN login.
+- Each screen (`src/components/Screen.tsx`) moves focus to its heading when
+  shown, so screen readers announce it, and sets the document title.
+- The table screen shows only what the last Branch list reports. Order lines
+  and bill totals need a Branch capability that does not exist yet (CAP-10).
+- The Status screen shows connection, employee-data sync time and the outbox
+  counts by D20.1 state; the counts still come from fixtures.
+- Targets are at least 44 px, focus is a 3 px outline, and text and control
+  colors meet WCAG 2.2 AA in light and dark schemes;
+  `src/accessibility.test.ts` checks the tokens and target sizes. Layout uses
+  `rem`, wrapping and safe-area insets so it fits from 320 px wide, in
+  portrait and landscape, at 200% text size.
+
 ## Adapters
 
 All I/O goes through the interfaces in `src/adapters/ports.ts`. Only

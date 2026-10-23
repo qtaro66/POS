@@ -66,6 +66,30 @@ export const text = {
   tablesReceivedAt: 'Received',
   tableLabel: (label: string) => `Table ${label}`,
   tableOpenedAt: 'Opened',
+  tableNotListed: (label: string) =>
+    `Table ${label} is not in the last list received from the branch. It may have been closed or moved.`,
+  tableDetailsUnavailable: 'Order lines and bill totals are not shown on this device yet.',
+
+  documentTitle: (screen: string) => `${screen} · POS Mobile`,
+  navLabel: 'Main',
+  navTables: 'Tables',
+  navStatus: 'Status',
+
+  statusTitle: 'Status and outbox',
+  statusConnectionHeading: 'Connection',
+  statusBranch: 'Branch service',
+  statusEmployeeData: 'Employee data synced',
+  outboxHeading: 'Unsent items on this device',
+  outboxState: {
+    draft: 'Draft',
+    pending: 'Pending',
+    submitted: 'Submitted',
+    unknown: 'Result unknown',
+  },
+  statusDeviceHeading: 'This device',
+  statusDeviceName: 'Device name',
+  statusBranchName: 'Branch',
+  statusEmployee: 'Signed in as',
 
   statusRegion: 'Connection and sync status',
   branchOnline: 'Branch online',
