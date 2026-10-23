@@ -98,8 +98,16 @@ Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
 
 ### MOB-02 App shell, navigation and accessibility baseline
 - Approved: yes
-- UI: not verified | Integration: n/a | Device validation: n/a
+- UI: verified (fixtures) | Integration: n/a | Device validation: n/a
+- UI evidence: PR #141 squash-merged as 0740091; `verify.ps1` PASS on
+  e1a08a1 (196 Mobile tests, including the static contrast and target-size
+  test); merged content identical to e1a08a1. Layout at 320x640 and 640x320,
+  100% and 200% text, checked in a desktop Chromium pane, not on a phone.
+  Shared components are `Screen`, `Alert` and `Notice`; buttons and lists
+  share CSS classes, and the existing sync bar is the live status region.
+  No manual screen-reader pass was made.
 - Depends on: none (no pending decision)
+- PR: https://github.com/qtaro66/POS/pull/141
 - Scope: authenticated shell with phone-first navigation between Tables,
   the current table, and Outbox/status; route state without new
   dependencies; shared accessible components (screen heading focus, live
@@ -131,7 +139,7 @@ Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
   with fixtures (D19.1).
 
 ### MOB-05 Menu and Draft editor
-- Approved: no
+- Approved: yes
 - UI: not verified | Integration: not verified | Device validation: n/a
 - Integration needs: CAP-07
 - Depends on: MOB-02
