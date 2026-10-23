@@ -27,4 +27,22 @@ public static class BranchEmployeeDataSyncStatusEndpointRouteBuilderExtensions
             .ExcludeFromDescription()
             .WithName(EndpointName);
     }
+
+    public static IEndpointRouteBuilder MapBranchEmployeeDataSyncStatusEndpointIfEnabled(
+        this IEndpointRouteBuilder endpoints,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var enabled = configuration
+            .GetSection(BranchEmployeeSessionOptions.SectionName)
+            .GetValue<bool>(nameof(BranchEmployeeSessionOptions.Enabled));
+        if (enabled)
+        {
+            endpoints.MapBranchEmployeeDataSyncStatusEndpoint();
+        }
+
+        return endpoints;
+    }
 }
