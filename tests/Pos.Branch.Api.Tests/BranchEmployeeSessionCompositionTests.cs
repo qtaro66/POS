@@ -170,6 +170,8 @@ public sealed class BranchEmployeeSessionCompositionTests
 
         Assert.IsType<SqliteBranchEmployeeStatusReader>(
             provider.GetRequiredService<IBranchEmployeeStatusReader>());
+        Assert.IsType<SqliteBranchEmployeeDataSyncStatusQuery>(
+            provider.GetRequiredService<IBranchEmployeeDataSyncStatusQuery>());
     }
 
     [Fact]
