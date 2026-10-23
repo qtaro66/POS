@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 14;
+    public const int CurrentVersion = 15;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -880,6 +880,15 @@ internal static class SqliteBranchSchema
                 branch_id, lifecycle_status, employee_id);
         """;
 
+    private const string SchemaVersion15 = """
+        ALTER TABLE cloud_sync_outbox
+            ADD COLUMN successfully_sent_at TEXT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_cloud_sync_outbox_branch_sent
+            ON cloud_sync_outbox (branch_id, successfully_sent_at)
+            WHERE successfully_sent_at IS NOT NULL;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -964,6 +973,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 14)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion14, cancellationToken);
+        }
+
+        if (storedVersion < 15)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion15, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

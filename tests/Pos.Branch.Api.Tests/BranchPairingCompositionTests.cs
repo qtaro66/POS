@@ -91,7 +91,7 @@ public sealed class BranchPairingCompositionTests
         Assert.Contains(
             exception.Failures,
             failure => failure.Contains(
-                "schema version must be 14; actual version is 11",
+                "schema version must be 15; actual version is 11",
                 StringComparison.Ordinal));
     }
 
@@ -100,7 +100,7 @@ public sealed class BranchPairingCompositionTests
     {
         await using var database = new PairingDatabase();
         await database.ExecuteAsync(
-            "PRAGMA user_version = 14;",
+            "PRAGMA user_version = 15;",
             SqliteOpenMode.ReadWriteCreate);
         using var provider = Provider(database.Configuration(enabled: true));
 
