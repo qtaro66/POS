@@ -55,11 +55,38 @@ Draft the basket, as the confirmed PC POS page does (D18.6).
   unit prices only; Mobile never calculates totals (D10.1).
 - Each table session has its own basket, bound to device, employee, table
   session and the session's Master Data version (D10.5, D09).
-- Fixtures only: the menu comes from `src/adapters/fixtureMenu.ts` (no Branch
-  capability yet, CAP-07), and the basket is held in memory
-  (`MemoryDraftRepository`), so it is lost when the app closes. IndexedDB
-  persistence is MOB-06; sending orders is MOB-08. Whether Mobile lines carry
-  Dine-in/Takeaway is pending decision DEC-8.
+- The menu still comes from fixtures (`src/adapters/fixtureMenu.ts`); there is
+  no Branch capability yet (CAP-07). Sending orders is MOB-08. Whether Mobile
+  lines carry Dine-in/Takeaway is pending decision DEC-8.
+
+## Persistent basket and outbox
+
+Baskets and outbox requests are stored in IndexedDB on the device
+(`src/adapters/indexedDbOrderStore.ts`, database `pos-mobile-orders`) in both
+the fixture and the Branch build; `main.tsx` composes it with
+`withPersistentOrders`. `MemoryDraftRepository` is for tests only, and the
+basket says so when it is used.
+
+- A basket is bound to device, employee, table session and Master Data
+  version (D10.5). It survives reload, app close and logout; logout shows the
+  unsent count but never deletes or blocks (D10.5).
+- The basket confirms "saved on this device" only after the write completed,
+  and says when a save failed. Branch acceptance is never claimed here.
+- Requests follow D20.1 (`src/domain/mobileRequest.ts`): `Pending` →
+  `Submitted` → `BranchAccepted` / `Rejected` / `Unknown`, and `Unknown` →
+  status query → `BranchAccepted` / `Rejected` / `Pending`. Any other
+  transition is refused. The `requestId` is created once when a Draft becomes
+  `Pending`, in the same transaction that removes the Draft, and an existing
+  `requestId` is never overwritten. Rejected requests keep their lines.
+- The sync bar, the Status screen and the login screen count non-empty
+  baskets and outstanding requests from this store (`OutboxSyncStatus`).
+  Connection and employee-data sync still come from fixtures (CAP-03).
+- Retention (D19.4, NFR-06): a basket started more than 30 days ago is
+  marked `ExpiredNeedsReview` at start-up and when it is opened, and the table
+  screen says it needs review. Nothing is deleted; the deletion workflow is
+  pending decision DEC-6. Requests that started sending never expire.
+- Not done here: sending, status queries and retry (MOB-08), and validation
+  on real Android and iOS devices, including installed-PWA storage eviction.
 
 ## Adapters
 

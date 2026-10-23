@@ -1,5 +1,6 @@
 import type { Draft, DraftKey } from '../domain/draft.ts'
 import type { Menu } from '../domain/menu.ts'
+import type { MobileRequest } from '../domain/mobileRequest.ts'
 import type {
   ActiveTablesSnapshot,
   EmployeeSession,
@@ -88,13 +89,38 @@ export interface MenuGateway {
 }
 
 /**
- * Holds the Draft (basket) of a table session on this device. The fixture
- * implementation keeps it in memory only; persistence in IndexedDB is backlog
- * MOB-06 (D10.5).
+ * Holds the Draft (basket) of a table session on this device. Drafts must be
+ * persistent on the device (D10.5); `IndexedDbOrderStore` is the real
+ * implementation and `MemoryDraftRepository` is for tests only.
  */
 export interface DraftRepository {
+  /** Where saved Drafts live, so the UI never claims more than is true. */
+  readonly persistence: 'memory' | 'device'
   load(key: DraftKey): Promise<Draft | null>
+  /** Resolves only after the Draft is stored. */
   save(draft: Draft): Promise<void>
+}
+
+/**
+ * The device's persistent order outbox (D20.1, D12.2). Sending and status
+ * queries are backlog MOB-08; this port only stores requests and their states.
+ */
+export interface OrderOutbox {
+  listDrafts(): Promise<readonly Draft[]>
+  listRequests(): Promise<readonly MobileRequest[]>
+  getRequest(requestId: string): Promise<MobileRequest | null>
+  /**
+   * Turns a Draft into a `Pending` request in one transaction: the Draft is
+   * removed and the request added, or nothing changes. Fails if the
+   * `requestId` already exists.
+   */
+  submitDraft(key: DraftKey, request: MobileRequest): Promise<void>
+  /** Stores a new state of an existing request; fails for an unknown `requestId`. */
+  updateRequest(request: MobileRequest): Promise<void>
+  /** Marks Drafts older than the retention period `ExpiredNeedsReview`; returns how many changed. */
+  expireDrafts(now: Date): Promise<number>
+  /** Called after every stored change, so counts shown elsewhere stay current. */
+  subscribe(listener: () => void): () => void
 }
 
 /** Branch connectivity, employee-data sync time and local outbox counts. */

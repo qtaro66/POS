@@ -78,8 +78,13 @@ export const text = {
   basketEmpty: 'The basket is empty.',
   basketCount: (count: number) =>
     count === 1 ? '1 item in the basket' : `${count} items in the basket`,
-  basketMemoryOnly:
-    'The basket is kept only while this app stays open. Sending orders to the branch is not available yet.',
+  basketMemoryOnly: 'The basket is kept only while this app stays open.',
+  basketSavedOnDevice: 'The basket is saved on this device.',
+  basketSaving: 'Saving the basket on this device…',
+  basketNotSaved: 'The latest basket changes are not saved on this device.',
+  basketNotSentYet: 'Sending orders to the branch is not available yet.',
+  basketNeedsReview:
+    'This basket was started more than 30 days ago and needs review before it can be sent.',
   basketSaveFailed: 'The last change to the basket could not be stored.',
   basketDecrease: (name: string) => `Decrease ${name}`,
   basketIncrease: (name: string) => `Increase ${name}`,

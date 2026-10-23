@@ -28,6 +28,8 @@ interface AuthenticatedShellProps {
   readonly device: PairedDevice
   readonly employee: EmployeeSession
   readonly services: Pick<MobileServices, 'tables' | 'menu' | 'drafts' | 'syncStatus'>
+  /** Device clock for Draft timestamps and the 30-day review rule; must keep its identity. */
+  readonly now: () => Date
   /** Creates basket line identifiers; replaced in tests. */
   readonly newLineId?: () => string
 }
@@ -44,6 +46,7 @@ export function AuthenticatedShell({
   device,
   employee,
   services,
+  now,
   newLineId = randomLineId,
 }: AuthenticatedShellProps) {
   const [message, setMessage] = useState<string | null>(null)
@@ -60,6 +63,7 @@ export function AuthenticatedShell({
     tableSessionId
       ? { deviceId: device.deviceId, employeeId: employee.employeeId, tableSessionId }
       : null,
+    now,
   )
 
   function nameOf(sellableItemId: string): string {
@@ -118,6 +122,7 @@ export function AuthenticatedShell({
           table={route.table}
           tables={tables}
           draft={draft}
+          persistence={services.drafts.persistence}
           menu={readyMenu}
           message={message}
           onAddItems={() => navigate({ screen: 'menu', table: route.table })}

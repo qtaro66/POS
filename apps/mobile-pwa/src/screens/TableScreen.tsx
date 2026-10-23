@@ -1,3 +1,4 @@
+import type { DraftRepository } from '../adapters/ports.ts'
 import { Basket } from '../components/Basket.tsx'
 import { LiveMessage } from '../components/LiveMessage.tsx'
 import { Notice } from '../components/Messages.tsx'
@@ -14,6 +15,7 @@ interface TableScreenProps {
   readonly table: CurrentTable
   readonly tables: ActiveTables
   readonly draft: DraftData
+  readonly persistence: DraftRepository['persistence']
   readonly menu: Menu | null
   /** Confirmation of the last basket change, announced politely. */
   readonly message: string | null
@@ -34,6 +36,7 @@ export function TableScreen({
   table,
   tables,
   draft,
+  persistence,
   menu,
   message,
   onAddItems,
@@ -93,7 +96,10 @@ export function TableScreen({
         <Basket
           lines={draft.draft?.lines ?? []}
           menu={menu}
+          persistence={persistence}
+          saving={draft.saving}
           saveFailed={draft.saveFailed}
+          needsReview={draft.draft?.reviewState === 'ExpiredNeedsReview'}
           onQuantity={onQuantity}
           onEdit={onEdit}
           onRemove={onRemove}

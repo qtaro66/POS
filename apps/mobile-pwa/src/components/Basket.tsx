@@ -1,4 +1,5 @@
 import { useId, useRef } from 'react'
+import type { DraftRepository } from '../adapters/ports.ts'
 import { countLineItems, lineProblem, type DraftLine } from '../domain/draft.ts'
 import { findItem, type Menu } from '../domain/menu.ts'
 import { text } from '../strings.ts'
@@ -10,10 +11,25 @@ interface BasketProps {
   readonly lines: readonly DraftLine[]
   /** Menu used to name lines and flag those that can no longer be sent; null while it loads. */
   readonly menu: Menu | null
+  /** Where the basket is kept; the notice never claims more than this. */
+  readonly persistence: DraftRepository['persistence']
+  readonly saving: boolean
   readonly saveFailed: boolean
+  /** True when the basket is older than the retention period (D19.4). */
+  readonly needsReview: boolean
   readonly onQuantity: (line: DraftLine, quantity: number) => void
   readonly onEdit: (line: DraftLine) => void
   readonly onRemove: (line: DraftLine) => void
+}
+
+function storageText(
+  persistence: DraftRepository['persistence'],
+  saving: boolean,
+  saveFailed: boolean,
+): string {
+  if (persistence === 'memory') return text.basketMemoryOnly
+  if (saving) return text.basketSaving
+  return saveFailed ? text.basketNotSaved : text.basketSavedOnDevice
 }
 
 function optionSummary(menu: Menu, line: DraftLine): string {
@@ -34,13 +50,28 @@ function optionSummary(menu: Menu, line: DraftLine): string {
  * quantity, be edited or removed until they are sent. Prices are shown as
  * resolved by the Branch; Mobile shows no totals (D10.1).
  */
-export function Basket({ lines, menu, saveFailed, onQuantity, onEdit, onRemove }: BasketProps) {
+export function Basket({
+  lines,
+  menu,
+  persistence,
+  saving,
+  saveFailed,
+  needsReview,
+  onQuantity,
+  onEdit,
+  onRemove,
+}: BasketProps) {
   const headingId = useId()
   const headingRef = useRef<HTMLHeadingElement>(null)
   const count = countLineItems(lines)
 
   return (
     <section className="panel" aria-labelledby={headingId}>
+      {needsReview && (
+        <Notice>
+          <p>{text.basketNeedsReview}</p>
+        </Notice>
+      )}
       <h2 id={headingId} ref={headingRef} tabIndex={-1}>
         {text.basketHeading}
       </h2>
@@ -117,7 +148,8 @@ export function Basket({ lines, menu, saveFailed, onQuantity, onEdit, onRemove }
         </Alert>
       )}
       <Notice>
-        <p>{text.basketMemoryOnly}</p>
+        <p>{storageText(persistence, saving, saveFailed)}</p>
+        <p>{text.basketNotSentYet}</p>
       </Notice>
     </section>
   )

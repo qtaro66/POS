@@ -111,6 +111,7 @@ function App({
           device={state.device}
           employee={state.employee}
           services={services}
+          now={now}
         />
       )}
     </div>
