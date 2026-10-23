@@ -57,6 +57,11 @@ export type LoginOutcome =
 export interface EmployeeAuthGateway {
   login(device: PairedDevice, pin: string): Promise<LoginOutcome>
   logout(device: PairedDevice, employee: EmployeeSession): Promise<void>
+  /**
+   * Forgets an expired session's token locally without contacting the Branch
+   * Service, which already refuses it. There is no automatic token refresh.
+   */
+  discardExpiredSession(employee: EmployeeSession): void
 }
 
 export type ActiveTablesOutcome =

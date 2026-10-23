@@ -26,13 +26,25 @@ export interface EmployeeSession {
   readonly authenticatedAt: string
   /** Branch session identifier; the session token itself never leaves the auth adapter. */
   readonly sessionId?: string
+  /**
+   * When the Branch Service stops accepting this session (ISO 8601 UTC). The
+   * Branch adapter always sets it; fixture sessions may omit it and then never
+   * expire on the client (see `sessionExpiry.ts`).
+   */
   readonly expiresAt?: string
 }
+
+/** Why the PIN login is shown again without the employee logging out. */
+export type LoggedOutReason = 'sessionExpired'
 
 /** The three device states the Mobile shell distinguishes. */
 export type DeviceState =
   | { readonly status: 'unpaired' }
-  | { readonly status: 'pairedLoggedOut'; readonly device: PairedDevice }
+  | {
+      readonly status: 'pairedLoggedOut'
+      readonly device: PairedDevice
+      readonly reason?: LoggedOutReason
+    }
   | {
       readonly status: 'authenticated'
       readonly device: PairedDevice

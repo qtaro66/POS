@@ -145,10 +145,14 @@ const loginResponse = {
   expiresAt: '2026-01-15T11:00:00Z',
 }
 
-function authGateway(reply: Reply, credential: string | null = CREDENTIAL) {
+function authGateway(
+  reply: Reply,
+  credential: string | null = CREDENTIAL,
+  now: () => Date = () => NOW,
+) {
   const { fetch, calls } = fakeFetch(reply)
   const deviceStore = new MemoryDeviceStore(credential ? FIXTURE_DEVICE : null, credential ?? '')
-  const gateway = new BranchEmployeeAuthGateway({ fetch, deviceStore, timeoutMs: 1_000, now: () => NOW })
+  const gateway = new BranchEmployeeAuthGateway({ fetch, deviceStore, timeoutMs: 1_000, now })
   return { gateway, calls }
 }
 
@@ -185,6 +189,30 @@ describe('BranchEmployeeAuthGateway', () => {
     if (outcome.kind !== 'authenticated') throw new Error('expected authentication')
     await gateway.logout(FIXTURE_DEVICE, outcome.employee)
     expect(gateway.sessionTokenFor('test-session-id')).toBeNull()
+  })
+
+  it('stops handing out the token at the Branch-provided expiry', async () => {
+    let now = NOW
+    const { gateway } = authGateway({ status: 200, body: loginResponse }, CREDENTIAL, () => now)
+    await gateway.login(FIXTURE_DEVICE, '2468')
+
+    now = new Date('2026-01-15T10:59:59.999Z')
+    expect(gateway.sessionTokenFor('test-session-id')).toBe(SESSION_TOKEN)
+    now = new Date(loginResponse.expiresAt)
+    expect(gateway.sessionTokenFor('test-session-id')).toBeNull()
+    // The expired token is forgotten, so moving the clock back does not revive it.
+    now = NOW
+    expect(gateway.sessionTokenFor('test-session-id')).toBeNull()
+  })
+
+  it('discards an expired session token without contacting the Branch Service', async () => {
+    const { gateway, calls } = authGateway({ status: 200, body: loginResponse })
+    const outcome = await gateway.login(FIXTURE_DEVICE, '2468')
+    if (outcome.kind !== 'authenticated') throw new Error('expected authentication')
+
+    gateway.discardExpiredSession(outcome.employee)
+    expect(gateway.sessionTokenFor('test-session-id')).toBeNull()
+    expect(calls).toHaveLength(1)
   })
 
   it('maps HTTP 401 to a rejected login', async () => {

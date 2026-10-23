@@ -49,6 +49,26 @@ describe('deviceSessionReducer', () => {
   it('ignores logout when no employee is authenticated', () => {
     expect(deviceSessionReducer(pairedLoggedOut, { type: 'loggedOut' })).toBe(pairedLoggedOut)
   })
+
+  it('returns an expired session to the PIN login, keeps the device and records why', () => {
+    const expired = deviceSessionReducer(authenticated, { type: 'sessionExpired' })
+    expect(expired).toEqual({ ...pairedLoggedOut, reason: 'sessionExpired' })
+    // Logging in again clears the reason.
+    expect(
+      deviceSessionReducer(expired, { type: 'authenticated', employee: FIXTURE_EMPLOYEE }),
+    ).toEqual(authenticated)
+  })
+
+  it('records an expiry reported before the login completes', () => {
+    expect(deviceSessionReducer(pairedLoggedOut, { type: 'sessionExpired' })).toEqual({
+      ...pairedLoggedOut,
+      reason: 'sessionExpired',
+    })
+  })
+
+  it('ignores session expiry on an unpaired device', () => {
+    expect(deviceSessionReducer(unpaired, { type: 'sessionExpired' })).toBe(unpaired)
+  })
 })
 
 describe('countUnsent', () => {
