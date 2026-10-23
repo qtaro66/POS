@@ -10,6 +10,9 @@ foundation covers the application shell only:
 - Read-only active-table list with Branch connection, employee-data sync time
   and unsent-item (outbox) status (requirements 3.3, D10.1, D10.5, D20.1).
 
+The delivery plan, pending decisions and required Backend capabilities are in
+[BACKLOG.md](BACKLOG.md).
+
 ## Adapters
 
 All I/O goes through the interfaces in `src/adapters/ports.ts`. Only
