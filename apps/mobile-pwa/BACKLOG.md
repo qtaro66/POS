@@ -56,6 +56,7 @@ reviewed pull requests. Requirements are cited by ID from
 | DEC-5 | Production Mobile stack: installable PWA, cross-platform or native (D17, CORE-08) | Final Mobile completion |
 | DEC-6 | Handling of Drafts after `Expired/NeedsReview` (deletion workflow) | MOB-11 deletion step only |
 | DEC-7 | Requirement conflict: D10.5 blocks a Draft for a `PaymentPending` session and forbids retrying it into that session, while D12.3 keeps the Draft so it can be sent again if the PC reopens ordering (`CancelPaymentRequest`). Can a blocked Draft be resubmitted to the same session after it returns to `Ordering`? | MOB-11 resubmit path only |
+| DEC-8 | Whether Mobile basket lines carry `fulfillmentType` (`DineIn`/`Takeaway`). D18.6 confirms it per Order Line for the PC POS menu page only; D10 does not mention it for Mobile | Mobile Draft line model and CAP-08 payload |
 
 Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
 30 days (D19.4, NFR-06).

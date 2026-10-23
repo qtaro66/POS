@@ -68,7 +68,70 @@ export const text = {
   tableOpenedAt: 'Opened',
   tableNotListed: (label: string) =>
     `Table ${label} is not in the last list received from the branch. It may have been closed or moved.`,
-  tableDetailsUnavailable: 'Order lines and bill totals are not shown on this device yet.',
+  tableDetailsUnavailable:
+    'Order lines the branch has accepted and bill totals are not shown on this device yet.',
+
+  addItems: 'Add items',
+  addItemsNotOrdering:
+    'Items can be added only while the table is Ordering, according to the last list received from the branch.',
+  basketHeading: 'Basket',
+  basketEmpty: 'The basket is empty.',
+  basketCount: (count: number) =>
+    count === 1 ? '1 item in the basket' : `${count} items in the basket`,
+  basketMemoryOnly:
+    'The basket is kept only while this app stays open. Sending orders to the branch is not available yet.',
+  basketSaveFailed: 'The last change to the basket could not be stored.',
+  basketDecrease: (name: string) => `Decrease ${name}`,
+  basketIncrease: (name: string) => `Increase ${name}`,
+  basketQuantity: (name: string) => `Quantity of ${name}`,
+  basketEdit: 'Edit',
+  basketEditLabel: (name: string) => `Edit ${name}`,
+  basketRemove: 'Remove',
+  basketRemoveLabel: (name: string) => `Remove ${name}`,
+  basketRemoved: (name: string) => `${name} removed from the basket.`,
+  basketUpdated: (name: string) => `${name} updated in the basket.`,
+  basketItemUnavailable: 'No longer available. Remove it or choose another item.',
+  basketOptionsInvalid: 'The chosen options are no longer valid. Edit this item.',
+  basketUnitPrice: 'Unit price',
+  basketComment: 'Note',
+
+  menuTitle: (tableLabel: string) => `Menu · Table ${tableLabel}`,
+  menuCategories: 'Categories',
+  menuAllCategories: 'All',
+  menuLoading: 'Loading the menu…',
+  menuUnreachable: 'The menu could not be loaded from the branch.',
+  menuFailed: 'The menu could not be loaded because of an unexpected error.',
+  menuRetry: 'Try again',
+  menuSoldOut: 'Sold out',
+  menuHasOptions: 'Options',
+  menuAdded: (name: string, count: number) =>
+    `${name} added. ${count === 1 ? '1 item' : `${count} items`} in the basket.`,
+  menuViewBasket: (count: number) => `View basket (${count})`,
+  menuItemMissing: 'This item is not in the menu any more.',
+
+  itemQuantity: 'Quantity',
+  itemDecrease: 'Decrease quantity',
+  itemIncrease: 'Increase quantity',
+  itemComment: 'Note for the kitchen',
+  itemAdd: 'Add to basket',
+  itemUpdate: 'Update basket',
+  itemFixProblems: 'Check the highlighted choices.',
+  itemLineMissing: 'This basket item no longer exists.',
+  itemUnavailableTitle: 'Item not available',
+  groupRule: (min: number, max: number) =>
+    min === 0
+      ? `Optional · choose up to ${max}`
+      : min === max
+        ? `Required · choose ${min}`
+        : `Required · choose ${min} to ${max}`,
+  groupChosen: (count: number, max: number) => `${count} of ${max} chosen`,
+  groupBelowMinimum: (min: number) => (min === 1 ? 'Choose at least 1.' : `Choose at least ${min}.`),
+  groupAboveMaximum: (max: number) => `Choose no more than ${max}.`,
+  groupOptionLimit: 'One option is chosen more times than allowed.',
+  groupUnavailable: 'A chosen option is no longer available.',
+  optionDecrease: (name: string) => `Remove one ${name}`,
+  optionIncrease: (name: string) => `Add one ${name}`,
+  optionQuantity: (name: string) => `${name} quantity`,
 
   documentTitle: (screen: string) => `${screen} · POS Mobile`,
   navLabel: 'Main',

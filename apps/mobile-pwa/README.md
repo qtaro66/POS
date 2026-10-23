@@ -35,6 +35,32 @@ and shared by the screens; Refresh reloads it.
   `rem`, wrapping and safe-area insets so it fits from 320 px wide, in
   portrait and landscape, at 200% text size.
 
+## Menu and basket (Draft)
+
+From a table whose last listed status is `Ordering`, Add items opens the
+menu of that table session (`src/screens/MenuScreen.tsx`). The UI calls the
+Draft the basket, as the confirmed PC POS page does (D18.6).
+
+- Categories filter the list. Each item shows code, name and the
+  Branch-resolved price; Sold Out items stay visible but cannot be added
+  (D08.2). Items without options are added with one tap.
+- Items with options open `src/screens/ItemScreen.tsx`: SubItem groups before
+  Toppings, each with its rule (required/optional, how many). The D08.4 rules
+  are in `src/domain/optionRules.ts`: selections are counted by quantity,
+  repeats are limited per option, Sold Out options cannot be chosen, and
+  available defaults are preselected. The Branch Service checks again on
+  submit.
+- The basket on the table screen changes quantity (at least 1), edits or
+  removes lines, and flags lines the current menu no longer allows. It shows
+  unit prices only; Mobile never calculates totals (D10.1).
+- Each table session has its own basket, bound to device, employee, table
+  session and the session's Master Data version (D10.5, D09).
+- Fixtures only: the menu comes from `src/adapters/fixtureMenu.ts` (no Branch
+  capability yet, CAP-07), and the basket is held in memory
+  (`MemoryDraftRepository`), so it is lost when the app closes. IndexedDB
+  persistence is MOB-06; sending orders is MOB-08. Whether Mobile lines carry
+  Dine-in/Takeaway is pending decision DEC-8.
+
 ## Adapters
 
 All I/O goes through the interfaces in `src/adapters/ports.ts`. Only

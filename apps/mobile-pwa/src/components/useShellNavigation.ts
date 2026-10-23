@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   isSameRoute,
+  isTableScreen,
   readShellRoute,
   TABLES_ROUTE,
   type CurrentTable,
@@ -20,6 +21,8 @@ export interface ShellNavigation {
   /** Table opened most recently in this login, kept while other screens are shown. */
   readonly currentTable: CurrentTable | null
   readonly navigate: (route: ShellRoute) => void
+  /** Returns to the previous screen, as the system back action does. */
+  readonly back: () => void
 }
 
 /**
@@ -28,16 +31,24 @@ export interface ShellNavigation {
  * screen. The URL never changes: a reload always starts at the PIN login, so
  * no screen can be opened directly from a link.
  */
-export function useShellNavigation(): ShellNavigation {
+export function useShellNavigation(
+  /** Called on every screen change, including the system back action. */
+  onShow?: (route: ShellRoute) => void,
+): ShellNavigation {
   const [route, setRoute] = useState<ShellRoute>(TABLES_ROUTE)
   const [currentTable, setCurrentTable] = useState<CurrentTable | null>(null)
   // Mirrors `route` so `navigate` can compare without a state updater with side effects.
   const routeRef = useRef<ShellRoute>(TABLES_ROUTE)
+  const onShowRef = useRef(onShow)
+  useEffect(() => {
+    onShowRef.current = onShow
+  })
 
   const show = useCallback((next: ShellRoute) => {
     routeRef.current = next
     setRoute(next)
-    if (next.screen === 'table') setCurrentTable(next.table)
+    if (isTableScreen(next)) setCurrentTable(next.table)
+    onShowRef.current?.(next)
   }, [])
 
   useEffect(() => {
@@ -58,5 +69,7 @@ export function useShellNavigation(): ShellNavigation {
     [show],
   )
 
-  return { route, currentTable, navigate }
+  const back = useCallback(() => window.history.back(), [])
+
+  return { route, currentTable, navigate, back }
 }
