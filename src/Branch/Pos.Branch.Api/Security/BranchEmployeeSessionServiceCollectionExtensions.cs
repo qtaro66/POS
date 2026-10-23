@@ -35,6 +35,15 @@ public static class BranchEmployeeSessionServiceCollectionExtensions
             return services;
         }
 
+        var deviceAuthenticationEnabled = configuration
+            .GetSection(BranchDeviceAuthenticationOptions.SectionName)
+            .GetValue<bool>(nameof(BranchDeviceAuthenticationOptions.Enabled));
+        if (!deviceAuthenticationEnabled)
+        {
+            throw new InvalidOperationException(
+                "BranchDeviceAuthentication must be enabled before enabling Branch employee sessions.");
+        }
+
         if (!services.Any(
                 descriptor => descriptor.ServiceType ==
                     typeof(IBranchEmployeeStatusReader)))
