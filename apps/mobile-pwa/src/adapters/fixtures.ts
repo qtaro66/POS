@@ -47,6 +47,11 @@ export const FIXTURE_DEVICE: PairedDevice = {
 /** PIN accepted by the fixture auth gateway. Not a real credential. */
 export const FIXTURE_ACCEPTED_PIN = '2468'
 
+/**
+ * Session returned by the fixture auth gateway. It deliberately has no
+ * `expiresAt`, so it never expires on the client; pass `employee` in
+ * `FixtureOptions` to exercise expiry.
+ */
 export const FIXTURE_EMPLOYEE: EmployeeSession = {
   employeeId: 'fixture-employee-001',
   displayName: 'Fixture Employee A',
@@ -91,6 +96,8 @@ export interface FixtureOptions {
   readonly scanResult?: QrScanResult
   readonly pairingOutcome?: PairingOutcome
   readonly loginUnreachable?: boolean
+  /** Session returned for the accepted PIN; defaults to `FIXTURE_EMPLOYEE` (no expiry). */
+  readonly employee?: EmployeeSession
   readonly tables?: readonly ActiveTable[]
   readonly tablesUnreachable?: boolean
   readonly connection?: BranchConnection
@@ -195,11 +202,13 @@ export function createFixtureServices(options: FixtureOptions = {}): FixtureServ
         }
         return Promise.resolve(
           pin === FIXTURE_ACCEPTED_PIN
-            ? { kind: 'authenticated', employee: FIXTURE_EMPLOYEE }
+            ? { kind: 'authenticated', employee: options.employee ?? FIXTURE_EMPLOYEE }
             : { kind: 'rejected' },
         )
       },
       logout: () => Promise.resolve(),
+      // Fixture sessions hold no token.
+      discardExpiredSession: () => undefined,
     },
     tables: {
       listActiveTables: (): Promise<ActiveTablesOutcome> => {

@@ -9,6 +9,8 @@ interface LoginScreenProps {
   readonly auth: EmployeeAuthGateway
   /** Unsent Draft/Pending items kept on this device (requirement D10.5). */
   readonly unsentCount: number
+  /** Why the login is shown again, for example an expired session. */
+  readonly notice?: string | null
   readonly onAuthenticated: (employee: EmployeeSession) => void
 }
 
@@ -18,7 +20,13 @@ interface LoginScreenProps {
  * length and lockout policy are not defined by the requirements, so none is
  * enforced here.
  */
-export function LoginScreen({ device, auth, unsentCount, onAuthenticated }: LoginScreenProps) {
+export function LoginScreen({
+  device,
+  auth,
+  unsentCount,
+  notice = null,
+  onAuthenticated,
+}: LoginScreenProps) {
   const headingRef = useFocusOnMount<HTMLHeadingElement>()
   const pinRef = useRef<HTMLInputElement>(null)
   const pinId = useId()
@@ -69,6 +77,11 @@ export function LoginScreen({ device, auth, unsentCount, onAuthenticated }: Logi
         {text.loginTitle}
       </h1>
       <p className="muted">{text.loginDeviceLine(device.deviceName, device.branchName)}</p>
+      {notice && (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      )}
       {unsentCount > 0 && <p className="notice">{text.unsentOnDevice(unsentCount)}</p>}
       <form className="login-form" onSubmit={(event) => void submit(event)} noValidate>
         <label htmlFor={pinId}>{text.loginPinLabel}</label>

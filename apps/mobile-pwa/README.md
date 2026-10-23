@@ -47,10 +47,30 @@ the Branch API (`src/adapters/branchApi/`); any other value keeps fixtures.
 - End-to-end use needs the Branch Service to serve this app from its own
   origin or to allow it through CORS; neither exists yet.
 
+## Employee session expiry
+
+The employee session ends at the `expiresAt` returned by the Branch login
+response; Mobile never assumes a session lifetime of its own
+(`src/domain/sessionExpiry.ts`, `src/components/useSessionExpiry.ts`).
+
+- On expiry the in-memory session token is discarded without contacting the
+  Branch Service, and the app returns to the PIN login with an expiry message.
+  The device pairing and credential, and any locally held Draft/outbox items,
+  are kept (requirement D10.5).
+- Background timers can be delayed or suspended, so expiry is also rechecked
+  when the app becomes visible, is restored from the page cache, regains
+  focus, and before any pointer or keyboard input reaches the screen.
+- A login that returns an already expired session is not opened. The Branch
+  auth adapter also stops handing out a token at or after its expiry.
+- There is no automatic token refresh: the employee enters the PIN again.
+- Fixture sessions have no `expiresAt` and therefore never expire on the
+  client. Pass `employee` with an `expiresAt` in `FixtureOptions` to exercise
+  expiry with fixtures.
+
 ## Not implemented yet
 
-Camera QR scanning, active-table and logout endpoints, session expiry
-handling, IndexedDB draft/outbox, service worker and web app manifest, ordering,
+Camera QR scanning, active-table and logout endpoints, token refresh,
+IndexedDB draft/outbox, service worker and web app manifest, ordering,
 `RequestPayment`, cancellation requests, and Thai localization (no Mobile
 wording is confirmed in the requirements yet).
 

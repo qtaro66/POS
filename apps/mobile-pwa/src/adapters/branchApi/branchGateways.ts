@@ -89,14 +89,21 @@ export class BranchPairingGateway implements PairingGateway {
   }
 }
 
+interface HeldSessionToken {
+  readonly token: string
+  /** Branch-provided expiry in epoch milliseconds. */
+  readonly expiresAtMs: number
+}
+
 /**
  * Employee PIN login through `POST /api/v1/employee-sessions`, authenticated
  * with the stored device credential. The session token stays in this
- * object's memory only, so reloading the app requires a new login.
+ * object's memory only, so reloading the app requires a new login. A token is
+ * never handed out at or after its Branch-provided `expiresAt`.
  */
 export class BranchEmployeeAuthGateway implements EmployeeAuthGateway {
   private readonly options: BranchGatewayOptions
-  private readonly sessionTokens = new Map<string, string>()
+  private readonly sessionTokens = new Map<string, HeldSessionToken>()
 
   constructor(options: BranchGatewayOptions) {
     this.options = options
@@ -129,7 +136,10 @@ export class BranchEmployeeAuthGateway implements EmployeeAuthGateway {
         if (!response) {
           throw new BranchProtocolError('The login response does not match the contract.')
         }
-        this.sessionTokens.set(response.sessionId, response.sessionToken)
+        this.sessionTokens.set(response.sessionId, {
+          token: response.sessionToken,
+          expiresAtMs: Date.parse(response.expiresAt),
+        })
         const employee: EmployeeSession = {
           employeeId: response.employeeId,
           // The login response carries no display name; the employee ID is shown instead.
@@ -154,8 +164,21 @@ export class BranchEmployeeAuthGateway implements EmployeeAuthGateway {
     return Promise.resolve()
   }
 
-  /** Session token for later protected requests; never rendered or persisted. */
+  discardExpiredSession(employee: EmployeeSession): void {
+    if (employee.sessionId) this.sessionTokens.delete(employee.sessionId)
+  }
+
+  /**
+   * Session token for later protected requests; never rendered or persisted.
+   * Returns null, and forgets the token, once the session has expired.
+   */
   sessionTokenFor(sessionId: string): string | null {
-    return this.sessionTokens.get(sessionId) ?? null
+    const held = this.sessionTokens.get(sessionId)
+    if (!held) return null
+    if ((this.options.now?.() ?? new Date()).getTime() >= held.expiresAtMs) {
+      this.sessionTokens.delete(sessionId)
+      return null
+    }
+    return held.token
   }
 }

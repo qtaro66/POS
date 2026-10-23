@@ -1,8 +1,10 @@
 import { useReducer, useSyncExternalStore } from 'react'
 import type { MobileServices } from './adapters/ports.ts'
 import { SyncStatusBar } from './components/SyncStatusBar.tsx'
+import { useSessionExpiry } from './components/useSessionExpiry.ts'
 import { deviceSessionReducer, initialDeviceState } from './domain/deviceSession.ts'
 import { countUnsent } from './domain/outbox.ts'
+import { isSessionExpired } from './domain/sessionExpiry.ts'
 import type { EmployeeSession, PairedDevice } from './domain/types.ts'
 import { ActiveTablesScreen } from './screens/ActiveTablesScreen.tsx'
 import { LoginScreen } from './screens/LoginScreen.tsx'
@@ -10,14 +12,19 @@ import { PairingScreen } from './screens/PairingScreen.tsx'
 import { text } from './strings.ts'
 import './App.css'
 
+const systemNow = () => new Date()
+
 /** Mobile POS application shell: unpaired → paired (logged out) → employee authenticated. */
 function App({
   services,
   initialDevice,
+  now = systemNow,
 }: {
   readonly services: MobileServices
   /** Device restored from the device store before the first render. */
   readonly initialDevice: PairedDevice | null
+  /** Clock used for session expiry; replaced in tests. Must keep the same identity. */
+  readonly now?: () => Date
 }) {
   const [state, dispatch] = useReducer(deviceSessionReducer, initialDevice, initialDeviceState)
   const sync = useSyncExternalStore(
@@ -25,12 +32,27 @@ function App({
     () => services.syncStatus.getStatus(),
   )
 
+  // Expiry only drops the in-memory session: pairing, Draft and outbox data stay on the device.
+  function expireSession(employee: EmployeeSession) {
+    services.auth.discardExpiredSession(employee)
+    dispatch({ type: 'sessionExpired' })
+  }
+
+  useSessionExpiry(state.status === 'authenticated' ? state.employee : null, now, () => {
+    if (state.status === 'authenticated') expireSession(state.employee)
+  })
+
   // The pairing gateway has already stored the device and its credential.
   function handlePaired(device: PairedDevice) {
     dispatch({ type: 'paired', device })
   }
 
   function handleAuthenticated(employee: EmployeeSession) {
+    // A session that is already expired (for example because of clock skew) is never used.
+    if (isSessionExpired(employee, now())) {
+      expireSession(employee)
+      return
+    }
     dispatch({ type: 'authenticated', employee })
   }
 
@@ -68,6 +90,7 @@ function App({
           device={state.device}
           auth={services.auth}
           unsentCount={countUnsent(sync.outbox)}
+          notice={state.reason === 'sessionExpired' ? text.sessionExpired : null}
           onAuthenticated={handleAuthenticated}
         />
       )}

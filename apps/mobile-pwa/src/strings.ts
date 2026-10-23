@@ -47,6 +47,7 @@ export const text = {
   loginUnreachable:
     'The branch service cannot be reached, so the PIN cannot be checked. Try again when the branch is online.',
   loginFailed: 'Login did not complete because of an unexpected error. Try again.',
+  sessionExpired: 'Your session has expired. Enter your PIN to log in again.',
   unsentOnDevice: (count: number) =>
     count === 1
       ? '1 unsent item is saved on this device.'

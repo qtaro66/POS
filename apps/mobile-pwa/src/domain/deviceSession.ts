@@ -4,6 +4,8 @@ export type DeviceSessionAction =
   | { readonly type: 'paired'; readonly device: PairedDevice }
   | { readonly type: 'authenticated'; readonly employee: EmployeeSession }
   | { readonly type: 'loggedOut' }
+  /** The employee session reached its Branch-provided expiry. */
+  | { readonly type: 'sessionExpired' }
 
 export function initialDeviceState(device: PairedDevice | null): DeviceState {
   return device ? { status: 'pairedLoggedOut', device } : { status: 'unpaired' }
@@ -32,5 +34,10 @@ export function deviceSessionReducer(
       return state.status === 'authenticated'
         ? { status: 'pairedLoggedOut', device: state.device }
         : state
+    case 'sessionExpired':
+      // Also applies when a login returns a session that has already expired.
+      return state.status === 'unpaired'
+        ? state
+        : { status: 'pairedLoggedOut', device: state.device, reason: 'sessionExpired' }
   }
 }
