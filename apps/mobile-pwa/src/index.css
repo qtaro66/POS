@@ -4,6 +4,8 @@
   --text: #1d1c1a;
   --text-muted: #5c5a55;
   --border: #d9d6cf;
+  /* Boundary of controls such as inputs and buttons; at least 3:1 against the background. */
+  --control-border: #858177;
   --accent: #0b6e6e;
   --accent-text: #ffffff;
   --online: #1d7a3a;
@@ -32,6 +34,7 @@
     --text: #f1efe9;
     --text-muted: #b3afa6;
     --border: #3a3834;
+    --control-border: #8c877e;
     --accent: #3fb4b0;
     --accent-text: #0c1716;
     --online: #6fd08c;
@@ -53,11 +56,15 @@
 body {
   margin: 0;
   min-height: 100svh;
+  /* Long words and enlarged text wrap instead of forcing horizontal scrolling. */
+  overflow-wrap: anywhere;
 }
 
 h1,
 h2,
-p {
+p,
+dl,
+dd {
   margin: 0;
 }
 

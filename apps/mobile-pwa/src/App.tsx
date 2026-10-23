@@ -1,4 +1,4 @@
-import { useReducer, useSyncExternalStore } from 'react'
+import { useEffect, useReducer, useSyncExternalStore } from 'react'
 import type { MobileServices } from './adapters/ports.ts'
 import { SyncStatusBar } from './components/SyncStatusBar.tsx'
 import { useSessionExpiry } from './components/useSessionExpiry.ts'
@@ -6,7 +6,7 @@ import { deviceSessionReducer, initialDeviceState } from './domain/deviceSession
 import { countUnsent } from './domain/outbox.ts'
 import { isSessionExpired } from './domain/sessionExpiry.ts'
 import type { EmployeeSession, PairedDevice } from './domain/types.ts'
-import { ActiveTablesScreen } from './screens/ActiveTablesScreen.tsx'
+import { AuthenticatedShell } from './screens/AuthenticatedShell.tsx'
 import { LoginScreen } from './screens/LoginScreen.tsx'
 import { PairingScreen } from './screens/PairingScreen.tsx'
 import { text } from './strings.ts'
@@ -31,6 +31,11 @@ function App({
     (listener) => services.syncStatus.subscribe(listener),
     () => services.syncStatus.getStatus(),
   )
+
+  // Authenticated screens name themselves in the title; outside them the app name is used.
+  useEffect(() => {
+    if (state.status !== 'authenticated') document.title = text.appName
+  }, [state.status])
 
   // Expiry only drops the in-memory session: pairing, Draft and outbox data stay on the device.
   function expireSession(employee: EmployeeSession) {
@@ -70,9 +75,16 @@ function App({
   return (
     <div className="app">
       <header className="app__header">
-        <span className="app__name">{text.appName}</span>
-        {state.status !== 'unpaired' && (
-          <span className="app__branch">{state.device.branchName}</span>
+        <div className="app__identity">
+          <span className="app__name">{text.appName}</span>
+          {state.status !== 'unpaired' && (
+            <span className="app__branch">{state.device.branchName}</span>
+          )}
+        </div>
+        {state.status === 'authenticated' && (
+          <button type="button" className="button button--compact" onClick={handleLogout}>
+            {text.logout}
+          </button>
         )}
       </header>
       {state.status !== 'unpaired' && <SyncStatusBar source={services.syncStatus} />}
@@ -95,11 +107,10 @@ function App({
         />
       )}
       {state.status === 'authenticated' && (
-        <ActiveTablesScreen
+        <AuthenticatedShell
           device={state.device}
           employee={state.employee}
-          tables={services.tables}
-          onLogout={handleLogout}
+          services={services}
         />
       )}
     </div>
