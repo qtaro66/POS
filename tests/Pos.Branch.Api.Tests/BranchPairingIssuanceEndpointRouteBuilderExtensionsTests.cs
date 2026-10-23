@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pos.Application.Security;
@@ -60,6 +61,67 @@ public sealed class BranchPairingIssuanceEndpointRouteBuilderExtensionsTests
             BranchPairingIssuanceEndpointRouteBuilderExtensions
                 .MapBranchPairingIssuanceEndpoint(null!));
     }
+
+    [Fact]
+    public void Disabled_pairing_maps_no_issuance_route()
+    {
+        var app = WebApplication.CreateBuilder().Build();
+
+        var returned = app.MapBranchPairingIssuanceEndpointIfEnabled(
+            Configuration(enabled: false));
+
+        Assert.Same(app, returned);
+        Assert.Empty(((IEndpointRouteBuilder)app).DataSources);
+    }
+
+    [Fact]
+    public void Enabled_pairing_maps_the_issuance_route()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddSingleton(Options.Create(new BranchPairingOptions
+        {
+            ServiceOrigin = "https://192.0.2.10:8443"
+        }));
+        builder.Services.AddSingleton(
+            new BranchPairingTokenIssuanceService(
+                new RecordingStore(),
+                TimeProvider.System));
+        var app = builder.Build();
+
+        var returned = app.MapBranchPairingIssuanceEndpointIfEnabled(
+            Configuration(enabled: true));
+
+        Assert.Same(app, returned);
+        var route = Assert.IsType<RouteEndpoint>(Assert.Single(
+            ((IEndpointRouteBuilder)app).DataSources.SelectMany(
+                source => source.Endpoints)));
+        Assert.Equal(
+            BranchPairingIssuanceEndpointRouteBuilderExtensions.RoutePattern,
+            route.RoutePattern.RawText);
+    }
+
+    [Fact]
+    public void Conditional_mapping_rejects_null_arguments()
+    {
+        var configuration = Configuration(enabled: false);
+        var app = WebApplication.CreateBuilder().Build();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            BranchPairingIssuanceEndpointRouteBuilderExtensions
+                .MapBranchPairingIssuanceEndpointIfEnabled(
+                    null!,
+                    configuration));
+        Assert.Throws<ArgumentNullException>(() =>
+            app.MapBranchPairingIssuanceEndpointIfEnabled(null!));
+    }
+
+    private static IConfiguration Configuration(bool enabled) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BranchPairing:Enabled"] = enabled.ToString()
+            })
+            .Build();
 
     private sealed class RecordingStore : IBranchPairingTokenIssuanceStore
     {
