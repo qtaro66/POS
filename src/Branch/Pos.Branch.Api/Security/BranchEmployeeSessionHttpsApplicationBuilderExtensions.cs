@@ -20,8 +20,10 @@ public static class BranchEmployeeSessionHttpsApplicationBuilderExtensions
         return application.Use(async (context, next) =>
         {
             if (!context.Request.IsHttps &&
-                context.Request.Path.StartsWithSegments(
-                    BranchEmployeeSessionLoginEndpointRouteBuilderExtensions.RoutePattern))
+                (context.Request.Path.StartsWithSegments(
+                    BranchEmployeeSessionLoginEndpointRouteBuilderExtensions.RoutePattern) ||
+                 context.Request.Path.StartsWithSegments(
+                    BranchEmployeeDataSyncStatusEndpointRouteBuilderExtensions.RoutePattern)))
             {
                 context.Response.StatusCode = StatusCodes.Status400BadRequest;
                 context.Response.Headers.CacheControl = "no-store";
