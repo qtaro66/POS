@@ -158,18 +158,18 @@ public sealed class BranchEmployeeSessionCompositionTests
     }
 
     [Fact]
-    public async Task Enabled_sessions_require_authoritative_employee_status_reader()
+    public async Task Enabled_sessions_compose_default_sqlite_employee_status_reader()
     {
         await using var database = new SessionDatabase();
         await database.InitializeAsync();
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            Provider(Configuration(database.Path, enabled: true)));
+        using var provider = Provider(
+            Configuration(database.Path, enabled: true),
+            services => services.AddSingleton<IBranchEmployeePinValidator>(
+                new ActiveEmployeePinValidator()));
 
-        Assert.Contains(
-            nameof(IBranchEmployeeStatusReader),
-            exception.Message,
-            StringComparison.Ordinal);
+        Assert.IsType<SqliteBranchEmployeeStatusReader>(
+            provider.GetRequiredService<IBranchEmployeeStatusReader>());
     }
 
     [Fact]

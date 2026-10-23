@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 13;
+    public const int CurrentVersion = 14;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -864,6 +864,22 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion14 = """
+        CREATE TABLE IF NOT EXISTS branch_employee_status (
+            branch_id TEXT NOT NULL CHECK (length(trim(branch_id)) > 0),
+            employee_id TEXT NOT NULL CHECK (length(trim(employee_id)) > 0),
+            lifecycle_status TEXT NOT NULL CHECK (
+                length(trim(lifecycle_status)) > 0),
+            source_updated_at TEXT NOT NULL,
+            synchronized_at TEXT NOT NULL,
+            PRIMARY KEY (branch_id, employee_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_branch_employee_status_active
+            ON branch_employee_status (
+                branch_id, lifecycle_status, employee_id);
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -943,6 +959,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 13)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion13, cancellationToken);
+        }
+
+        if (storedVersion < 14)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion14, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
