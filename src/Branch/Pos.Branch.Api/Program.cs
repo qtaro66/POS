@@ -27,6 +27,7 @@ app.UseBranchEmployeeSessionHttpsOnly(builder.Configuration);
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseBranchPairingRateLimiting(builder.Configuration);
+app.UseBranchIdentity(builder.Configuration);
 
 app.MapGet("/health", () => Results.Ok(new
 {
