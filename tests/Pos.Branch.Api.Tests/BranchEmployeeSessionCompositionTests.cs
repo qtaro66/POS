@@ -173,6 +173,34 @@ public sealed class BranchEmployeeSessionCompositionTests
     }
 
     [Fact]
+    public async Task Enabled_sessions_require_device_authentication()
+    {
+        await using var database = new SessionDatabase();
+        await database.InitializeAsync();
+        var configuration = new Dictionary<string, string?>(
+            Configuration(database.Path, enabled: true))
+        {
+            ["BranchDeviceAuthentication:Enabled"] = "false"
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            Provider(
+                configuration,
+                services =>
+                {
+                    services.AddSingleton<IBranchEmployeeStatusReader>(
+                        new ActiveEmployeeStatusReader());
+                    services.AddSingleton<IBranchEmployeePinValidator>(
+                        new ActiveEmployeePinValidator());
+                }));
+
+        Assert.Contains(
+            BranchDeviceAuthenticationOptions.SectionName,
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Enabled_sessions_require_authoritative_employee_pin_validator()
     {
         await using var database = new SessionDatabase();
@@ -209,6 +237,7 @@ public sealed class BranchEmployeeSessionCompositionTests
         bool enabled) =>
         new Dictionary<string, string?>
         {
+            ["BranchDeviceAuthentication:Enabled"] = "true",
             ["BranchEmployeeSessions:Enabled"] = enabled.ToString(),
             ["BranchEmployeeSessions:DatabasePath"] = databasePath,
             ["BranchEmployeeSessions:Lifetime"] = "08:00:00"
