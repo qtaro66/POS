@@ -141,9 +141,15 @@ Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
 
 ### MOB-05 Menu and Draft editor
 - Approved: yes
-- UI: not verified | Integration: not verified | Device validation: n/a
+- UI: verified (fixtures) | Integration: not verified | Device validation: n/a
+- UI evidence: PR #142 squash-merged as f052a59; `verify.ps1` PASS on
+  ff25b21 (249 Mobile tests, including the D08.4 rule and basket tests);
+  merged content identical to ff25b21. D19.1 timing in a desktop Chromium
+  pane with the fixture dev build: add item p95 13.3 ms (n=60), open options
+  p95 24.6 ms (n=30); not measured on a phone. The basket was memory-only.
 - Integration needs: CAP-07
 - Depends on: MOB-02
+- PR: https://github.com/qtaro66/POS/pull/142
 - Acceptance: items, SubItems, Toppings, quantity and comments; option-group
   rules enforced on screen (min/max, repeats, per-option limit, counted by
   quantity; D08.4); unavailable and Sold Out options blocked; Draft held behind
@@ -151,7 +157,7 @@ Confirmed and not pending: unsent Drafts become `Expired/NeedsReview` after
   item and 200 ms to open options (D19.1).
 
 ### MOB-06 Persistent Draft and outbox
-- Approved: no
+- Approved: yes
 - UI: n/a | Integration: n/a | Device validation: not verified
 - Depends on: MOB-05
 - Persistence acceptance:
