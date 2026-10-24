@@ -47,7 +47,10 @@ public sealed class SqliteBranchCloudDeliveryConfirmationStore :
                 SET processing_status = 'Completed',
                     next_retry_at = NULL,
                     last_error = NULL,
-                    successfully_sent_at = $acknowledgedAt
+                    successfully_sent_at = $acknowledgedAt,
+                    lease_owner = NULL,
+                    claimed_at = NULL,
+                    lease_expires_at = NULL
                 WHERE branch_id = $branchId
                   AND outbox_id = $outboxId
                   AND successfully_sent_at IS NULL;

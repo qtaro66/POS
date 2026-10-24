@@ -68,6 +68,42 @@ public sealed class SqliteBranchCloudDeliveryConfirmationStoreTests
     }
 
     [Fact]
+    public async Task Confirmation_releases_active_delivery_lease()
+    {
+        await using var database = new ConfirmationDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync("OUTBOX-01", "BRANCH-01");
+        var claimedAt = new DateTimeOffset(
+            2026,
+            10,
+            24,
+            4,
+            40,
+            0,
+            TimeSpan.Zero);
+        var lease = await new SqliteBranchCloudOutboxClaimStore(database.Path)
+            .ClaimNextAsync(
+                "BRANCH-01",
+                "WORKER-01",
+                claimedAt,
+                TimeSpan.FromSeconds(30));
+        Assert.NotNull(lease);
+        var store = new SqliteBranchCloudDeliveryConfirmationStore(database.Path);
+
+        var result = await store.ConfirmAsync(
+            new BranchCloudDeliveryConfirmation(
+                "BRANCH-01",
+                "OUTBOX-01",
+                claimedAt.AddSeconds(10)));
+
+        Assert.Equal(BranchCloudDeliveryConfirmationResult.Confirmed, result);
+        var row = await database.ReadAsync("OUTBOX-01");
+        Assert.Null(row.LeaseOwner);
+        Assert.Null(row.ClaimedAt);
+        Assert.Null(row.LeaseExpiresAt);
+    }
+
+    [Fact]
     public async Task Concurrent_confirmation_has_one_first_writer()
     {
         await using var database = new ConfirmationDatabase();
@@ -207,7 +243,8 @@ public sealed class SqliteBranchCloudDeliveryConfirmationStoreTests
             using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT processing_status, retry_count, next_retry_at,
-                       last_error, successfully_sent_at
+                       last_error, successfully_sent_at, lease_owner,
+                       claimed_at, lease_expires_at
                 FROM cloud_sync_outbox
                 WHERE outbox_id = $outboxId;
                 """;
@@ -219,7 +256,10 @@ public sealed class SqliteBranchCloudDeliveryConfirmationStoreTests
                 reader.GetInt32(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4));
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7));
         }
 
         private async Task<SqliteConnection> OpenAsync()
@@ -253,5 +293,8 @@ public sealed class SqliteBranchCloudDeliveryConfirmationStoreTests
         int RetryCount,
         string? NextRetryAt,
         string? LastError,
-        string? SuccessfullySentAt);
+        string? SuccessfullySentAt,
+        string? LeaseOwner,
+        string? ClaimedAt,
+        string? LeaseExpiresAt);
 }
