@@ -15,11 +15,11 @@ public sealed class SqliteBranchCloudDataSentStatusReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.True(result.IsReady);
-        Assert.Equal(17, result.ActualSchemaVersion);
+        Assert.Equal(18, result.ActualSchemaVersion);
         Assert.True(result.CloudSyncOutboxPresent);
         Assert.Empty(result.MissingColumns);
         Assert.Null(result.ErrorCode);
-        Assert.Equal(17, probe.ExpectedSchemaVersion);
+        Assert.Equal(18, probe.ExpectedSchemaVersion);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class SqliteBranchCloudDataSentStatusReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.False(result.IsReady);
-        Assert.Equal(17, result.ActualSchemaVersion);
+        Assert.Equal(18, result.ActualSchemaVersion);
         Assert.False(result.CloudSyncOutboxPresent);
         Assert.Equal(
             ["branch_id", "successfully_sent_at"],
@@ -67,7 +67,7 @@ public sealed class SqliteBranchCloudDataSentStatusReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.False(result.IsReady);
-        Assert.Equal(17, result.ActualSchemaVersion);
+        Assert.Equal(18, result.ActualSchemaVersion);
         Assert.True(result.CloudSyncOutboxPresent);
         Assert.Equal(["successfully_sent_at"], result.MissingColumns);
         Assert.Equal("CloudDataSentColumnsMissing", result.ErrorCode);
@@ -118,12 +118,12 @@ public sealed class SqliteBranchCloudDataSentStatusReadinessProbeTests
             new SqliteTableSessionCommandStore(Path).InitializeAsync();
 
         public Task CreateEmptyCurrentVersionAsync() =>
-            ExecuteAsync("PRAGMA user_version = 17;", create: true);
+            ExecuteAsync("PRAGMA user_version = 18;", create: true);
 
         public Task CreateOutboxWithoutSuccessTimestampAsync() =>
             ExecuteAsync(
                 """
-                PRAGMA user_version = 17;
+                PRAGMA user_version = 18;
                 CREATE TABLE cloud_sync_outbox (
                     outbox_id TEXT PRIMARY KEY,
                     branch_id TEXT NOT NULL);

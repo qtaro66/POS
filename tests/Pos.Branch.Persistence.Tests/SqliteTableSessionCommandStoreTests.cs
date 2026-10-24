@@ -20,7 +20,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("wal", await database.ScalarAsync<string>("PRAGMA journal_mode;"));
         Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA synchronous;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
@@ -464,7 +464,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("cloud_sync_outbox"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM pragma_table_info('cloud_sync_outbox')
@@ -511,7 +511,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("table_sessions"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_preview_snapshots';"));
@@ -549,7 +549,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -582,7 +582,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>(
             "SELECT master_data_version FROM table_session_billing_policy WHERE table_session_id = 'TS-1';"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -619,7 +619,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>("""
             SELECT master_data_version FROM master_data_packages
             WHERE branch_id = 'BRANCH-01' AND lifecycle_status = 'Active';
@@ -660,7 +660,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT branch_sequence FROM order_batches WHERE order_batch_id = 'LEGACY-BATCH';"));
         Assert.Equal(
@@ -732,7 +732,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal("Cashier", await database.ScalarAsync<string>(
@@ -772,7 +772,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'printer_profiles';
@@ -1244,17 +1244,98 @@ public sealed class SqliteTableSessionCommandStoreTests
     }
 
     [Fact]
+    public async Task Cloud_delivery_failure_idempotency_table_is_created_with_constraints()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+
+        Assert.Equal(1L, await database.ScalarAsync<long>("""
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'cloud_sync_delivery_failures';
+            """));
+        Assert.Equal(1L, await database.ScalarAsync<long>("""
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'index'
+              AND name = 'ix_cloud_sync_delivery_failures_outbox';
+            """));
+
+        await database.ExecuteAsync("""
+            INSERT INTO cloud_sync_delivery_failures (
+                failure_id, branch_id, outbox_id, branch_sequence,
+                lease_owner, claimed_at, lease_expires_at, failed_at,
+                next_retry_at, error_code, retry_count_after)
+            SELECT 'FAILURE-01', branch_id, outbox_id, branch_sequence,
+                   'WORKER-01',
+                   '2026-10-24T12:00:00.0000000+00:00',
+                   '2026-10-24T12:00:30.0000000+00:00',
+                   '2026-10-24T12:00:10.0000000+00:00',
+                   '2026-10-24T12:01:10.0000000+00:00',
+                   'CLOUD-UNAVAILABLE', 1
+            FROM cloud_sync_outbox
+            WHERE request_id = 'REQ-1';
+            """);
+
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync("""
+            INSERT INTO cloud_sync_delivery_failures (
+                failure_id, branch_id, outbox_id, branch_sequence,
+                lease_owner, claimed_at, lease_expires_at, failed_at,
+                next_retry_at, error_code, retry_count_after)
+            SELECT 'FAILURE-01', branch_id, outbox_id, branch_sequence,
+                   'WORKER-01',
+                   '2026-10-24T12:00:00.0000000+00:00',
+                   '2026-10-24T12:00:30.0000000+00:00',
+                   '2026-10-24T12:00:10.0000000+00:00',
+                   '2026-10-24T12:01:10.0000000+00:00',
+                   'CLOUD-UNAVAILABLE', 1
+            FROM cloud_sync_outbox
+            WHERE request_id = 'REQ-1';
+            """));
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync("""
+            INSERT INTO cloud_sync_delivery_failures (
+                failure_id, branch_id, outbox_id, branch_sequence,
+                lease_owner, claimed_at, lease_expires_at, failed_at,
+                next_retry_at, error_code, retry_count_after)
+            SELECT 'FAILURE-02', branch_id, outbox_id, branch_sequence,
+                   'WORKER-01',
+                   '2026-10-24T12:00:00.0000000+00:00',
+                   '2026-10-24T12:00:30.0000000+00:00',
+                   '2026-10-24T12:00:10.0000000+00:00',
+                   '2026-10-24T12:01:10.0000000+00:00',
+                   'CLOUD-UNAVAILABLE', 0
+            FROM cloud_sync_outbox
+            WHERE request_id = 'REQ-1';
+            """));
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync("""
+            INSERT INTO cloud_sync_delivery_failures (
+                failure_id, branch_id, outbox_id, branch_sequence,
+                lease_owner, claimed_at, lease_expires_at, failed_at,
+                next_retry_at, error_code, retry_count_after)
+            SELECT 'FAILURE-03', branch_id, outbox_id, branch_sequence + 1,
+                   'WORKER-01',
+                   '2026-10-24T12:00:00.0000000+00:00',
+                   '2026-10-24T12:00:30.0000000+00:00',
+                   '2026-10-24T12:00:10.0000000+00:00',
+                   '2026-10-24T12:01:10.0000000+00:00',
+                   'CLOUD-UNAVAILABLE', 1
+            FROM cloud_sync_outbox
+            WHERE request_id = 'REQ-1';
+            """));
+    }
+
+    [Fact]
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 18;");
+        await database.ExecuteAsync("PRAGMA user_version = 19;");
         var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 18", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(18L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 19", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(19L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]
