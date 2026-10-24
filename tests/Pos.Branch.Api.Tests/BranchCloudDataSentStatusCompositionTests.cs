@@ -22,6 +22,7 @@ public sealed class BranchCloudDataSentStatusCompositionTests
         provider.GetRequiredService<IStartupValidator>().Validate();
 
         Assert.Null(provider.GetService<IBranchCloudDataSentStatusQuery>());
+        Assert.Null(provider.GetService<IBranchCloudDeliveryConfirmationStore>());
         Assert.IsType<SqliteBranchCloudDataSentStatusReadinessProbe>(
             provider.GetRequiredService<IBranchCloudDataSentStatusReadinessProbe>());
     }
@@ -51,7 +52,7 @@ public sealed class BranchCloudDataSentStatusCompositionTests
     }
 
     [Fact]
-    public async Task Enabled_status_composes_one_read_only_query()
+    public async Task Enabled_status_composes_query_and_confirmation_store()
     {
         var databasePath = Path.Combine(
             Path.GetTempPath(),
@@ -68,15 +69,54 @@ public sealed class BranchCloudDataSentStatusCompositionTests
 
             provider.GetRequiredService<IStartupValidator>().Validate();
             var query = provider.GetRequiredService<IBranchCloudDataSentStatusQuery>();
+            var store = provider
+                .GetRequiredService<IBranchCloudDeliveryConfirmationStore>();
 
             Assert.IsType<SqliteBranchCloudDataSentStatusQuery>(query);
+            Assert.IsType<SqliteBranchCloudDeliveryConfirmationStore>(store);
             Assert.Same(
                 query,
                 provider.GetRequiredService<IBranchCloudDataSentStatusQuery>());
+            Assert.Same(
+                store,
+                provider.GetRequiredService<IBranchCloudDeliveryConfirmationStore>());
             Assert.DoesNotContain(
                 provider.GetServices<IHostedService>(),
                 service => service.GetType().Assembly == typeof(Program).Assembly);
             Assert.Null(await query.FindLatestAsync("BRANCH-01"));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Existing_confirmation_store_registration_is_preserved()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"branch-data-sent-{Guid.NewGuid():N}.db");
+        try
+        {
+            await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
+            var custom = new AlwaysConfirmedStore();
+            using var provider = Provider(
+                new Dictionary<string, string?>
+                {
+                    ["BranchCloudDataSentStatus:Enabled"] = "true",
+                    ["BranchCloudDataSentStatus:DatabasePath"] = databasePath,
+                    ["BranchEmployeeSessions:Enabled"] = "true"
+                },
+                services => services.AddSingleton<
+                    IBranchCloudDeliveryConfirmationStore>(custom));
+
+            provider.GetRequiredService<IStartupValidator>().Validate();
+
+            Assert.Same(
+                custom,
+                provider.GetRequiredService<
+                    IBranchCloudDeliveryConfirmationStore>());
         }
         finally
         {
@@ -169,5 +209,14 @@ public sealed class BranchCloudDataSentStatusCompositionTests
             string branchId,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<BranchCloudDataSentStatus?>(null);
+    }
+
+    private sealed class AlwaysConfirmedStore :
+        IBranchCloudDeliveryConfirmationStore
+    {
+        public Task<BranchCloudDeliveryConfirmationResult> ConfirmAsync(
+            BranchCloudDeliveryConfirmation confirmation,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(BranchCloudDeliveryConfirmationResult.Confirmed);
     }
 }
