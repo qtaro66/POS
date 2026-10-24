@@ -106,3 +106,17 @@ public interface IBranchCloudOutboxClaimStore
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default);
 }
+
+public interface IBranchCloudOutboxLeaseRenewalStore
+{
+    /// <summary>
+    /// Extends an active lease only when the persisted lease still matches the
+    /// supplied owner and expiry token. Implementations must reject expired,
+    /// replaced, confirmed, or non-extending renewal attempts.
+    /// </summary>
+    Task<BranchCloudOutboxLease> RenewAsync(
+        BranchCloudOutboxLease lease,
+        DateTimeOffset renewedAt,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default);
+}
