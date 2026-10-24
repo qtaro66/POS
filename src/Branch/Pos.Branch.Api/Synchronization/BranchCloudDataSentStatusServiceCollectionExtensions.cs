@@ -51,6 +51,14 @@ public static class BranchCloudDataSentStatusServiceCollectionExtensions
             return new SqliteBranchCloudDataSentStatusQuery(
                 options.DatabasePath.Trim());
         });
+        services.TryAddSingleton<IBranchCloudDeliveryConfirmationStore>(provider =>
+        {
+            var options = provider
+                .GetRequiredService<IOptions<BranchCloudDataSentStatusOptions>>()
+                .Value;
+            return new SqliteBranchCloudDeliveryConfirmationStore(
+                options.DatabasePath.Trim());
+        });
         return services;
     }
 }
