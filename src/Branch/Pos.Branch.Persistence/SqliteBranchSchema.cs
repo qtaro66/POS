@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 16;
+    public const int CurrentVersion = 17;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -937,6 +937,42 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion17AfterColumns = """
+        CREATE TRIGGER IF NOT EXISTS cloud_sync_outbox_lease_insert_consistent
+        BEFORE INSERT ON cloud_sync_outbox
+        WHEN (NEW.lease_owner IS NULL) != (NEW.claimed_at IS NULL)
+          OR (NEW.lease_owner IS NULL) != (NEW.lease_expires_at IS NULL)
+        BEGIN
+            SELECT RAISE(ABORT, 'Cloud outbox lease fields must be set or cleared together');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS cloud_sync_outbox_lease_insert_window
+        BEFORE INSERT ON cloud_sync_outbox
+        WHEN NEW.lease_owner IS NOT NULL
+         AND NEW.lease_expires_at <= NEW.claimed_at
+        BEGIN
+            SELECT RAISE(ABORT, 'Cloud outbox lease expiry must be later than claim time');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS cloud_sync_outbox_lease_update_consistent
+        BEFORE UPDATE OF lease_owner, claimed_at, lease_expires_at
+        ON cloud_sync_outbox
+        WHEN (NEW.lease_owner IS NULL) != (NEW.claimed_at IS NULL)
+          OR (NEW.lease_owner IS NULL) != (NEW.lease_expires_at IS NULL)
+        BEGIN
+            SELECT RAISE(ABORT, 'Cloud outbox lease fields must be set or cleared together');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS cloud_sync_outbox_lease_update_window
+        BEFORE UPDATE OF lease_owner, claimed_at, lease_expires_at
+        ON cloud_sync_outbox
+        WHEN NEW.lease_owner IS NOT NULL
+         AND NEW.lease_expires_at <= NEW.claimed_at
+        BEGIN
+            SELECT RAISE(ABORT, 'Cloud outbox lease expiry must be later than claim time');
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -1031,6 +1067,14 @@ internal static class SqliteBranchSchema
         if (storedVersion < 16)
         {
             await MigrateToVersion16Async(
+                connection,
+                transaction,
+                cancellationToken);
+        }
+
+        if (storedVersion < 17)
+        {
+            await MigrateToVersion17Async(
                 connection,
                 transaction,
                 cancellationToken);
@@ -1236,6 +1280,64 @@ internal static class SqliteBranchSchema
             connection,
             transaction,
             SchemaVersion16AfterColumn,
+            cancellationToken);
+    }
+
+    private static async Task MigrateToVersion17Async(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "cloud_sync_outbox",
+                "lease_owner",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                """
+                ALTER TABLE cloud_sync_outbox
+                    ADD COLUMN lease_owner TEXT NULL
+                    CHECK (lease_owner IS NULL OR length(trim(lease_owner)) > 0);
+                """,
+                cancellationToken);
+        }
+
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "cloud_sync_outbox",
+                "claimed_at",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                "ALTER TABLE cloud_sync_outbox ADD COLUMN claimed_at TEXT NULL;",
+                cancellationToken);
+        }
+
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "cloud_sync_outbox",
+                "lease_expires_at",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                "ALTER TABLE cloud_sync_outbox ADD COLUMN lease_expires_at TEXT NULL;",
+                cancellationToken);
+        }
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            SchemaVersion17AfterColumns,
             cancellationToken);
     }
 

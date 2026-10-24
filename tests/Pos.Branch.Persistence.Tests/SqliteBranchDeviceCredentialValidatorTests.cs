@@ -12,7 +12,7 @@ public sealed class SqliteBranchDeviceCredentialValidatorTests
         await using var database = new CredentialDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(16L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(17L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(2L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table'
