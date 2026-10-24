@@ -94,7 +94,7 @@ public sealed class BranchCloudDataSentStatusOptionsValidatorTests : IDisposable
         var result = new BranchCloudDataSentStatusOptionsValidator(probe)
             .Validate(null, Enabled(path));
 
-        AssertFailure(result, "must be 15; actual version is 14");
+        AssertFailure(result, "must be 16; actual version is 14");
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public sealed class BranchCloudDataSentStatusOptionsValidatorTests : IDisposable
         };
 
     private static RecordingProbe ReadyProbe() =>
-        new(new(true, 15, true, [], null));
+        new(new(true, 16, true, [], null));
 
     private static void AssertFailure(
         ValidateOptionsResult result,
@@ -194,7 +194,7 @@ public sealed class BranchCloudDataSentStatusOptionsValidatorTests : IDisposable
         BranchCloudDataSentStatusReadinessResult result) :
         IBranchCloudDataSentStatusReadinessProbe
     {
-        public int ExpectedSchemaVersion => 15;
+        public int ExpectedSchemaVersion => 16;
 
         public string? DatabasePath { get; private set; }
 

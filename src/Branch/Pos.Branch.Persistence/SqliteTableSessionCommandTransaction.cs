@@ -386,13 +386,16 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         CloudSyncOutboxRecord outboxRecord,
         CancellationToken cancellationToken)
     {
+        var branchSequence = await AllocateCloudOutboxSequenceAsync(
+            outboxRecord.BranchId,
+            cancellationToken);
         using var command = CreateCommand("""
             INSERT INTO cloud_sync_outbox (
                 outbox_id, branch_id, request_id, table_session_id,
-                action, table_version, created_at)
+                action, table_version, created_at, branch_sequence)
             VALUES (
                 $outboxId, $branchId, $requestId, $tableSessionId,
-                $action, $tableVersion, $createdAt);
+                $action, $tableVersion, $createdAt, $branchSequence);
             """);
         command.Parameters.AddWithValue("$outboxId", outboxRecord.OutboxId);
         command.Parameters.AddWithValue("$branchId", outboxRecord.BranchId);
@@ -401,7 +404,25 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         command.Parameters.AddWithValue("$action", outboxRecord.Action.ToString());
         command.Parameters.AddWithValue("$tableVersion", outboxRecord.TableVersion);
         command.Parameters.AddWithValue("$createdAt", FormatTimestamp(outboxRecord.CreatedAt));
+        command.Parameters.AddWithValue("$branchSequence", branchSequence);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<long> AllocateCloudOutboxSequenceAsync(
+        string branchId,
+        CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            INSERT INTO cloud_sync_branch_sequences (branch_id, next_sequence)
+            VALUES ($branchId, 2)
+            ON CONFLICT (branch_id) DO UPDATE SET
+                next_sequence = next_sequence + 1
+            RETURNING next_sequence - 1;
+            """);
+        command.Parameters.AddWithValue("$branchId", branchId);
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture);
     }
 
     public async Task AddBillPreviewSnapshotAsync(

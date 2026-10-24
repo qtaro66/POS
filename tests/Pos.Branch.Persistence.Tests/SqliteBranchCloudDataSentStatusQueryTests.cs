@@ -135,11 +135,14 @@ public sealed class SqliteBranchCloudDataSentStatusQueryTests
                 INSERT INTO cloud_sync_outbox (
                     outbox_id, branch_id, request_id, table_session_id,
                     action, table_version, created_at, processing_status,
-                    retry_count, successfully_sent_at)
+                    retry_count, successfully_sent_at, branch_sequence)
                 VALUES (
                     $outboxId, $branchId, $requestId, $tableSessionId,
                     'SubmitOrder', 1, '2026-10-23T03:00:00Z', 'Completed',
-                    0, $successfullySentAt);
+                    0, $successfullySentAt,
+                    (SELECT COALESCE(MAX(branch_sequence), 0) + 1
+                     FROM cloud_sync_outbox
+                     WHERE branch_id = $branchId));
                 """;
             command.Parameters.AddWithValue("$outboxId", outboxId);
             command.Parameters.AddWithValue("$branchId", branchId);

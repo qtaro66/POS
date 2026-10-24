@@ -11,7 +11,7 @@ public sealed class SqliteBranchEmployeeStatusReaderTests
         await using var database = new EmployeeStatusDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(15L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(16L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'branch_employee_status';
@@ -32,7 +32,7 @@ public sealed class SqliteBranchEmployeeStatusReaderTests
 
         await database.InitializeAsync();
 
-        Assert.Equal(15L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(16L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'branch_employee_status';
