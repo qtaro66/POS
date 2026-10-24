@@ -1,6 +1,7 @@
 using Pos.Branch.Api.Commands;
 using Pos.Branch.Api.Printing;
 using Pos.Branch.Api.Security;
+using Pos.Branch.Api.Synchronization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +10,7 @@ builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
 builder.Services.AddBranchEmployeeSessions(builder.Configuration);
 builder.Services.AddBranchPairing(builder.Configuration);
 builder.Services.AddBranchCommandStatusQuery(builder.Configuration);
+builder.Services.AddBranchCloudDataSentStatus(builder.Configuration);
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
 builder.Services.AddPrintSpoolRetention(builder.Configuration);
 builder.Services.AddEscPosRasterRendering(builder.Configuration);
@@ -24,6 +26,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseBranchPairingHttpsOnly(builder.Configuration);
 app.UseBranchEmployeeSessionHttpsOnly(builder.Configuration);
+app.UseBranchCloudDataSentStatusHttpsOnly(builder.Configuration);
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseBranchPairingRateLimiting(builder.Configuration);
@@ -39,5 +42,6 @@ app.MapBranchPairingIssuanceEndpointIfEnabled(builder.Configuration);
 app.MapBranchPairingRedemptionEndpointIfEnabled(builder.Configuration);
 app.MapBranchEmployeeSessionLoginEndpointIfEnabled(builder.Configuration);
 app.MapBranchEmployeeDataSyncStatusEndpointIfEnabled(builder.Configuration);
+app.MapBranchCloudDataSentStatusEndpointIfEnabled(builder.Configuration);
 
 app.Run();

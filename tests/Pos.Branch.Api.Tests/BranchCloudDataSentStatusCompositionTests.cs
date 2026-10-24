@@ -35,7 +35,8 @@ public sealed class BranchCloudDataSentStatusCompositionTests
         using var provider = Provider(new Dictionary<string, string?>
         {
             ["BranchCloudDataSentStatus:Enabled"] = "true",
-            ["BranchCloudDataSentStatus:DatabasePath"] = missingDatabase
+            ["BranchCloudDataSentStatus:DatabasePath"] = missingDatabase,
+            ["BranchEmployeeSessions:Enabled"] = "true"
         });
 
         var exception = Assert.Throws<OptionsValidationException>(
@@ -61,7 +62,8 @@ public sealed class BranchCloudDataSentStatusCompositionTests
             using var provider = Provider(new Dictionary<string, string?>
             {
                 ["BranchCloudDataSentStatus:Enabled"] = "true",
-                ["BranchCloudDataSentStatus:DatabasePath"] = databasePath
+                ["BranchCloudDataSentStatus:DatabasePath"] = databasePath,
+                ["BranchEmployeeSessions:Enabled"] = "true"
             });
 
             provider.GetRequiredService<IStartupValidator>().Validate();
@@ -96,7 +98,8 @@ public sealed class BranchCloudDataSentStatusCompositionTests
                 new Dictionary<string, string?>
                 {
                     ["BranchCloudDataSentStatus:Enabled"] = "true",
-                    ["BranchCloudDataSentStatus:DatabasePath"] = databasePath
+                    ["BranchCloudDataSentStatus:DatabasePath"] = databasePath,
+                    ["BranchEmployeeSessions:Enabled"] = "true"
                 },
                 services => services.AddSingleton<IBranchCloudDataSentStatusQuery>(
                     custom));
@@ -111,6 +114,23 @@ public sealed class BranchCloudDataSentStatusCompositionTests
         {
             File.Delete(databasePath);
         }
+    }
+
+    [Fact]
+    public void Enabled_status_requires_employee_sessions()
+    {
+        var services = new ServiceCollection();
+        var configuration = Configuration(new Dictionary<string, string?>
+        {
+            ["BranchCloudDataSentStatus:Enabled"] = "true",
+            ["BranchCloudDataSentStatus:DatabasePath"] = @"C:\branch.db",
+            ["BranchEmployeeSessions:Enabled"] = "false"
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddBranchCloudDataSentStatus(configuration));
+
+        Assert.Contains("BranchEmployeeSessions", exception.Message);
     }
 
     [Fact]

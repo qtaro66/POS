@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Synchronization;
 using Pos.Branch.Api.Security;
@@ -58,6 +59,61 @@ public sealed class BranchCloudDataSentStatusEndpointRouteBuilderExtensionsTests
             BranchCloudDataSentStatusEndpointRouteBuilderExtensions
                 .MapBranchCloudDataSentStatusEndpoint(null!));
     }
+
+    [Fact]
+    public void Disabled_status_maps_no_route()
+    {
+        var app = WebApplication.CreateBuilder().Build();
+
+        var returned = app.MapBranchCloudDataSentStatusEndpointIfEnabled(
+            Configuration(enabled: false));
+
+        Assert.Same(app, returned);
+        Assert.Empty(((IEndpointRouteBuilder)app).DataSources);
+    }
+
+    [Fact]
+    public void Enabled_status_maps_the_route()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddSingleton<IBranchCloudDataSentStatusQuery>(
+            new NeverSentQuery());
+        var app = builder.Build();
+
+        var returned = app.MapBranchCloudDataSentStatusEndpointIfEnabled(
+            Configuration(enabled: true));
+
+        Assert.Same(app, returned);
+        var route = Assert.IsType<RouteEndpoint>(Assert.Single(
+            ((IEndpointRouteBuilder)app).DataSources.SelectMany(
+                source => source.Endpoints)));
+        Assert.Equal(
+            BranchCloudDataSentStatusEndpointRouteBuilderExtensions.RoutePattern,
+            route.RoutePattern.RawText);
+    }
+
+    [Fact]
+    public void Conditional_mapping_rejects_null_arguments()
+    {
+        var configuration = Configuration(enabled: false);
+        var app = WebApplication.CreateBuilder().Build();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            BranchCloudDataSentStatusEndpointRouteBuilderExtensions
+                .MapBranchCloudDataSentStatusEndpointIfEnabled(
+                    null!,
+                    configuration));
+        Assert.Throws<ArgumentNullException>(() =>
+            app.MapBranchCloudDataSentStatusEndpointIfEnabled(null!));
+    }
+
+    private static IConfiguration Configuration(bool enabled) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BranchCloudDataSentStatus:Enabled"] = enabled.ToString()
+            })
+            .Build();
 
     private sealed class NeverSentQuery : IBranchCloudDataSentStatusQuery
     {
