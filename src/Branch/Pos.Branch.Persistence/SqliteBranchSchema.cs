@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -973,6 +973,34 @@ internal static class SqliteBranchSchema
         END;
         """;
 
+    private const string SchemaVersion18 = """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_cloud_sync_outbox_delivery_identity
+            ON cloud_sync_outbox (branch_id, outbox_id, branch_sequence);
+
+        CREATE TABLE IF NOT EXISTS cloud_sync_delivery_failures (
+            failure_id TEXT NOT NULL PRIMARY KEY CHECK (
+                length(trim(failure_id)) > 0),
+            branch_id TEXT NOT NULL CHECK (length(trim(branch_id)) > 0),
+            outbox_id TEXT NOT NULL,
+            branch_sequence INTEGER NOT NULL CHECK (branch_sequence >= 1),
+            lease_owner TEXT NOT NULL CHECK (length(trim(lease_owner)) > 0),
+            claimed_at TEXT NOT NULL,
+            lease_expires_at TEXT NOT NULL,
+            failed_at TEXT NOT NULL,
+            next_retry_at TEXT NOT NULL,
+            error_code TEXT NOT NULL CHECK (length(trim(error_code)) > 0),
+            retry_count_after INTEGER NOT NULL CHECK (retry_count_after >= 1),
+            FOREIGN KEY (branch_id, outbox_id, branch_sequence)
+                REFERENCES cloud_sync_outbox (
+                    branch_id, outbox_id, branch_sequence)
+                ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_cloud_sync_delivery_failures_outbox
+            ON cloud_sync_delivery_failures (
+                branch_id, outbox_id, branch_sequence, failed_at);
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -1077,6 +1105,15 @@ internal static class SqliteBranchSchema
             await MigrateToVersion17Async(
                 connection,
                 transaction,
+                cancellationToken);
+        }
+
+        if (storedVersion < 18)
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                SchemaVersion18,
                 cancellationToken);
         }
 
