@@ -28,4 +28,22 @@ public static class BranchCloudDataSentStatusEndpointRouteBuilderExtensions
             .ExcludeFromDescription()
             .WithName(EndpointName);
     }
+
+    public static IEndpointRouteBuilder MapBranchCloudDataSentStatusEndpointIfEnabled(
+        this IEndpointRouteBuilder endpoints,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var enabled = configuration
+            .GetSection(BranchCloudDataSentStatusOptions.SectionName)
+            .GetValue<bool>(nameof(BranchCloudDataSentStatusOptions.Enabled));
+        if (enabled)
+        {
+            endpoints.MapBranchCloudDataSentStatusEndpoint();
+        }
+
+        return endpoints;
+    }
 }

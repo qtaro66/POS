@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Pos.Application.Synchronization;
+using Pos.Branch.Api.Security;
 using Pos.Branch.Infrastructure.Sqlite;
 
 namespace Pos.Branch.Api.Synchronization;
@@ -31,6 +32,15 @@ public static class BranchCloudDataSentStatusServiceCollectionExtensions
         if (!enabled)
         {
             return services;
+        }
+
+        var employeeSessionsEnabled = configuration
+            .GetSection(BranchEmployeeSessionOptions.SectionName)
+            .GetValue<bool>(nameof(BranchEmployeeSessionOptions.Enabled));
+        if (!employeeSessionsEnabled)
+        {
+            throw new InvalidOperationException(
+                "BranchEmployeeSessions must be enabled before enabling Branch Cloud data-sent status.");
         }
 
         services.TryAddSingleton<IBranchCloudDataSentStatusQuery>(provider =>
