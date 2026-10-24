@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 15;
+    public const int CurrentVersion = 16;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -889,6 +889,54 @@ internal static class SqliteBranchSchema
             WHERE successfully_sent_at IS NOT NULL;
         """;
 
+    private const string SchemaVersion16AfterColumn = """
+        DROP TRIGGER IF EXISTS cloud_sync_outbox_branch_sequence_required;
+        DROP TRIGGER IF EXISTS cloud_sync_outbox_sequence_immutable;
+
+        WITH ranked AS (
+            SELECT rowid AS outbox_rowid,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY branch_id
+                       ORDER BY created_at, outbox_id) AS sequence
+            FROM cloud_sync_outbox
+        )
+        UPDATE cloud_sync_outbox
+        SET branch_sequence = (
+            SELECT sequence FROM ranked
+            WHERE ranked.outbox_rowid = cloud_sync_outbox.rowid)
+        WHERE branch_sequence IS NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_cloud_sync_outbox_branch_sequence
+            ON cloud_sync_outbox (branch_id, branch_sequence);
+
+        CREATE TABLE IF NOT EXISTS cloud_sync_branch_sequences (
+            branch_id TEXT NOT NULL PRIMARY KEY,
+            next_sequence INTEGER NOT NULL CHECK (next_sequence >= 1)
+        );
+
+        INSERT INTO cloud_sync_branch_sequences (branch_id, next_sequence)
+        SELECT branch_id, MAX(branch_sequence) + 1
+        FROM cloud_sync_outbox
+        GROUP BY branch_id
+        ON CONFLICT (branch_id) DO UPDATE SET
+            next_sequence = MAX(
+                cloud_sync_branch_sequences.next_sequence,
+                excluded.next_sequence);
+
+        CREATE TRIGGER IF NOT EXISTS cloud_sync_outbox_branch_sequence_required
+        BEFORE INSERT ON cloud_sync_outbox
+        WHEN NEW.branch_sequence IS NULL
+        BEGIN
+            SELECT RAISE(ABORT, 'Cloud outbox branch sequence is required');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS cloud_sync_outbox_sequence_immutable
+        BEFORE UPDATE OF branch_id, branch_sequence ON cloud_sync_outbox
+        BEGIN
+            SELECT RAISE(ABORT, 'Cloud outbox branch sequence is immutable');
+        END;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -978,6 +1026,14 @@ internal static class SqliteBranchSchema
         if (storedVersion < 15)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion15, cancellationToken);
+        }
+
+        if (storedVersion < 16)
+        {
+            await MigrateToVersion16Async(
+                connection,
+                transaction,
+                cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
@@ -1151,6 +1207,36 @@ internal static class SqliteBranchSchema
         }
 
         await ExecuteAsync(connection, transaction, SchemaVersion9, cancellationToken);
+    }
+
+    private static async Task MigrateToVersion16Async(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "cloud_sync_outbox",
+                "branch_sequence",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                """
+                ALTER TABLE cloud_sync_outbox
+                    ADD COLUMN branch_sequence INTEGER NULL
+                    CHECK (branch_sequence >= 1);
+                """,
+                cancellationToken);
+        }
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            SchemaVersion16AfterColumn,
+            cancellationToken);
     }
 
     private static async Task<string> ReadTableSqlAsync(
