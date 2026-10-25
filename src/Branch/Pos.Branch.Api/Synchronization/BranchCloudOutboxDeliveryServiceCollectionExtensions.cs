@@ -24,6 +24,11 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
         services.AddSingleton<
             IValidateOptions<BranchCloudOutboxDeliveryOptions>,
             BranchCloudOutboxDeliveryOptionsValidator>();
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton<
+            IBranchCloudOutboxWorkerIdentity,
+            RuntimeBranchCloudOutboxWorkerIdentity>();
+        services.AddHostedService<BranchCloudOutboxPollingService>();
 
         var enabled = configuration
             .GetSection(BranchCloudOutboxDeliveryOptions.SectionName)
