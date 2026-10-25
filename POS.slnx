@@ -26,6 +26,7 @@
     <Project Path="tests/Pos.Application.Tests/Pos.Application.Tests.csproj" />
     <Project Path="tests/Pos.Branch.Api.Tests/Pos.Branch.Api.Tests.csproj" />
     <Project Path="tests/Pos.Branch.Persistence.Tests/Pos.Branch.Persistence.Tests.csproj" />
+    <Project Path="tests/Pos.Central.Api.Tests/Pos.Central.Api.Tests.csproj" />
     <Project Path="tests/Pos.Domain.Tests/Pos.Domain.Tests.csproj" />
     <Project Path="tests/Pos.Printing.Tests/Pos.Printing.Tests.csproj" />
   </Folder>
