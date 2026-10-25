@@ -14,6 +14,8 @@ public sealed class BranchCloudOutboxDeliveryOptions
 
     public string BranchId { get; init; } = string.Empty;
 
+    public string ServiceOrigin { get; init; } = string.Empty;
+
     public string WorkerId { get; init; } = "branch-cloud-outbox";
 
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromSeconds(30);
@@ -47,6 +49,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidator :
         var errors = new List<string>();
         ValidateIdentifier(options.BranchId, nameof(options.BranchId), errors);
         ValidateIdentifier(options.WorkerId, nameof(options.WorkerId), errors);
+        ValidateServiceOrigin(options.ServiceOrigin, errors);
         ValidatePositive(options.LeaseDuration, nameof(options.LeaseDuration), errors);
         ValidatePositive(options.IdleDelay, nameof(options.IdleDelay), errors);
         ValidatePositive(options.RetryDelay, nameof(options.RetryDelay), errors);
@@ -55,6 +58,22 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidator :
         return errors.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(errors);
+    }
+
+    private static void ValidateServiceOrigin(
+        string? configuredOrigin,
+        ICollection<string> errors)
+    {
+        try
+        {
+            BranchCloudServiceOrigin.Require(
+                configuredOrigin ?? string.Empty,
+                nameof(BranchCloudOutboxDeliveryOptions.ServiceOrigin));
+        }
+        catch (ArgumentException exception)
+        {
+            errors.Add(exception.Message);
+        }
     }
 
     private void ValidateDatabase(

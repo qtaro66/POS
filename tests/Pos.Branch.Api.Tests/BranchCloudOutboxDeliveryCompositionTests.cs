@@ -222,7 +222,9 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             ["BranchCloudOutboxDelivery:Enabled"] = "true",
             ["BranchCloudOutboxDelivery:DatabasePath"] = databasePath,
             ["BranchCloudOutboxDelivery:BranchId"] = "BRANCH-01",
-            ["BranchCloudOutboxDelivery:WorkerId"] = "WORKER-01"
+            ["BranchCloudOutboxDelivery:WorkerId"] = "WORKER-01",
+            ["BranchCloudOutboxDelivery:ServiceOrigin"] =
+                "https://cloud.example.test"
         };
 
     private static IConfiguration Configuration(

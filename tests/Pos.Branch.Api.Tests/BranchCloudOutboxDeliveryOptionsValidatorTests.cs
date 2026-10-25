@@ -91,6 +91,42 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
     }
 
     [Theory]
+    [InlineData("https://cloud.example.test")]
+    [InlineData("https://cloud.example.test:8443")]
+    [InlineData("https://192.0.2.10")]
+    [InlineData("https://[2001:db8::10]:8443")]
+    public void Enabled_configuration_accepts_https_service_origin(string serviceOrigin)
+    {
+        var result = new BranchCloudOutboxDeliveryOptionsValidator(ReadyProbe())
+            .Validate(
+                null,
+                Enabled(ExistingFile(), serviceOrigin: serviceOrigin));
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(" https://cloud.example.test")]
+    [InlineData("http://cloud.example.test")]
+    [InlineData("https://user:secret@cloud.example.test")]
+    [InlineData("https://cloud.example.test/events")]
+    [InlineData("https://cloud.example.test?branch=1")]
+    [InlineData("https://cloud.example.test#fragment")]
+    [InlineData("cloud.example.test")]
+    public void Enabled_configuration_rejects_invalid_service_origin(
+        string serviceOrigin)
+    {
+        var result = new BranchCloudOutboxDeliveryOptionsValidator(ReadyProbe())
+            .Validate(
+                null,
+                Enabled(ExistingFile(), serviceOrigin: serviceOrigin));
+
+        AssertFailure(result, "absolute HTTPS origin");
+    }
+
+    [Theory]
     [InlineData(0, 1, 1, "LeaseDuration")]
     [InlineData(-1, 1, 1, "LeaseDuration")]
     [InlineData(1, 0, 1, "IdleDelay")]
@@ -169,6 +205,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
         string path,
         string branchId = "BRANCH-01",
         string workerId = "WORKER-01",
+        string serviceOrigin = "https://cloud.example.test",
         TimeSpan? leaseDuration = null,
         TimeSpan? idleDelay = null,
         TimeSpan? retryDelay = null) =>
@@ -178,6 +215,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
             DatabasePath = path,
             BranchId = branchId,
             WorkerId = workerId,
+            ServiceOrigin = serviceOrigin,
             LeaseDuration = leaseDuration ?? TimeSpan.FromSeconds(30),
             IdleDelay = idleDelay ?? TimeSpan.FromSeconds(1),
             RetryDelay = retryDelay ?? TimeSpan.FromSeconds(5)
