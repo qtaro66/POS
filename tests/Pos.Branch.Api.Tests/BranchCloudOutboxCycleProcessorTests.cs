@@ -13,7 +13,7 @@ public sealed class BranchCloudOutboxCycleProcessorTests
     public async Task No_claim_returns_no_work_without_delivery()
     {
         var stores = new RecordingStores { Lease = null };
-        var client = new RecordingClient(BranchCloudOutboxDeliveryResult.Acknowledged());
+        var client = new RecordingClient(Acknowledged());
         var processor = Processor(stores, client);
 
         var result = await processor.ProcessNextAsync(
@@ -39,7 +39,7 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             Lease = Lease(),
             ConfirmationResult = confirmationResult
         };
-        var client = new RecordingClient(BranchCloudOutboxDeliveryResult.Acknowledged());
+        var client = new RecordingClient(Acknowledged());
         var processor = Processor(stores, client);
 
         var result = await processor.ProcessNextAsync(
@@ -112,7 +112,7 @@ public sealed class BranchCloudOutboxCycleProcessorTests
         };
         var processor = Processor(
             stores,
-            new RecordingClient(BranchCloudOutboxDeliveryResult.Acknowledged()));
+            new RecordingClient(Acknowledged()));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             processor.ProcessNextAsync(
@@ -122,6 +122,33 @@ public sealed class BranchCloudOutboxCycleProcessorTests
                 TimeSpan.FromSeconds(5)));
 
         Assert.Contains("no longer exists", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("OTHER-EVENT", 7)]
+    [InlineData("OUTBOX-01", 8)]
+    public async Task Mismatched_acknowledgment_identity_remains_retryable(
+        string acknowledgedEventId,
+        long acknowledgedSequence)
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Acknowledged(
+                    acknowledgedEventId,
+                    acknowledgedSequence)));
+
+        var result = await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, result.Disposition);
+        Assert.Equal("AcknowledgmentIdentityMismatch", stores.Failure?.ErrorCode);
+        Assert.Equal(Now.AddSeconds(5), stores.Failure?.NextRetryAt);
+        Assert.Null(stores.Confirmation);
     }
 
     [Fact]
@@ -161,7 +188,7 @@ public sealed class BranchCloudOutboxCycleProcessorTests
     {
         var processor = Processor(
             new RecordingStores { Lease = Lease() },
-            new RecordingClient(BranchCloudOutboxDeliveryResult.Acknowledged()));
+            new RecordingClient(Acknowledged()));
 
         var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             processor.ProcessNextAsync(
@@ -204,6 +231,9 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             "WORKER-01",
             claimedAt ?? Now,
             leaseExpiresAt ?? Now.AddSeconds(30));
+
+    private static BranchCloudOutboxDeliveryResult Acknowledged() =>
+        BranchCloudOutboxDeliveryResult.Acknowledged("OUTBOX-01", 7);
 
     private sealed class RecordingStores :
         IBranchCloudOutboxClaimStore,
@@ -315,7 +345,9 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             CancellationToken cancellationToken = default)
         {
             await stores.WaitForRenewalAsync(cancellationToken);
-            return BranchCloudOutboxDeliveryResult.Acknowledged();
+            return BranchCloudOutboxDeliveryResult.Acknowledged(
+                envelope.EventId,
+                envelope.BranchSequence);
         }
     }
 
