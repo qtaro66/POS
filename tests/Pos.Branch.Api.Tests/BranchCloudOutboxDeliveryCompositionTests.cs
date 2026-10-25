@@ -224,7 +224,9 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             ["BranchCloudOutboxDelivery:BranchId"] = "BRANCH-01",
             ["BranchCloudOutboxDelivery:WorkerId"] = "WORKER-01",
             ["BranchCloudOutboxDelivery:ServiceOrigin"] =
-                "https://cloud.example.test"
+                "https://cloud.example.test",
+            ["BranchCloudOutboxDelivery:DeliveryPath"] =
+                "/test/cloud-events"
         };
 
     private static IConfiguration Configuration(
