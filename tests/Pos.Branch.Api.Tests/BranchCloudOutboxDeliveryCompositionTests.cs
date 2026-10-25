@@ -284,7 +284,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
     private sealed class AlwaysAcknowledgedClient : IBranchCloudOutboxDeliveryClient
     {
         public Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
-            BranchCloudOutboxLease lease,
+            BranchCloudOutboxEventEnvelope envelope,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(BranchCloudOutboxDeliveryResult.Acknowledged());
     }
