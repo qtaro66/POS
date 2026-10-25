@@ -286,7 +286,10 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         public Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
             BranchCloudOutboxEventEnvelope envelope,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(BranchCloudOutboxDeliveryResult.Acknowledged());
+            Task.FromResult(
+                BranchCloudOutboxDeliveryResult.Acknowledged(
+                    envelope.EventId,
+                    envelope.BranchSequence));
     }
 
     private sealed class CustomProcessor : IBranchCloudOutboxCycleProcessor

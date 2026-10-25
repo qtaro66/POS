@@ -10,7 +10,9 @@ public sealed class BranchCloudOutboxDeliveryResult
 {
     public BranchCloudOutboxDeliveryResult(
         BranchCloudOutboxDeliveryDisposition disposition,
-        string? errorCode = null)
+        string? errorCode = null,
+        string? acknowledgedEventId = null,
+        long? acknowledgedBranchSequence = null)
     {
         if (!Enum.IsDefined(disposition))
         {
@@ -28,8 +30,23 @@ public sealed class BranchCloudOutboxDeliveryResult
                     nameof(errorCode));
             }
 
+            AcknowledgedEventId = RequireIdentifier(
+                acknowledgedEventId,
+                nameof(acknowledgedEventId));
+            AcknowledgedBranchSequence = acknowledgedBranchSequence is >= 1
+                ? acknowledgedBranchSequence
+                : throw new ArgumentOutOfRangeException(
+                    nameof(acknowledgedBranchSequence),
+                    "The acknowledged Branch sequence must be positive.");
             Disposition = disposition;
             return;
+        }
+
+        if (acknowledgedEventId is not null || acknowledgedBranchSequence is not null)
+        {
+            throw new ArgumentException(
+                "A retryable failure cannot contain an acknowledged event identity.",
+                nameof(acknowledgedEventId));
         }
 
         ErrorCode = RequireErrorCode(errorCode);
@@ -40,8 +57,17 @@ public sealed class BranchCloudOutboxDeliveryResult
 
     public string? ErrorCode { get; }
 
-    public static BranchCloudOutboxDeliveryResult Acknowledged() =>
-        new(BranchCloudOutboxDeliveryDisposition.DurablyAcknowledged);
+    public string? AcknowledgedEventId { get; }
+
+    public long? AcknowledgedBranchSequence { get; }
+
+    public static BranchCloudOutboxDeliveryResult Acknowledged(
+        string eventId,
+        long branchSequence) =>
+        new(
+            BranchCloudOutboxDeliveryDisposition.DurablyAcknowledged,
+            acknowledgedEventId: eventId,
+            acknowledgedBranchSequence: branchSequence);
 
     public static BranchCloudOutboxDeliveryResult Failed(string errorCode) =>
         new(BranchCloudOutboxDeliveryDisposition.RetryableFailure, errorCode);
@@ -52,6 +78,13 @@ public sealed class BranchCloudOutboxDeliveryResult
                 "A retryable Cloud delivery failure requires an error code.",
                 nameof(errorCode))
             : errorCode.Trim();
+
+    private static string RequireIdentifier(string? value, string parameterName) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new ArgumentException(
+                "The acknowledged event identifier cannot be empty.",
+                parameterName)
+            : value.Trim();
 }
 
 public interface IBranchCloudOutboxDeliveryClient

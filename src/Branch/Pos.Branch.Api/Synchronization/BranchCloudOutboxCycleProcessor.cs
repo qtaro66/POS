@@ -98,6 +98,20 @@ public sealed class BranchCloudOutboxCycleProcessor :
         switch (delivery.Disposition)
         {
             case BranchCloudOutboxDeliveryDisposition.DurablyAcknowledged:
+                if (!string.Equals(
+                        delivery.AcknowledgedEventId,
+                        lease.OutboxId,
+                        StringComparison.Ordinal) ||
+                    delivery.AcknowledgedBranchSequence != lease.BranchSequence)
+                {
+                    await RecordFailureAsync(
+                        lease,
+                        "AcknowledgmentIdentityMismatch",
+                        retryDelay,
+                        cancellationToken);
+                    break;
+                }
+
                 var confirmation = await _confirmationStore.ConfirmAsync(
                     new BranchCloudDeliveryConfirmation(
                         lease.BranchId,
