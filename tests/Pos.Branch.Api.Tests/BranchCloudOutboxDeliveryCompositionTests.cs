@@ -69,9 +69,9 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 SqliteBranchCloudOutboxDeliveryFailureStore>(provider);
             AssertSingleton<IBranchCloudDeliveryConfirmationStore,
                 SqliteBranchCloudDeliveryConfirmationStore>(provider);
-            Assert.DoesNotContain(
+            Assert.Contains(
                 provider.GetServices<IHostedService>(),
-                service => service.GetType().Assembly == typeof(Program).Assembly);
+                service => service is BranchCloudOutboxPollingService);
         }
         finally
         {
