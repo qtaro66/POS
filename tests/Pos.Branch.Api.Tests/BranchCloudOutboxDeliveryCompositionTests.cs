@@ -57,7 +57,11 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         try
         {
             await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
-            using var provider = Provider(Enabled(databasePath));
+            using var provider = Provider(
+                Enabled(databasePath),
+                services => services.AddSingleton<
+                    IBranchCloudOutboxDeliveryClient,
+                    AlwaysAcknowledgedClient>());
 
             provider.GetRequiredService<IStartupValidator>().Validate();
 
@@ -69,9 +73,63 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 SqliteBranchCloudOutboxDeliveryFailureStore>(provider);
             AssertSingleton<IBranchCloudDeliveryConfirmationStore,
                 SqliteBranchCloudDeliveryConfirmationStore>(provider);
+            AssertSingleton<IBranchCloudOutboxCycleProcessor,
+                BranchCloudOutboxCycleProcessor>(provider);
             Assert.Contains(
                 provider.GetServices<IHostedService>(),
                 service => service is BranchCloudOutboxPollingService);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Enabled_delivery_fails_closed_without_delivery_client()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"branch-cloud-outbox-client-{Guid.NewGuid():N}.db");
+        try
+        {
+            await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
+            using var provider = Provider(Enabled(databasePath));
+            provider.GetRequiredService<IStartupValidator>().Validate();
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                provider.GetRequiredService<IBranchCloudOutboxCycleProcessor>());
+
+            Assert.Contains(
+                nameof(IBranchCloudOutboxDeliveryClient),
+                exception.Message,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Existing_cycle_processor_registration_is_preserved()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"branch-cloud-outbox-processor-{Guid.NewGuid():N}.db");
+        try
+        {
+            await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
+            var custom = new CustomProcessor();
+            using var provider = Provider(
+                Enabled(databasePath),
+                services => services.AddSingleton<IBranchCloudOutboxCycleProcessor>(custom));
+
+            provider.GetRequiredService<IStartupValidator>().Validate();
+
+            Assert.Same(
+                custom,
+                provider.GetRequiredService<IBranchCloudOutboxCycleProcessor>());
         }
         finally
         {
@@ -221,5 +279,26 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             BranchCloudDeliveryConfirmation confirmation,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(BranchCloudDeliveryConfirmationResult.Confirmed);
+    }
+
+    private sealed class AlwaysAcknowledgedClient : IBranchCloudOutboxDeliveryClient
+    {
+        public Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
+            BranchCloudOutboxLease lease,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(BranchCloudOutboxDeliveryResult.Acknowledged());
+    }
+
+    private sealed class CustomProcessor : IBranchCloudOutboxCycleProcessor
+    {
+        public Task<BranchCloudOutboxCycleResult> ProcessNextAsync(
+            string branchId,
+            string leaseOwner,
+            TimeSpan leaseDuration,
+            TimeSpan retryDelay,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                new BranchCloudOutboxCycleResult(
+                    BranchCloudOutboxCycleDisposition.NoWork));
     }
 }
