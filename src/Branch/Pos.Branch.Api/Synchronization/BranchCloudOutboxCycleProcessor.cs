@@ -77,7 +77,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
         try
         {
             delivery = await _deliveryClient.DeliverAsync(
-                    lease,
+                    BranchCloudOutboxEventEnvelope.FromLease(lease),
                     heartbeat.OperationToken)
                 ?? throw new InvalidOperationException(
                     "The Cloud delivery client returned no result.");

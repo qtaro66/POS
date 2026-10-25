@@ -57,12 +57,13 @@ public sealed class BranchCloudOutboxDeliveryResult
 public interface IBranchCloudOutboxDeliveryClient
 {
     /// <summary>
-    /// Delivers the leased outbox event identified by Branch, outbox ID, and
+    /// Delivers the immutable outbox event identified by Branch, event ID, and
     /// Branch sequence. A durable acknowledgment may be returned only after
     /// Cloud has durably persisted that same event identity. Every other
-    /// completed response must remain retryable.
+    /// completed response must remain retryable. Local lease and retry state
+    /// never crosses this boundary.
     /// </summary>
     Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
-        BranchCloudOutboxLease lease,
+        BranchCloudOutboxEventEnvelope envelope,
         CancellationToken cancellationToken = default);
 }

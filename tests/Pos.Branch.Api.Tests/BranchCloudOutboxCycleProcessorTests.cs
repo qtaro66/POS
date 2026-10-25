@@ -49,7 +49,14 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             TimeSpan.FromSeconds(5));
 
         Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, result.Disposition);
-        Assert.Same(stores.Lease, client.Lease);
+        Assert.Equal("OUTBOX-01", client.Envelope?.EventId);
+        Assert.Equal("BRANCH-01", client.Envelope?.BranchId);
+        Assert.Equal(7, client.Envelope?.BranchSequence);
+        Assert.Equal("REQUEST-01", client.Envelope?.RequestId);
+        Assert.Equal("SESSION-01", client.Envelope?.TableSessionId.Value);
+        Assert.Equal(TableSessionAction.SubmitOrder, client.Envelope?.Action);
+        Assert.Equal(3, client.Envelope?.TableVersion);
+        Assert.Equal(Now.AddMinutes(-1), client.Envelope?.OccurredAt);
         Assert.Equal("BRANCH-01", stores.Confirmation?.BranchId);
         Assert.Equal("OUTBOX-01", stores.Confirmation?.OutboxId);
         Assert.Equal(Now, stores.Confirmation?.AcknowledgedAt);
@@ -286,14 +293,14 @@ public sealed class BranchCloudOutboxCycleProcessorTests
 
         public int CallCount { get; private set; }
 
-        public BranchCloudOutboxLease? Lease { get; private set; }
+        public BranchCloudOutboxEventEnvelope? Envelope { get; private set; }
 
         public Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
-            BranchCloudOutboxLease lease,
+            BranchCloudOutboxEventEnvelope envelope,
             CancellationToken cancellationToken = default)
         {
             CallCount++;
-            Lease = lease;
+            Envelope = envelope;
             return _exception is null
                 ? Task.FromResult(_result!)
                 : Task.FromException<BranchCloudOutboxDeliveryResult>(_exception);
@@ -304,7 +311,7 @@ public sealed class BranchCloudOutboxCycleProcessorTests
         IBranchCloudOutboxDeliveryClient
     {
         public async Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
-            BranchCloudOutboxLease lease,
+            BranchCloudOutboxEventEnvelope envelope,
             CancellationToken cancellationToken = default)
         {
             await stores.WaitForRenewalAsync(cancellationToken);
