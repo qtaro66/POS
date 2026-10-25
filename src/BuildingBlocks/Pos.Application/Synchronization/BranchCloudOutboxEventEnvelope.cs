@@ -9,16 +9,41 @@ namespace Pos.Application.Synchronization;
 /// </summary>
 public sealed class BranchCloudOutboxEventEnvelope
 {
-    private BranchCloudOutboxEventEnvelope(BranchCloudOutboxLease lease)
+    private BranchCloudOutboxEventEnvelope(
+        string eventId,
+        string branchId,
+        long branchSequence,
+        string requestId,
+        TableSessionId tableSessionId,
+        TableSessionAction action,
+        long tableVersion,
+        DateTimeOffset occurredAt)
     {
-        EventId = lease.OutboxId;
-        BranchId = lease.BranchId;
-        BranchSequence = lease.BranchSequence;
-        RequestId = lease.RequestId;
-        TableSessionId = lease.TableSessionId;
-        Action = lease.Action;
-        TableVersion = lease.TableVersion;
-        OccurredAt = lease.CreatedAt;
+        EventId = RequireIdentifier(eventId, nameof(eventId));
+        BranchId = RequireIdentifier(branchId, nameof(branchId));
+        BranchSequence = branchSequence >= 1
+            ? branchSequence
+            : throw new ArgumentOutOfRangeException(
+                nameof(branchSequence),
+                "The Branch sequence must be positive.");
+        RequestId = RequireIdentifier(requestId, nameof(requestId));
+        TableSessionId = tableSessionId ??
+            throw new ArgumentNullException(nameof(tableSessionId));
+        Action = Enum.IsDefined(action)
+            ? action
+            : throw new ArgumentOutOfRangeException(
+                nameof(action),
+                "The table-session action is not defined.");
+        TableVersion = tableVersion >= 1
+            ? tableVersion
+            : throw new ArgumentOutOfRangeException(
+                nameof(tableVersion),
+                "The table version must be positive.");
+        OccurredAt = occurredAt.Offset == TimeSpan.Zero
+            ? occurredAt
+            : throw new ArgumentException(
+                "The event timestamp must be UTC.",
+                nameof(occurredAt));
     }
 
     public string EventId { get; }
@@ -42,6 +67,38 @@ public sealed class BranchCloudOutboxEventEnvelope
     {
         ArgumentNullException.ThrowIfNull(lease);
 
-        return new BranchCloudOutboxEventEnvelope(lease);
+        return Create(
+            lease.OutboxId,
+            lease.BranchId,
+            lease.BranchSequence,
+            lease.RequestId,
+            lease.TableSessionId,
+            lease.Action,
+            lease.TableVersion,
+            lease.CreatedAt);
     }
+
+    public static BranchCloudOutboxEventEnvelope Create(
+        string eventId,
+        string branchId,
+        long branchSequence,
+        string requestId,
+        TableSessionId tableSessionId,
+        TableSessionAction action,
+        long tableVersion,
+        DateTimeOffset occurredAt) =>
+        new(
+            eventId,
+            branchId,
+            branchSequence,
+            requestId,
+            tableSessionId,
+            action,
+            tableVersion,
+            occurredAt);
+
+    private static string RequireIdentifier(string value, string parameterName) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new ArgumentException("The identifier cannot be empty.", parameterName)
+            : value.Trim();
 }

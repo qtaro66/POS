@@ -55,4 +55,33 @@ public sealed class BranchCloudOutboxEventEnvelopeTests
         Assert.Throws<ArgumentNullException>(() =>
             BranchCloudOutboxEventEnvelope.FromLease(null!));
     }
+
+    [Fact]
+    public void Create_normalizes_identifiers()
+    {
+        var occurredAt = new DateTimeOffset(
+            2026,
+            10,
+            25,
+            12,
+            0,
+            0,
+            TimeSpan.Zero);
+
+        var envelope = BranchCloudOutboxEventEnvelope.Create(
+            " EVENT-01 ",
+            " BRANCH-01 ",
+            7,
+            " REQUEST-01 ",
+            TableSessionId.From(" SESSION-01 "),
+            TableSessionAction.SubmitOrder,
+            3,
+            occurredAt);
+
+        Assert.Equal("EVENT-01", envelope.EventId);
+        Assert.Equal("BRANCH-01", envelope.BranchId);
+        Assert.Equal("REQUEST-01", envelope.RequestId);
+        Assert.Equal("SESSION-01", envelope.TableSessionId.Value);
+        Assert.Equal(occurredAt, envelope.OccurredAt);
+    }
 }
