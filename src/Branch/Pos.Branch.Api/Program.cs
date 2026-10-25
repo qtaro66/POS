@@ -11,6 +11,7 @@ builder.Services.AddBranchEmployeeSessions(builder.Configuration);
 builder.Services.AddBranchPairing(builder.Configuration);
 builder.Services.AddBranchCommandStatusQuery(builder.Configuration);
 builder.Services.AddBranchCloudDataSentStatus(builder.Configuration);
+builder.Services.AddBranchCloudOutboxDelivery(builder.Configuration);
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
 builder.Services.AddPrintSpoolRetention(builder.Configuration);
 builder.Services.AddEscPosRasterRendering(builder.Configuration);
