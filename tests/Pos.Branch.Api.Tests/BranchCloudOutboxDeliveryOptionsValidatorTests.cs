@@ -127,6 +127,45 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
     }
 
     [Theory]
+    [InlineData("/events")]
+    [InlineData("/api/v1/branch-events")]
+    [InlineData("/cloud_delivery/v1.0/events~pending")]
+    public void Enabled_configuration_accepts_canonical_delivery_path(
+        string deliveryPath)
+    {
+        var result = new BranchCloudOutboxDeliveryOptionsValidator(ReadyProbe())
+            .Validate(
+                null,
+                Enabled(ExistingFile(), deliveryPath: deliveryPath));
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("events")]
+    [InlineData("//other.example/events")]
+    [InlineData("/events/")]
+    [InlineData("/events//pending")]
+    [InlineData("/events/../admin")]
+    [InlineData("/events/./pending")]
+    [InlineData("/events%2Fpending")]
+    [InlineData("/events?branch=1")]
+    [InlineData("/events#fragment")]
+    [InlineData("/events pending")]
+    public void Enabled_configuration_rejects_invalid_delivery_path(
+        string deliveryPath)
+    {
+        var result = new BranchCloudOutboxDeliveryOptionsValidator(ReadyProbe())
+            .Validate(
+                null,
+                Enabled(ExistingFile(), deliveryPath: deliveryPath));
+
+        AssertFailure(result, "canonical absolute URL path");
+    }
+
+    [Theory]
     [InlineData(0, 1, 1, "LeaseDuration")]
     [InlineData(-1, 1, 1, "LeaseDuration")]
     [InlineData(1, 0, 1, "IdleDelay")]
@@ -206,6 +245,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
         string branchId = "BRANCH-01",
         string workerId = "WORKER-01",
         string serviceOrigin = "https://cloud.example.test",
+        string deliveryPath = "/test/cloud-events",
         TimeSpan? leaseDuration = null,
         TimeSpan? idleDelay = null,
         TimeSpan? retryDelay = null) =>
@@ -216,6 +256,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
             BranchId = branchId,
             WorkerId = workerId,
             ServiceOrigin = serviceOrigin,
+            DeliveryPath = deliveryPath,
             LeaseDuration = leaseDuration ?? TimeSpan.FromSeconds(30),
             IdleDelay = idleDelay ?? TimeSpan.FromSeconds(1),
             RetryDelay = retryDelay ?? TimeSpan.FromSeconds(5)
