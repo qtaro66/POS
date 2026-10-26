@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Pos.Central.Api.Synchronization;
 using Pos.Central.Persistence;
 
@@ -23,6 +24,11 @@ public sealed class CentralPostgresMigrationCompositionTests
             services,
             descriptor => descriptor.ServiceType ==
                 typeof(PostgresCentralConnectionFactory));
+        Assert.DoesNotContain(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IHostedService) &&
+                descriptor.ImplementationType ==
+                    typeof(CentralPostgresMigrationStartupService));
     }
 
     [Fact]
@@ -41,6 +47,26 @@ public sealed class CentralPostgresMigrationCompositionTests
             IPostgresCentralMigrationSessionFactory>());
         Assert.NotNull(provider.GetRequiredService<
             PostgresCentralMigrationExecutor>());
+        Assert.IsType<CentralPostgresMigrationStartupService>(
+            Assert.Single(provider.GetServices<IHostedService>()));
+    }
+
+    [Fact]
+    public void Repeated_enabled_registration_adds_one_startup_service()
+    {
+        var services = new ServiceCollection();
+        var configuration = Configuration(
+            enabled: true,
+            connectionString: OfflineConnectionString);
+
+        services.AddCentralPostgresMigrationsIfEnabled(configuration);
+        services.AddCentralPostgresMigrationsIfEnabled(configuration);
+
+        Assert.Single(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IHostedService) &&
+                descriptor.ImplementationType ==
+                    typeof(CentralPostgresMigrationStartupService));
     }
 
     [Theory]
