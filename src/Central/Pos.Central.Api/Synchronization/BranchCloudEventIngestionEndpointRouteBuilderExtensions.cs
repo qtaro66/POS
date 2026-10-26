@@ -32,4 +32,22 @@ public static class BranchCloudEventIngestionEndpointRouteBuilderExtensions
             .ExcludeFromDescription()
             .WithName(EndpointName);
     }
+
+    public static IEndpointRouteBuilder MapBranchCloudEventIngestionEndpointIfEnabled(
+        this IEndpointRouteBuilder endpoints,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var enabled = configuration
+            .GetSection(CentralCloudIngestionOptions.SectionName)
+            .GetValue<bool>(nameof(CentralCloudIngestionOptions.Enabled));
+        if (enabled)
+        {
+            endpoints.MapBranchCloudEventIngestionEndpoint();
+        }
+
+        return endpoints;
+    }
 }

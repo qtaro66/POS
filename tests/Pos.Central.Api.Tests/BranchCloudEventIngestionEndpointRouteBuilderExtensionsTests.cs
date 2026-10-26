@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Pos.Central.Api.Synchronization;
 
 namespace Pos.Central.Api.Tests;
@@ -69,4 +70,56 @@ public sealed class BranchCloudEventIngestionEndpointRouteBuilderExtensionsTests
             BranchCloudEventIngestionEndpointRouteBuilderExtensions
                 .MapBranchCloudEventIngestionEndpoint(null!));
     }
+
+    [Fact]
+    public void Disabled_ingestion_maps_no_route()
+    {
+        var app = WebApplication.CreateBuilder().Build();
+
+        var returned = app.MapBranchCloudEventIngestionEndpointIfEnabled(
+            Configuration(enabled: false));
+
+        Assert.Same(app, returned);
+        Assert.Empty(((IEndpointRouteBuilder)app).DataSources);
+    }
+
+    [Fact]
+    public void Enabled_ingestion_maps_the_route()
+    {
+        var app = WebApplication.CreateBuilder().Build();
+
+        var returned = app.MapBranchCloudEventIngestionEndpointIfEnabled(
+            Configuration(enabled: true));
+
+        Assert.Same(app, returned);
+        var route = Assert.IsType<RouteEndpoint>(Assert.Single(
+            ((IEndpointRouteBuilder)app).DataSources.SelectMany(
+                source => source.Endpoints)));
+        Assert.Equal(
+            BranchCloudEventIngestionEndpointRouteBuilderExtensions.RoutePattern,
+            route.RoutePattern.RawText);
+    }
+
+    [Fact]
+    public void Conditional_mapping_rejects_null_arguments()
+    {
+        var configuration = Configuration(enabled: false);
+        var app = WebApplication.CreateBuilder().Build();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            BranchCloudEventIngestionEndpointRouteBuilderExtensions
+                .MapBranchCloudEventIngestionEndpointIfEnabled(
+                    null!,
+                    configuration));
+        Assert.Throws<ArgumentNullException>(() =>
+            app.MapBranchCloudEventIngestionEndpointIfEnabled(null!));
+    }
+
+    private static IConfiguration Configuration(bool enabled) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["CentralCloudIngestion:Enabled"] = enabled.ToString()
+            })
+            .Build();
 }

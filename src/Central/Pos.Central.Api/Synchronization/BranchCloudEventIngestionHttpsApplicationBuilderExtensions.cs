@@ -3,9 +3,19 @@ namespace Pos.Central.Api.Synchronization;
 public static class BranchCloudEventIngestionHttpsApplicationBuilderExtensions
 {
     public static IApplicationBuilder UseBranchCloudEventIngestionHttpsOnly(
-        this IApplicationBuilder application)
+        this IApplicationBuilder application,
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(application);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var enabled = configuration
+            .GetSection(CentralCloudIngestionOptions.SectionName)
+            .GetValue<bool>(nameof(CentralCloudIngestionOptions.Enabled));
+        if (!enabled)
+        {
+            return application;
+        }
 
         return application.Use(async (context, next) =>
         {

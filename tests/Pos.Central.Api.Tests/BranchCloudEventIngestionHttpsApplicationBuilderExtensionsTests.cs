@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 using Pos.Central.Api.Synchronization;
@@ -14,7 +15,8 @@ public sealed class BranchCloudEventIngestionHttpsApplicationBuilderExtensionsTe
         using var provider = new ServiceCollection().BuildServiceProvider();
         var application = new ApplicationBuilder(provider);
         var reachedTerminal = false;
-        application.UseBranchCloudEventIngestionHttpsOnly();
+        application.UseBranchCloudEventIngestionHttpsOnly(
+            Configuration(enabled: true));
         application.Run(_ =>
         {
             reachedTerminal = true;
@@ -48,7 +50,8 @@ public sealed class BranchCloudEventIngestionHttpsApplicationBuilderExtensionsTe
         using var provider = new ServiceCollection().BuildServiceProvider();
         var application = new ApplicationBuilder(provider);
         var reachedTerminal = false;
-        application.UseBranchCloudEventIngestionHttpsOnly();
+        application.UseBranchCloudEventIngestionHttpsOnly(
+            Configuration(enabled: true));
         application.Run(_ =>
         {
             reachedTerminal = true;
@@ -66,7 +69,8 @@ public sealed class BranchCloudEventIngestionHttpsApplicationBuilderExtensionsTe
         using var provider = new ServiceCollection().BuildServiceProvider();
         var application = new ApplicationBuilder(provider);
         var reachedTerminal = false;
-        application.UseBranchCloudEventIngestionHttpsOnly();
+        application.UseBranchCloudEventIngestionHttpsOnly(
+            Configuration(enabled: true));
         application.Run(_ =>
         {
             reachedTerminal = true;
@@ -83,11 +87,39 @@ public sealed class BranchCloudEventIngestionHttpsApplicationBuilderExtensionsTe
     }
 
     [Fact]
-    public void Missing_application_builder_is_rejected()
+    public async Task Disabled_ingestion_adds_no_https_guard()
     {
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        var application = new ApplicationBuilder(provider);
+        var reachedTerminal = false;
+        application.UseBranchCloudEventIngestionHttpsOnly(
+            Configuration(enabled: false));
+        application.Run(_ =>
+        {
+            reachedTerminal = true;
+            return Task.CompletedTask;
+        });
+
+        await application.Build()(Context(
+            provider,
+            "http",
+            BranchCloudEventIngestionEndpointRouteBuilderExtensions.RoutePattern));
+
+        Assert.True(reachedTerminal);
+    }
+
+    [Fact]
+    public void Missing_arguments_are_rejected()
+    {
+        var configuration = Configuration(enabled: false);
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        var application = new ApplicationBuilder(provider);
+
         Assert.Throws<ArgumentNullException>(() =>
             BranchCloudEventIngestionHttpsApplicationBuilderExtensions
-                .UseBranchCloudEventIngestionHttpsOnly(null!));
+                .UseBranchCloudEventIngestionHttpsOnly(null!, configuration));
+        Assert.Throws<ArgumentNullException>(() =>
+            application.UseBranchCloudEventIngestionHttpsOnly(null!));
     }
 
     private static DefaultHttpContext Context(
@@ -103,4 +135,12 @@ public sealed class BranchCloudEventIngestionHttpsApplicationBuilderExtensionsTe
         context.Request.Path = path;
         return context;
     }
+
+    private static IConfiguration Configuration(bool enabled) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["CentralCloudIngestion:Enabled"] = enabled.ToString()
+            })
+            .Build();
 }
