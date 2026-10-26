@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Pos.Central.Persistence;
 
 namespace Pos.Central.Api.Synchronization;
@@ -31,6 +33,9 @@ public static class CentralPostgresMigrationServiceCollectionExtensions
         }
 
         services.AddPostgresCentralMigrations(connectionString);
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService,
+                CentralPostgresMigrationStartupService>());
         return services;
     }
 }
