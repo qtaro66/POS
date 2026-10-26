@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Pos.Application.Synchronization;
 using Pos.Central.Api.Synchronization;
 
 namespace Pos.Central.Api.Tests;
@@ -37,7 +38,8 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
                 ["CentralCloudIngestion:AuthenticationScheme"] =
                     "CentralBranchCertificate"
             },
-            registeredScheme: "CentralBranchCertificate");
+            registeredScheme: "CentralBranchCertificate",
+            registerPersistence: true);
 
         provider.GetRequiredService<IStartupValidator>().Validate();
         var options = provider
@@ -57,12 +59,14 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
     [Fact]
     public void Enabled_configuration_fails_startup_when_scheme_is_not_registered()
     {
-        using var provider = Provider(new Dictionary<string, string?>
-        {
-            ["CentralCloudIngestion:Enabled"] = "true",
-            ["CentralCloudIngestion:AuthenticationScheme"] =
-                "CentralBranchCertificate"
-        });
+        using var provider = Provider(
+            new Dictionary<string, string?>
+            {
+                ["CentralCloudIngestion:Enabled"] = "true",
+                ["CentralCloudIngestion:AuthenticationScheme"] =
+                    "CentralBranchCertificate"
+            },
+            registerPersistence: true);
 
         var exception = Assert.Throws<OptionsValidationException>(() =>
             provider.GetRequiredService<IStartupValidator>().Validate());
@@ -72,6 +76,31 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
             failure => failure.Contains(
                 "registered authentication handler",
                 StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Enabled_configuration_fails_startup_without_persistence_services()
+    {
+        using var provider = Provider(
+            new Dictionary<string, string?>
+            {
+                ["CentralCloudIngestion:Enabled"] = "true",
+                ["CentralCloudIngestion:AuthenticationScheme"] =
+                    "CentralBranchCertificate"
+            },
+            registeredScheme: "CentralBranchCertificate");
+
+        var exception = Assert.Throws<OptionsValidationException>(() =>
+            provider.GetRequiredService<IStartupValidator>().Validate());
+
+        Assert.Contains(
+            exception.Failures,
+            failure => failure.Contains(
+                nameof(IBranchCloudEventIngestionStore),
+                StringComparison.Ordinal) &&
+                failure.Contains(
+                    nameof(BranchCloudEventIngestionService),
+                    StringComparison.Ordinal));
     }
 
     [Fact]
@@ -110,6 +139,8 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
                 "CentralBranchCertificate",
                 displayName: null,
                 _ => { });
+        services.AddSingleton<IBranchCloudEventIngestionStore, RecordingStore>();
+        services.AddSingleton<BranchCloudEventIngestionService>();
         services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
         services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
         using var provider = services.BuildServiceProvider();
@@ -121,6 +152,10 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
             provider.GetServices<IValidateOptions<CentralCloudIngestionOptions>>(),
             validator =>
                 validator is CentralCloudIngestionAuthenticationSchemeValidator);
+        Assert.Single(
+            provider.GetServices<IValidateOptions<CentralCloudIngestionOptions>>(),
+            validator =>
+                validator is CentralCloudIngestionPersistenceReadinessValidator);
         Assert.Single(
             provider.GetServices<IAuthorizationHandler>(),
             handler => handler is CentralCloudIngestionAuthorizationHandler);
@@ -160,7 +195,8 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
 
     private static ServiceProvider Provider(
         IReadOnlyDictionary<string, string?> values,
-        string? registeredScheme = null)
+        string? registeredScheme = null,
+        bool registerPersistence = false)
     {
         var services = new ServiceCollection();
         if (registeredScheme is not null)
@@ -173,6 +209,12 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
                     _ => { });
         }
 
+        if (registerPersistence)
+        {
+            services.AddSingleton<IBranchCloudEventIngestionStore, RecordingStore>();
+            services.AddSingleton<BranchCloudEventIngestionService>();
+        }
+
         services.AddCentralCloudIngestionRuntimeConfiguration(
             Configuration(values));
         return services.BuildServiceProvider();
@@ -183,4 +225,16 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
         new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build();
+
+    private sealed class RecordingStore : IBranchCloudEventIngestionStore
+    {
+        public Task<BranchCloudEventPersistenceResult> PersistAsync(
+            BranchCloudOutboxEventEnvelope envelope,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new BranchCloudEventPersistenceResult(
+                BranchCloudEventPersistenceDisposition.Stored,
+                envelope.EventId,
+                envelope.BranchId,
+                envelope.BranchSequence));
+    }
 }
