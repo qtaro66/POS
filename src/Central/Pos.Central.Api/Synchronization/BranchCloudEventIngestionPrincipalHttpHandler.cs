@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using Pos.Application.Synchronization;
 using Pos.Contracts.Synchronization;
 
@@ -14,7 +15,7 @@ public static class BranchCloudEventIngestionPrincipalHttpHandler
         StatusCodeHttpResult>> HandleAsync(
         ClaimsPrincipal? principal,
         BranchCloudEventIngestionRequest request,
-        BranchCloudEventIngestionService service,
+        [FromServices] BranchCloudEventIngestionService service,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
