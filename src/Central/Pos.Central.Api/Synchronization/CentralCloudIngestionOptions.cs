@@ -32,7 +32,7 @@ public sealed class CentralCloudIngestionOptionsValidator
                 "Central Cloud ingestion is enabled.");
     }
 
-    private static bool IsCanonicalAuthenticationScheme(string? value) =>
+    internal static bool IsCanonicalAuthenticationScheme(string? value) =>
         !string.IsNullOrEmpty(value) &&
         value.Length <= 128 &&
         IsAsciiLetterOrDigit(value[0]) &&

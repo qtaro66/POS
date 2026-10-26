@@ -31,6 +31,40 @@ public sealed class CentralCloudIngestionAuthorizationCompositionTests
     }
 
     [Fact]
+    public async Task Explicit_scheme_is_bound_to_the_named_policy()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddCentralCloudIngestionAuthorization(
+            "CentralBranchCertificate");
+        using var provider = services.BuildServiceProvider();
+
+        var policy = Assert.IsType<AuthorizationPolicy>(
+            await provider
+                .GetRequiredService<IAuthorizationPolicyProvider>()
+                .GetPolicyAsync(
+                    CentralCloudIngestionAuthorizationDefaults.PolicyName));
+
+        Assert.Equal(["CentralBranchCertificate"], policy.AuthenticationSchemes);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("central branch")]
+    [InlineData("-central-branch")]
+    public void Noncanonical_explicit_scheme_is_rejected(string scheme)
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            services.AddCentralCloudIngestionAuthorization(scheme));
+
+        Assert.Equal("authenticationScheme", exception.ParamName);
+        Assert.Empty(services);
+    }
+
+    [Fact]
     public void Repeated_registration_does_not_duplicate_the_custom_handler()
     {
         using var provider = Provider(registerTwice: true);

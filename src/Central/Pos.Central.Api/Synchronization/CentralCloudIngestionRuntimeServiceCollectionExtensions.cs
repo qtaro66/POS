@@ -12,14 +12,28 @@ public static class CentralCloudIngestionRuntimeServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        var section = configuration.GetSection(
+            CentralCloudIngestionOptions.SectionName);
         services
             .AddOptions<CentralCloudIngestionOptions>()
-            .Bind(configuration.GetSection(CentralCloudIngestionOptions.SectionName))
+            .Bind(section)
             .ValidateOnStart();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<CentralCloudIngestionOptions>,
                 CentralCloudIngestionOptionsValidator>());
+
+        var enabled = section.GetValue<bool>(
+            nameof(CentralCloudIngestionOptions.Enabled));
+        var authenticationScheme = section.GetValue<string>(
+            nameof(CentralCloudIngestionOptions.AuthenticationScheme));
+        if (enabled &&
+            CentralCloudIngestionOptionsValidator
+                .IsCanonicalAuthenticationScheme(authenticationScheme))
+        {
+            services.AddCentralCloudIngestionAuthorization(authenticationScheme!);
+        }
+
         return services;
     }
 }

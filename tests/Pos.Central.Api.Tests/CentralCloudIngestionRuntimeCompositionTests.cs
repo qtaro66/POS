@@ -27,7 +27,7 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
     }
 
     [Fact]
-    public void Enabled_configuration_binds_canonical_scheme_without_activation()
+    public async Task Enabled_configuration_binds_scheme_to_authorization_policy()
     {
         using var provider = Provider(new Dictionary<string, string?>
         {
@@ -43,7 +43,12 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
 
         Assert.True(options.Enabled);
         Assert.Equal("CentralBranchCertificate", options.AuthenticationScheme);
-        Assert.Null(provider.GetService<IAuthorizationPolicyProvider>());
+        var policy = Assert.IsType<AuthorizationPolicy>(
+            await provider
+                .GetRequiredService<IAuthorizationPolicyProvider>()
+                .GetPolicyAsync(
+                    CentralCloudIngestionAuthorizationDefaults.PolicyName));
+        Assert.Equal(["CentralBranchCertificate"], policy.AuthenticationSchemes);
     }
 
     [Fact]
@@ -63,12 +68,18 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
             failure => failure.Contains(
                 "canonical ASCII identifier",
                 StringComparison.Ordinal));
+        Assert.Null(provider.GetService<IAuthorizationPolicyProvider>());
     }
 
     [Fact]
-    public void Repeated_registration_does_not_duplicate_validator()
+    public async Task Repeated_registration_does_not_duplicate_runtime_services()
     {
-        var configuration = Configuration(new Dictionary<string, string?>());
+        var configuration = Configuration(new Dictionary<string, string?>
+        {
+            ["CentralCloudIngestion:Enabled"] = "true",
+            ["CentralCloudIngestion:AuthenticationScheme"] =
+                "CentralBranchCertificate"
+        });
         var services = new ServiceCollection();
         services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
         services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
@@ -77,6 +88,15 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
         Assert.Single(
             provider.GetServices<IValidateOptions<CentralCloudIngestionOptions>>(),
             validator => validator is CentralCloudIngestionOptionsValidator);
+        Assert.Single(
+            provider.GetServices<IAuthorizationHandler>(),
+            handler => handler is CentralCloudIngestionAuthorizationHandler);
+        var policy = Assert.IsType<AuthorizationPolicy>(
+            await provider
+                .GetRequiredService<IAuthorizationPolicyProvider>()
+                .GetPolicyAsync(
+                    CentralCloudIngestionAuthorizationDefaults.PolicyName));
+        Assert.Equal(["CentralBranchCertificate"], policy.AuthenticationSchemes);
     }
 
     [Fact]
