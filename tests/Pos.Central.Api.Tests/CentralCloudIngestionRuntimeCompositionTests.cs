@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,12 +30,14 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
     [Fact]
     public async Task Enabled_configuration_binds_scheme_to_authorization_policy()
     {
-        using var provider = Provider(new Dictionary<string, string?>
-        {
-            ["CentralCloudIngestion:Enabled"] = "true",
-            ["CentralCloudIngestion:AuthenticationScheme"] =
-                "CentralBranchCertificate"
-        });
+        using var provider = Provider(
+            new Dictionary<string, string?>
+            {
+                ["CentralCloudIngestion:Enabled"] = "true",
+                ["CentralCloudIngestion:AuthenticationScheme"] =
+                    "CentralBranchCertificate"
+            },
+            registeredScheme: "CentralBranchCertificate");
 
         provider.GetRequiredService<IStartupValidator>().Validate();
         var options = provider
@@ -49,6 +52,26 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
                 .GetPolicyAsync(
                     CentralCloudIngestionAuthorizationDefaults.PolicyName));
         Assert.Equal(["CentralBranchCertificate"], policy.AuthenticationSchemes);
+    }
+
+    [Fact]
+    public void Enabled_configuration_fails_startup_when_scheme_is_not_registered()
+    {
+        using var provider = Provider(new Dictionary<string, string?>
+        {
+            ["CentralCloudIngestion:Enabled"] = "true",
+            ["CentralCloudIngestion:AuthenticationScheme"] =
+                "CentralBranchCertificate"
+        });
+
+        var exception = Assert.Throws<OptionsValidationException>(() =>
+            provider.GetRequiredService<IStartupValidator>().Validate());
+
+        Assert.Contains(
+            exception.Failures,
+            failure => failure.Contains(
+                "registered authentication handler",
+                StringComparison.Ordinal));
     }
 
     [Fact]
@@ -81,6 +104,12 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
                 "CentralBranchCertificate"
         });
         var services = new ServiceCollection();
+        services
+            .AddAuthentication()
+            .AddPolicyScheme(
+                "CentralBranchCertificate",
+                displayName: null,
+                _ => { });
         services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
         services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
         using var provider = services.BuildServiceProvider();
@@ -88,6 +117,10 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
         Assert.Single(
             provider.GetServices<IValidateOptions<CentralCloudIngestionOptions>>(),
             validator => validator is CentralCloudIngestionOptionsValidator);
+        Assert.Single(
+            provider.GetServices<IValidateOptions<CentralCloudIngestionOptions>>(),
+            validator =>
+                validator is CentralCloudIngestionAuthenticationSchemeValidator);
         Assert.Single(
             provider.GetServices<IAuthorizationHandler>(),
             handler => handler is CentralCloudIngestionAuthorizationHandler);
@@ -126,9 +159,20 @@ public sealed class CentralCloudIngestionRuntimeCompositionTests
     }
 
     private static ServiceProvider Provider(
-        IReadOnlyDictionary<string, string?> values)
+        IReadOnlyDictionary<string, string?> values,
+        string? registeredScheme = null)
     {
         var services = new ServiceCollection();
+        if (registeredScheme is not null)
+        {
+            services
+                .AddAuthentication()
+                .AddPolicyScheme(
+                    registeredScheme,
+                    displayName: null,
+                    _ => { });
+        }
+
         services.AddCentralCloudIngestionRuntimeConfiguration(
             Configuration(values));
         return services.BuildServiceProvider();
