@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\BuildingBlocks\Pos.Application\Pos.Application.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\Pos.Contracts\Pos.Contracts.csproj" />
+    <ProjectReference Include="..\Pos.Central.Persistence\Pos.Central.Persistence.csproj" />
   </ItemGroup>
 
 </Project>
