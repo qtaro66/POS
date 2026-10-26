@@ -22,6 +22,10 @@ public static class CentralCloudIngestionRuntimeServiceCollectionExtensions
             ServiceDescriptor.Singleton<
                 IValidateOptions<CentralCloudIngestionOptions>,
                 CentralCloudIngestionOptionsValidator>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<CentralCloudIngestionOptions>,
+                CentralCloudIngestionAuthenticationSchemeValidator>());
 
         var enabled = section.GetValue<bool>(
             nameof(CentralCloudIngestionOptions.Enabled));
