@@ -50,20 +50,29 @@ public sealed class BranchCloudEventIngestionPrincipalHttpHandlerTests
     }
 
     [Fact]
-    public async Task Branch_mismatch_is_rejected_before_persistence()
+    public async Task Branch_mismatch_returns_403_without_persistence()
     {
         var store = new RecordingStore();
 
-        var exception = await Assert.ThrowsAsync<
-            BranchCloudEventBranchMismatchException>(() =>
-            BranchCloudEventIngestionPrincipalHttpHandler.HandleAsync(
-                Principal("BRANCH-01", authenticated: true),
-                Request("BRANCH-02"),
-                new BranchCloudEventIngestionService(store)));
+        var result = await BranchCloudEventIngestionPrincipalHttpHandler.HandleAsync(
+            Principal("BRANCH-01", authenticated: true),
+            Request("BRANCH-02"),
+            new BranchCloudEventIngestionService(store));
 
-        Assert.Equal("BRANCH-01", exception.AuthenticatedBranchId);
-        Assert.Equal("BRANCH-02", exception.RequestedBranchId);
+        Assert.IsType<ForbidHttpResult>(result.Result);
         Assert.Equal(0, store.CallCount);
+    }
+
+    [Fact]
+    public async Task Persistence_identity_conflict_returns_409()
+    {
+        var result = await BranchCloudEventIngestionPrincipalHttpHandler.HandleAsync(
+            Principal("BRANCH-01", authenticated: true),
+            Request("BRANCH-01"),
+            new BranchCloudEventIngestionService(new ConflictingStore()));
+
+        var conflict = Assert.IsType<StatusCodeHttpResult>(result.Result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
     }
 
     [Fact]
@@ -134,5 +143,17 @@ public sealed class BranchCloudEventIngestionPrincipalHttpHandlerTests
                 envelope.BranchId,
                 envelope.BranchSequence));
         }
+    }
+
+    private sealed class ConflictingStore : IBranchCloudEventIngestionStore
+    {
+        public Task<BranchCloudEventPersistenceResult> PersistAsync(
+            BranchCloudOutboxEventEnvelope envelope,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<BranchCloudEventPersistenceResult>(
+                new BranchCloudEventUniquenessConflictException(
+                    envelope.EventId,
+                    envelope.BranchId,
+                    envelope.BranchSequence));
     }
 }
