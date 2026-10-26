@@ -81,6 +81,9 @@ public sealed class PostgresCentralMigrationCatalogTests
             migrations.Select(migration => migration.Version).Order(),
             migrations.Select(migration => migration.Version));
         Assert.Equal(
+            Enumerable.Range(1, migrations.Count),
+            migrations.Select(migration => migration.Version));
+        Assert.Equal(
             migrations.Count,
             migrations.Select(migration => migration.Version).Distinct().Count());
         Assert.Equal(
