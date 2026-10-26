@@ -11,6 +11,7 @@
   </Folder>
   <Folder Name="/src/Central/">
     <Project Path="src/Central/Pos.Central.Api/Pos.Central.Api.csproj" />
+    <Project Path="src/Central/Pos.Central.Persistence/Pos.Central.Persistence.csproj" />
   </Folder>
   <Folder Name="/src/Platform/">
     <Project Path="src/Platform/Pos.Platform.Linux/Pos.Platform.Linux.csproj" />
@@ -27,6 +28,7 @@
     <Project Path="tests/Pos.Branch.Api.Tests/Pos.Branch.Api.Tests.csproj" />
     <Project Path="tests/Pos.Branch.Persistence.Tests/Pos.Branch.Persistence.Tests.csproj" />
     <Project Path="tests/Pos.Central.Api.Tests/Pos.Central.Api.Tests.csproj" />
+    <Project Path="tests/Pos.Central.Persistence.Tests/Pos.Central.Persistence.Tests.csproj" />
     <Project Path="tests/Pos.Domain.Tests/Pos.Domain.Tests.csproj" />
     <Project Path="tests/Pos.Printing.Tests/Pos.Printing.Tests.csproj" />
   </Folder>
