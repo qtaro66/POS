@@ -15,6 +15,8 @@ public static class CentralCloudIngestionRuntimeServiceCollectionExtensions
         services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
         services.AddCentralPostgresMigrationsIfEnabled(configuration);
         services.AddCentralPostgresCloudIngestionIfEnabled(configuration);
+        services.AddCentralCloudIngestionReadinessHealthCheckIfEnabled(
+            configuration);
         return services;
     }
 

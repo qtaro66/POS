@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Pos.Application.Synchronization;
@@ -27,6 +28,8 @@ public sealed class CentralCloudIngestionRuntimeActivationTests
 
         Assert.Null(provider.GetService<PostgresCentralConnectionFactory>());
         Assert.Null(provider.GetService<IBranchCloudEventIngestionStore>());
+        Assert.Null(provider.GetService<
+            CentralCloudIngestionReadinessHealthCheck>());
         Assert.DoesNotContain(
             provider.GetServices<IHostedService>(),
             service => service is CentralPostgresMigrationStartupService);
@@ -53,6 +56,12 @@ public sealed class CentralCloudIngestionRuntimeActivationTests
             provider.GetRequiredService<IBranchCloudEventIngestionStore>());
         Assert.NotNull(provider.GetRequiredService<
             BranchCloudEventIngestionService>());
+        Assert.Contains(
+            provider.GetRequiredService<
+                IOptions<HealthCheckServiceOptions>>()
+                .Value.Registrations,
+            registration => registration.Name ==
+                CentralCloudIngestionReadinessHealthCheck.Name);
         Assert.IsType<CentralPostgresMigrationStartupService>(
             Assert.Single(
                 provider.GetServices<IHostedService>(),
@@ -80,6 +89,12 @@ public sealed class CentralCloudIngestionRuntimeActivationTests
             provider.GetServices<IBranchCloudEventIngestionStore>());
         Assert.Single(
             provider.GetServices<BranchCloudEventIngestionService>());
+        Assert.Single(
+            provider.GetRequiredService<
+                IOptions<HealthCheckServiceOptions>>()
+                .Value.Registrations,
+            registration => registration.Name ==
+                CentralCloudIngestionReadinessHealthCheck.Name);
         Assert.Single(
             provider.GetServices<IHostedService>(),
             service => service is CentralPostgresMigrationStartupService);
