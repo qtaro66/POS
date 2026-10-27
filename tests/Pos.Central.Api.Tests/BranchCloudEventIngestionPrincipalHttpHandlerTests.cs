@@ -76,6 +76,20 @@ public sealed class BranchCloudEventIngestionPrincipalHttpHandlerTests
     }
 
     [Fact]
+    public async Task Persistence_unavailable_returns_bodyless_503()
+    {
+        var result = await BranchCloudEventIngestionPrincipalHttpHandler.HandleAsync(
+            Principal("BRANCH-01", authenticated: true),
+            Request("BRANCH-01"),
+            new BranchCloudEventIngestionService(new UnavailableStore()));
+
+        var unavailable = Assert.IsType<StatusCodeHttpResult>(result.Result);
+        Assert.Equal(
+            StatusCodes.Status503ServiceUnavailable,
+            unavailable.StatusCode);
+    }
+
+    [Fact]
     public async Task Cancellation_is_forwarded_to_persistence()
     {
         using var cancellation = new CancellationTokenSource();
@@ -155,5 +169,15 @@ public sealed class BranchCloudEventIngestionPrincipalHttpHandlerTests
                     envelope.EventId,
                     envelope.BranchId,
                     envelope.BranchSequence));
+    }
+
+    private sealed class UnavailableStore : IBranchCloudEventIngestionStore
+    {
+        public Task<BranchCloudEventPersistenceResult> PersistAsync(
+            BranchCloudOutboxEventEnvelope envelope,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<BranchCloudEventPersistenceResult>(
+                new BranchCloudEventPersistenceUnavailableException(
+                    new IOException("Synthetic persistence failure.")));
     }
 }
