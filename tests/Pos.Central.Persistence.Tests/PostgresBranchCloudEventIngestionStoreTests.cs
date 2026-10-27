@@ -1,3 +1,4 @@
+using Npgsql;
 using Pos.Application.Synchronization;
 using Pos.Central.Persistence;
 using Pos.Domain.TableSessions;
@@ -160,6 +161,64 @@ public sealed class PostgresBranchCloudEventIngestionStoreTests
             missingMatchesStore.PersistAsync(Envelope()));
     }
 
+    [Fact]
+    public async Task Transient_npgsql_failure_maps_to_unavailable_boundary()
+    {
+        var cause = new NpgsqlException(
+            "Synthetic transient failure.",
+            new TimeoutException());
+        var store = new PostgresBranchCloudEventIngestionStore(
+            new ThrowingFactory(cause));
+
+        var exception = await Assert.ThrowsAsync<
+            BranchCloudEventPersistenceUnavailableException>(() =>
+                store.PersistAsync(Envelope()));
+
+        Assert.Same(cause, exception.InnerException);
+    }
+
+    [Fact]
+    public async Task Direct_timeout_maps_to_unavailable_boundary()
+    {
+        var cause = new TimeoutException("Synthetic timeout.");
+        var store = new PostgresBranchCloudEventIngestionStore(
+            new ThrowingFactory(cause));
+
+        var exception = await Assert.ThrowsAsync<
+            BranchCloudEventPersistenceUnavailableException>(() =>
+                store.PersistAsync(Envelope()));
+
+        Assert.Same(cause, exception.InnerException);
+    }
+
+    [Fact]
+    public async Task Non_transient_npgsql_failure_is_not_misclassified()
+    {
+        var cause = new NpgsqlException("Synthetic non-transient failure.");
+        var store = new PostgresBranchCloudEventIngestionStore(
+            new ThrowingFactory(cause));
+
+        var exception = await Assert.ThrowsAsync<NpgsqlException>(() =>
+            store.PersistAsync(Envelope()));
+
+        Assert.Same(cause, exception);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_is_not_misclassified()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var cause = new OperationCanceledException(cancellation.Token);
+        var store = new PostgresBranchCloudEventIngestionStore(
+            new ThrowingFactory(cause));
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.PersistAsync(Envelope(), cancellation.Token));
+
+        Assert.Equal(cancellation.Token, exception.CancellationToken);
+    }
+
     private static PostgresBranchCloudEventIngestionStore Store(
         RecordingSession session) =>
         new(new RecordingFactory(session));
@@ -195,6 +254,16 @@ public sealed class PostgresBranchCloudEventIngestionStoreTests
             CancellationToken = cancellationToken;
             return ValueTask.FromResult(session!);
         }
+    }
+
+    private sealed class ThrowingFactory(Exception exception) :
+        IPostgresBranchCloudEventIngestionSessionFactory
+    {
+        public ValueTask<IPostgresBranchCloudEventIngestionSession>
+            OpenTransactionAsync(
+                CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<
+                IPostgresBranchCloudEventIngestionSession>(exception);
     }
 
     private sealed class RecordingSession(

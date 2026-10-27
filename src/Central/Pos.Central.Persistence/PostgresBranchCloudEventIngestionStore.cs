@@ -1,3 +1,4 @@
+using Npgsql;
 using Pos.Application.Synchronization;
 using Pos.Domain.TableSessions;
 
@@ -113,6 +114,31 @@ public sealed class PostgresBranchCloudEventIngestionStore :
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
+        try
+        {
+            return await PersistCoreAsync(envelope, cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (NpgsqlException exception) when (exception.IsTransient)
+        {
+            throw new BranchCloudEventPersistenceUnavailableException(
+                exception);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new BranchCloudEventPersistenceUnavailableException(
+                exception);
+        }
+    }
+
+    private async Task<BranchCloudEventPersistenceResult> PersistCoreAsync(
+        BranchCloudOutboxEventEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
         var expected = PostgresBranchCloudEventRecord.FromEnvelope(envelope);
         await using var session = await _sessionFactory
             .OpenTransactionAsync(cancellationToken)
