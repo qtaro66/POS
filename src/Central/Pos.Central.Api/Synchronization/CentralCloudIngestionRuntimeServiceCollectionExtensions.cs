@@ -5,6 +5,19 @@ namespace Pos.Central.Api.Synchronization;
 
 public static class CentralCloudIngestionRuntimeServiceCollectionExtensions
 {
+    public static IServiceCollection AddCentralCloudIngestionRuntime(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddCentralCloudIngestionRuntimeConfiguration(configuration);
+        services.AddCentralPostgresMigrationsIfEnabled(configuration);
+        services.AddCentralPostgresCloudIngestionIfEnabled(configuration);
+        return services;
+    }
+
     public static IServiceCollection AddCentralCloudIngestionRuntimeConfiguration(
         this IServiceCollection services,
         IConfiguration configuration)
