@@ -18,6 +18,10 @@ public sealed class PostgresBranchCloudEventIngestionCompositionTests
 
         var connectionFactory = provider.GetRequiredService<
             PostgresCentralConnectionFactory>();
+        var concreteReadinessProbe = provider.GetRequiredService<
+            NpgsqlPostgresCloudIngestionReadinessProbe>();
+        var readinessProbe = provider.GetRequiredService<
+            IPostgresCloudIngestionReadinessProbe>();
         var concreteSessionFactory = provider.GetRequiredService<
             NpgsqlPostgresBranchCloudEventIngestionSessionFactory>();
         var sessionFactory = provider.GetRequiredService<
@@ -32,6 +36,7 @@ public sealed class PostgresBranchCloudEventIngestionCompositionTests
         Assert.Equal(
             PostgresCentralConnectionFactory.DefaultApplicationName,
             connectionFactory.ApplicationName);
+        Assert.Same(concreteReadinessProbe, readinessProbe);
         Assert.Same(concreteSessionFactory, sessionFactory);
         Assert.Same(concreteStore, store);
         Assert.NotNull(service);
@@ -47,6 +52,10 @@ public sealed class PostgresBranchCloudEventIngestionCompositionTests
 
         Assert.Single(
             provider.GetServices<PostgresCentralConnectionFactory>());
+        Assert.Single(
+            provider.GetServices<NpgsqlPostgresCloudIngestionReadinessProbe>());
+        Assert.Single(
+            provider.GetServices<IPostgresCloudIngestionReadinessProbe>());
         Assert.Single(
             provider.GetServices<
                 NpgsqlPostgresBranchCloudEventIngestionSessionFactory>());
@@ -87,6 +96,8 @@ public sealed class PostgresBranchCloudEventIngestionCompositionTests
             provider.GetServices<PostgresCentralConnectionFactory>());
         Assert.NotNull(provider.GetRequiredService<
             PostgresCentralMigrationExecutor>());
+        Assert.NotNull(provider.GetRequiredService<
+            IPostgresCloudIngestionReadinessProbe>());
         Assert.NotNull(provider.GetRequiredService<
             BranchCloudEventIngestionService>());
     }

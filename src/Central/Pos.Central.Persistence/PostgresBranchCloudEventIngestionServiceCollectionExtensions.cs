@@ -21,6 +21,11 @@ public static class PostgresBranchCloudEventIngestionServiceCollectionExtensions
         services.TryAddSingleton(_ =>
             new PostgresCentralConnectionFactory(connectionString));
         services.TryAddSingleton<
+            NpgsqlPostgresCloudIngestionReadinessProbe>();
+        services.TryAddSingleton<IPostgresCloudIngestionReadinessProbe>(
+            provider => provider.GetRequiredService<
+                NpgsqlPostgresCloudIngestionReadinessProbe>());
+        services.TryAddSingleton<
             NpgsqlPostgresBranchCloudEventIngestionSessionFactory>();
         services.TryAddSingleton<
             IPostgresBranchCloudEventIngestionSessionFactory>(

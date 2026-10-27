@@ -27,6 +27,10 @@ public sealed class CentralPostgresCloudIngestionCompositionTests
         Assert.DoesNotContain(
             services,
             descriptor => descriptor.ServiceType ==
+                typeof(IPostgresCloudIngestionReadinessProbe));
+        Assert.DoesNotContain(
+            services,
+            descriptor => descriptor.ServiceType ==
                 typeof(IBranchCloudEventIngestionStore));
         Assert.DoesNotContain(
             services,
@@ -46,6 +50,9 @@ public sealed class CentralPostgresCloudIngestionCompositionTests
 
         Assert.NotNull(provider.GetRequiredService<
             PostgresCentralConnectionFactory>());
+        Assert.IsType<NpgsqlPostgresCloudIngestionReadinessProbe>(
+            provider.GetRequiredService<
+                IPostgresCloudIngestionReadinessProbe>());
         Assert.NotNull(provider.GetRequiredService<
             IPostgresBranchCloudEventIngestionSessionFactory>());
         Assert.IsType<PostgresBranchCloudEventIngestionStore>(
@@ -70,6 +77,8 @@ public sealed class CentralPostgresCloudIngestionCompositionTests
         Assert.NotNull(provider.GetRequiredService<
             PostgresCentralMigrationExecutor>());
         Assert.NotNull(provider.GetRequiredService<
+            IPostgresCloudIngestionReadinessProbe>());
+        Assert.NotNull(provider.GetRequiredService<
             BranchCloudEventIngestionService>());
     }
 
@@ -88,6 +97,10 @@ public sealed class CentralPostgresCloudIngestionCompositionTests
             services,
             descriptor => descriptor.ServiceType ==
                 typeof(IBranchCloudEventIngestionStore));
+        Assert.Single(
+            services,
+            descriptor => descriptor.ServiceType ==
+                typeof(IPostgresCloudIngestionReadinessProbe));
         Assert.Single(
             services,
             descriptor => descriptor.ServiceType ==
