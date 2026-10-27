@@ -74,6 +74,17 @@ public sealed class BranchCloudEventUniquenessConflictException : Exception
     public long BranchSequence { get; }
 }
 
+public sealed class BranchCloudEventPersistenceUnavailableException : Exception
+{
+    public BranchCloudEventPersistenceUnavailableException(Exception innerException)
+        : base(
+            "The Cloud event persistence service is unavailable.",
+            innerException ?? throw new ArgumentNullException(
+                nameof(innerException)))
+    {
+    }
+}
+
 public interface IBranchCloudEventIngestionStore
 {
     /// <summary>

@@ -45,5 +45,10 @@ public static class BranchCloudEventIngestionPrincipalHttpHandler
         {
             return TypedResults.StatusCode(StatusCodes.Status409Conflict);
         }
+        catch (BranchCloudEventPersistenceUnavailableException)
+        {
+            return TypedResults.StatusCode(
+                StatusCodes.Status503ServiceUnavailable);
+        }
     }
 }
