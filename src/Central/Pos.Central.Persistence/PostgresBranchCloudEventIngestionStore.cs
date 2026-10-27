@@ -26,8 +26,50 @@ public sealed record PostgresBranchCloudEventRecord(
             envelope.TableSessionId.Value,
             envelope.Action,
             envelope.TableVersion,
-            envelope.OccurredAt);
+            NormalizeTimestamp(envelope.OccurredAt));
     }
+
+    public static PostgresBranchCloudEventRecord FromStorage(
+        string eventId,
+        string branchId,
+        long branchSequence,
+        string requestId,
+        string tableSessionId,
+        string action,
+        long tableVersion,
+        DateTimeOffset occurredAt)
+    {
+        if (!Enum.TryParse<TableSessionAction>(
+                action,
+                ignoreCase: false,
+                out var parsedAction) ||
+            !Enum.IsDefined(parsedAction))
+        {
+            throw new InvalidOperationException(
+                $"PostgreSQL Cloud event action '{action}' is not supported.");
+        }
+
+        if (occurredAt.Offset != TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(
+                "PostgreSQL Cloud event occurred_at is not UTC.");
+        }
+
+        return new PostgresBranchCloudEventRecord(
+            eventId,
+            branchId,
+            branchSequence,
+            requestId,
+            tableSessionId,
+            parsedAction,
+            tableVersion,
+            occurredAt);
+    }
+
+    private static DateTimeOffset NormalizeTimestamp(DateTimeOffset value) =>
+        new(
+            value.Ticks - value.Ticks % TimeSpan.TicksPerMicrosecond,
+            TimeSpan.Zero);
 }
 
 public interface IPostgresBranchCloudEventIngestionSessionFactory
