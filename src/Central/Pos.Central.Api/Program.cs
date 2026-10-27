@@ -23,6 +23,8 @@ app.MapGet("/health", () => Results.Ok(new
     status = "Healthy",
     utc = DateTimeOffset.UtcNow,
 }));
+app.MapCentralCloudIngestionReadinessEndpointIfEnabled(
+    builder.Configuration);
 app.MapBranchCloudEventIngestionEndpointIfEnabled(builder.Configuration);
 
 app.Run();
