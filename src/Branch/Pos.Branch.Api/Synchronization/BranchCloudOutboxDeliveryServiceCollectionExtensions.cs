@@ -38,6 +38,9 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
             return services;
         }
 
+        services.TryAddSingleton<
+            IBranchCloudOutboxRetryDelayPolicy,
+            ExponentialBranchCloudOutboxRetryDelayPolicy>();
         services.TryAddSingleton<IBranchCloudOutboxClaimStore>(provider =>
             new SqliteBranchCloudOutboxClaimStore(DatabasePath(provider)));
         services.TryAddSingleton<IBranchCloudOutboxLeaseRenewalStore>(provider =>
@@ -58,6 +61,11 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
                     provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>(),
                     provider.GetRequiredService<IBranchCloudDeliveryConfirmationStore>(),
                     provider.GetRequiredService<IBranchCloudOutboxDeliveryFailureStore>(),
+                    provider.GetRequiredService<IBranchCloudOutboxRetryDelayPolicy>(),
+                    provider
+                        .GetRequiredService<IOptions<BranchCloudOutboxDeliveryOptions>>()
+                        .Value
+                        .MaximumRetryDelay,
                     provider.GetRequiredService<TimeProvider>()));
         }
         return services;

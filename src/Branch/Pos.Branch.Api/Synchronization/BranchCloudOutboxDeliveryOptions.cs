@@ -26,6 +26,8 @@ public sealed class BranchCloudOutboxDeliveryOptions
 
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(5);
 
+    public TimeSpan MaximumRetryDelay { get; init; } = TimeSpan.FromMinutes(5);
+
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
 }
 
@@ -63,6 +65,10 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidator :
         ValidatePositive(options.LeaseDuration, nameof(options.LeaseDuration), errors);
         ValidatePositive(options.IdleDelay, nameof(options.IdleDelay), errors);
         ValidatePositive(options.RetryDelay, nameof(options.RetryDelay), errors);
+        ValidateRetryDelayRange(
+            options.RetryDelay,
+            options.MaximumRetryDelay,
+            errors);
         ValidateRequestTimeout(options.RequestTimeout, errors);
         ValidateDatabase(options.DatabasePath, errors);
 
@@ -178,6 +184,21 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidator :
         {
             errors.Add(
                 "RequestTimeout exceeds the maximum supported HTTP client timeout.");
+        }
+    }
+
+    private static void ValidateRetryDelayRange(
+        TimeSpan initialDelay,
+        TimeSpan maximumDelay,
+        ICollection<string> errors)
+    {
+        ValidatePositive(
+            maximumDelay,
+            nameof(BranchCloudOutboxDeliveryOptions.MaximumRetryDelay),
+            errors);
+        if (maximumDelay < initialDelay)
+        {
+            errors.Add("MaximumRetryDelay must not be shorter than RetryDelay.");
         }
     }
 }

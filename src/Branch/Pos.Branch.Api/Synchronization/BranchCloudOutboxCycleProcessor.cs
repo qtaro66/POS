@@ -10,6 +10,8 @@ public sealed class BranchCloudOutboxCycleProcessor :
     private readonly IBranchCloudOutboxDeliveryClient _deliveryClient;
     private readonly IBranchCloudDeliveryConfirmationStore _confirmationStore;
     private readonly IBranchCloudOutboxDeliveryFailureStore _failureStore;
+    private readonly IBranchCloudOutboxRetryDelayPolicy _retryDelayPolicy;
+    private readonly TimeSpan _maximumRetryDelay;
     private readonly TimeProvider _timeProvider;
     private readonly Func<string> _failureIdFactory;
     private readonly Func<TimeSpan, CancellationToken, Task> _heartbeatDelay;
@@ -20,6 +22,8 @@ public sealed class BranchCloudOutboxCycleProcessor :
         IBranchCloudOutboxDeliveryClient deliveryClient,
         IBranchCloudDeliveryConfirmationStore confirmationStore,
         IBranchCloudOutboxDeliveryFailureStore failureStore,
+        IBranchCloudOutboxRetryDelayPolicy retryDelayPolicy,
+        TimeSpan maximumRetryDelay,
         TimeProvider timeProvider,
         Func<string>? failureIdFactory = null,
         Func<TimeSpan, CancellationToken, Task>? heartbeatDelay = null)
@@ -30,6 +34,11 @@ public sealed class BranchCloudOutboxCycleProcessor :
         _confirmationStore = confirmationStore
             ?? throw new ArgumentNullException(nameof(confirmationStore));
         _failureStore = failureStore ?? throw new ArgumentNullException(nameof(failureStore));
+        _retryDelayPolicy = retryDelayPolicy
+            ?? throw new ArgumentNullException(nameof(retryDelayPolicy));
+        _maximumRetryDelay = maximumRetryDelay > TimeSpan.Zero
+            ? maximumRetryDelay
+            : throw new ArgumentOutOfRangeException(nameof(maximumRetryDelay));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _failureIdFactory = failureIdFactory ?? (() => $"CSF-{Guid.NewGuid():N}");
         _heartbeatDelay = heartbeatDelay ??
@@ -52,6 +61,13 @@ public sealed class BranchCloudOutboxCycleProcessor :
         if (retryDelay <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(retryDelay));
+        }
+
+        if (retryDelay > _maximumRetryDelay)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(retryDelay),
+                "The initial retry delay must not exceed the maximum retry delay.");
         }
 
         var lease = await _claimStore.ClaimNextAsync(
@@ -149,12 +165,16 @@ public sealed class BranchCloudOutboxCycleProcessor :
         CancellationToken cancellationToken)
     {
         var failedAt = _timeProvider.GetUtcNow();
+        var scheduledDelay = _retryDelayPolicy.Calculate(
+            retryDelay,
+            _maximumRetryDelay,
+            lease.RetryCount);
         await _failureStore.RecordAsync(
             new BranchCloudOutboxDeliveryFailure(
                 RequireFailureId(_failureIdFactory()),
                 lease,
                 failedAt,
-                failedAt.Add(retryDelay),
+                failedAt.Add(scheduledDelay),
                 errorCode),
             cancellationToken);
     }

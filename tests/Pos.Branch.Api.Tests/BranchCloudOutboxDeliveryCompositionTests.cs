@@ -75,6 +75,8 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 SqliteBranchCloudDeliveryConfirmationStore>(provider);
             AssertSingleton<IBranchCloudOutboxCycleProcessor,
                 BranchCloudOutboxCycleProcessor>(provider);
+            AssertSingleton<IBranchCloudOutboxRetryDelayPolicy,
+                ExponentialBranchCloudOutboxRetryDelayPolicy>(provider);
             Assert.Contains(
                 provider.GetServices<IHostedService>(),
                 service => service is BranchCloudOutboxPollingService);

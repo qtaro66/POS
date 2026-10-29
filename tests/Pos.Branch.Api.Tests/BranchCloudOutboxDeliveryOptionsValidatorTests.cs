@@ -208,6 +208,26 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
     }
 
     [Theory]
+    [InlineData(0, "MaximumRetryDelay must be greater than zero")]
+    [InlineData(-1, "MaximumRetryDelay must be greater than zero")]
+    [InlineData(4, "must not be shorter than RetryDelay")]
+    public void Enabled_configuration_rejects_invalid_maximum_retry_delay(
+        int maximumRetryDelaySeconds,
+        string expected)
+    {
+        var result = new BranchCloudOutboxDeliveryOptionsValidator(ReadyProbe())
+            .Validate(
+                null,
+                Enabled(
+                    ExistingFile(),
+                    retryDelay: TimeSpan.FromSeconds(5),
+                    maximumRetryDelay: TimeSpan.FromSeconds(
+                        maximumRetryDelaySeconds)));
+
+        AssertFailure(result, expected);
+    }
+
+    [Theory]
     [InlineData("SchemaVersionMismatch", "schema version must be 18; actual version is 17")]
     [InlineData("CloudSyncOutboxMissing", "missing the cloud_sync_outbox table")]
     [InlineData("CloudSyncOutboxColumnsMissing", "required columns: lease_expires_at")]
@@ -266,6 +286,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
         TimeSpan? leaseDuration = null,
         TimeSpan? idleDelay = null,
         TimeSpan? retryDelay = null,
+        TimeSpan? maximumRetryDelay = null,
         TimeSpan? requestTimeout = null) =>
         new()
         {
@@ -278,6 +299,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
             LeaseDuration = leaseDuration ?? TimeSpan.FromSeconds(30),
             IdleDelay = idleDelay ?? TimeSpan.FromSeconds(1),
             RetryDelay = retryDelay ?? TimeSpan.FromSeconds(5),
+            MaximumRetryDelay = maximumRetryDelay ?? TimeSpan.FromMinutes(5),
             RequestTimeout = requestTimeout ?? TimeSpan.FromSeconds(30)
         };
 
