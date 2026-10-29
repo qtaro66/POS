@@ -123,15 +123,14 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         {
             await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
             using var provider = Provider(Enabled(databasePath));
-            provider.GetRequiredService<IStartupValidator>().Validate();
-
-            var exception = Assert.Throws<InvalidOperationException>(() =>
-                provider.GetRequiredService<IBranchCloudOutboxCycleProcessor>());
+            var exception = Assert.Throws<OptionsValidationException>(() =>
+                provider.GetRequiredService<IStartupValidator>().Validate());
 
             Assert.Contains(
-                nameof(IBranchCloudDeliveryAuthenticatedHttpHandlerFactory),
-                exception.Message,
-                StringComparison.Ordinal);
+                exception.Failures,
+                failure => failure.Contains(
+                    nameof(IBranchCloudDeliveryAuthenticatedHttpHandlerFactory),
+                    StringComparison.Ordinal));
         }
         finally
         {
@@ -179,6 +178,9 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 Enabled(databasePath),
                 services =>
                 {
+                    services.AddSingleton<
+                        IBranchCloudDeliveryAuthenticatedHttpHandlerFactory,
+                        TestAuthenticatedHandlerFactory>();
                     services.AddSingleton<IBranchCloudOutboxClaimStore>(custom);
                     services.AddSingleton<IBranchCloudOutboxLeaseRenewalStore>(custom);
                     services.AddSingleton<IBranchCloudOutboxDeliveryFailureStore>(custom);
