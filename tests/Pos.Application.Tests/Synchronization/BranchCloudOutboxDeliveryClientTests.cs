@@ -13,6 +13,7 @@ public sealed class BranchCloudOutboxDeliveryClientTests
             BranchCloudOutboxDeliveryDisposition.DurablyAcknowledged,
             result.Disposition);
         Assert.Null(result.ErrorCode);
+        Assert.Null(result.SuggestedRetryDelay);
         Assert.Equal("EVENT-01", result.AcknowledgedEventId);
         Assert.Equal(7, result.AcknowledgedBranchSequence);
     }
@@ -26,6 +27,17 @@ public sealed class BranchCloudOutboxDeliveryClientTests
             BranchCloudOutboxDeliveryDisposition.RetryableFailure,
             result.Disposition);
         Assert.Equal("CLOUD_TIMEOUT", result.ErrorCode);
+        Assert.Null(result.SuggestedRetryDelay);
+    }
+
+    [Fact]
+    public void Retryable_failure_preserves_positive_retry_delay_hint()
+    {
+        var result = BranchCloudOutboxDeliveryResult.Failed(
+            "CLOUD_BUSY",
+            TimeSpan.FromSeconds(45));
+
+        Assert.Equal(TimeSpan.FromSeconds(45), result.SuggestedRetryDelay);
     }
 
     [Fact]
@@ -39,6 +51,19 @@ public sealed class BranchCloudOutboxDeliveryClientTests
                 7));
 
         Assert.Equal("errorCode", exception.ParamName);
+    }
+
+    [Fact]
+    public void Durable_acknowledgment_rejects_retry_delay_hint()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new BranchCloudOutboxDeliveryResult(
+                BranchCloudOutboxDeliveryDisposition.DurablyAcknowledged,
+                acknowledgedEventId: "EVENT-01",
+                acknowledgedBranchSequence: 7,
+                suggestedRetryDelay: TimeSpan.FromSeconds(5)));
+
+        Assert.Equal("suggestedRetryDelay", exception.ParamName);
     }
 
     [Theory]
@@ -89,6 +114,19 @@ public sealed class BranchCloudOutboxDeliveryClientTests
                 7));
 
         Assert.Equal("acknowledgedEventId", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Retryable_failure_requires_positive_retry_delay_hint(int seconds)
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            BranchCloudOutboxDeliveryResult.Failed(
+                "CLOUD_BUSY",
+                TimeSpan.FromSeconds(seconds)));
+
+        Assert.Equal("suggestedRetryDelay", exception.ParamName);
     }
 
     [Fact]
