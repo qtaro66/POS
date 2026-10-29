@@ -21,7 +21,13 @@ public static class BranchCloudOutboxHttpDeliveryServiceCollectionExtensions
         }
 
         services
-            .AddHttpClient(HttpClientName)
+            .AddHttpClient(HttpClientName, (provider, client) =>
+            {
+                client.Timeout = provider
+                    .GetRequiredService<IOptions<BranchCloudOutboxDeliveryOptions>>()
+                    .Value
+                    .RequestTimeout;
+            })
             .ConfigurePrimaryHttpMessageHandler(provider =>
                 provider
                     .GetRequiredService<

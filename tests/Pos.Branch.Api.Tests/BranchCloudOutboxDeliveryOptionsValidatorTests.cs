@@ -166,28 +166,45 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
     }
 
     [Theory]
-    [InlineData(0, 1, 1, "LeaseDuration")]
-    [InlineData(-1, 1, 1, "LeaseDuration")]
-    [InlineData(1, 0, 1, "IdleDelay")]
-    [InlineData(1, -1, 1, "IdleDelay")]
-    [InlineData(1, 1, 0, "RetryDelay")]
-    [InlineData(1, 1, -1, "RetryDelay")]
+    [InlineData(0, 1, 1, 1, "LeaseDuration")]
+    [InlineData(-1, 1, 1, 1, "LeaseDuration")]
+    [InlineData(1, 0, 1, 1, "IdleDelay")]
+    [InlineData(1, -1, 1, 1, "IdleDelay")]
+    [InlineData(1, 1, 0, 1, "RetryDelay")]
+    [InlineData(1, 1, -1, 1, "RetryDelay")]
+    [InlineData(1, 1, 1, 0, "RequestTimeout")]
+    [InlineData(1, 1, 1, -1, "RequestTimeout")]
     public void Enabled_configuration_requires_positive_durations(
         int leaseSeconds,
         int idleSeconds,
         int retrySeconds,
+        int requestTimeoutSeconds,
         string expected)
     {
         var options = Enabled(
             ExistingFile(),
             leaseDuration: TimeSpan.FromSeconds(leaseSeconds),
             idleDelay: TimeSpan.FromSeconds(idleSeconds),
-            retryDelay: TimeSpan.FromSeconds(retrySeconds));
+            retryDelay: TimeSpan.FromSeconds(retrySeconds),
+            requestTimeout: TimeSpan.FromSeconds(requestTimeoutSeconds));
 
         var result = new BranchCloudOutboxDeliveryOptionsValidator(ReadyProbe())
             .Validate(null, options);
 
         AssertFailure(result, $"{expected} must be greater than zero");
+    }
+
+    [Fact]
+    public void Enabled_configuration_rejects_unsupported_request_timeout()
+    {
+        var result = new BranchCloudOutboxDeliveryOptionsValidator(ReadyProbe())
+            .Validate(
+                null,
+                Enabled(
+                    ExistingFile(),
+                    requestTimeout: TimeSpan.FromDays(30)));
+
+        AssertFailure(result, "maximum supported HTTP client timeout");
     }
 
     [Theory]
@@ -248,7 +265,8 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
         string deliveryPath = "/test/cloud-events",
         TimeSpan? leaseDuration = null,
         TimeSpan? idleDelay = null,
-        TimeSpan? retryDelay = null) =>
+        TimeSpan? retryDelay = null,
+        TimeSpan? requestTimeout = null) =>
         new()
         {
             Enabled = true,
@@ -259,7 +277,8 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
             DeliveryPath = deliveryPath,
             LeaseDuration = leaseDuration ?? TimeSpan.FromSeconds(30),
             IdleDelay = idleDelay ?? TimeSpan.FromSeconds(1),
-            RetryDelay = retryDelay ?? TimeSpan.FromSeconds(5)
+            RetryDelay = retryDelay ?? TimeSpan.FromSeconds(5),
+            RequestTimeout = requestTimeout ?? TimeSpan.FromSeconds(30)
         };
 
     private static RecordingProbe ReadyProbe() =>
