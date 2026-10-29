@@ -18,13 +18,16 @@ public sealed class HttpBranchCloudOutboxDeliveryClient :
 
     private readonly HttpClient _httpClient;
     private readonly Uri _deliveryEndpoint;
+    private readonly TimeProvider _timeProvider;
 
     public HttpBranchCloudOutboxDeliveryClient(
         HttpClient httpClient,
-        Uri deliveryEndpoint)
+        Uri deliveryEndpoint,
+        TimeProvider? timeProvider = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _deliveryEndpoint = RequireDeliveryEndpoint(deliveryEndpoint);
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
@@ -61,7 +64,8 @@ public sealed class HttpBranchCloudOutboxDeliveryClient :
             {
                 return BranchCloudOutboxDeliveryResult.Failed(
                     "HttpStatus" + ((int)response.StatusCode)
-                        .ToString(CultureInfo.InvariantCulture));
+                        .ToString(CultureInfo.InvariantCulture),
+                    ReadRetryAfter(response));
             }
 
             if (response.Content.Headers.ContentLength is >
@@ -157,6 +161,30 @@ public sealed class HttpBranchCloudOutboxDeliveryClient :
     private static bool IsJsonMediaType(string? value) =>
         string.Equals(value, "application/json", StringComparison.OrdinalIgnoreCase) ||
         value?.EndsWith("+json", StringComparison.OrdinalIgnoreCase) == true;
+
+    private TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    {
+        try
+        {
+            var retryAfter = response.Headers.RetryAfter;
+            if (retryAfter?.Delta is { } delta)
+            {
+                return delta > TimeSpan.Zero ? delta : null;
+            }
+
+            if (retryAfter?.Date is not { } retryAt)
+            {
+                return null;
+            }
+
+            var delay = retryAt - _timeProvider.GetUtcNow();
+            return delay > TimeSpan.Zero ? delay : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
 
     private static Uri RequireDeliveryEndpoint(Uri? value)
     {
