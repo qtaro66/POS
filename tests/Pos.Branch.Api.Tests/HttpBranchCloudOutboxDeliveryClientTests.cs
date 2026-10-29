@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -116,6 +117,66 @@ public sealed class HttpBranchCloudOutboxDeliveryClientTests
     }
 
     [Fact]
+    public async Task Non_json_acknowledgment_is_retryable()
+    {
+        var client = Client(new StubHandler((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("acknowledged")
+            })));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Equal(
+            BranchCloudOutboxDeliveryDisposition.RetryableFailure,
+            result.Disposition);
+        Assert.Equal("InvalidAcknowledgmentPayload", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Declared_oversized_acknowledgment_is_retryable()
+    {
+        var content = new ByteArrayContent(
+            new byte[
+                HttpBranchCloudOutboxDeliveryClient
+                    .MaxAcknowledgmentBodySize + 1]);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        var client = Client(new StubHandler((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = content
+            })));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Equal(
+            BranchCloudOutboxDeliveryDisposition.RetryableFailure,
+            result.Disposition);
+        Assert.Equal("AcknowledgmentTooLarge", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Chunked_oversized_acknowledgment_is_retryable()
+    {
+        var content = new UnknownLengthContent(
+            new byte[
+                HttpBranchCloudOutboxDeliveryClient
+                    .MaxAcknowledgmentBodySize + 1]);
+        var client = Client(new StubHandler((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = content
+            })));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Equal(
+            BranchCloudOutboxDeliveryDisposition.RetryableFailure,
+            result.Disposition);
+        Assert.Equal("AcknowledgmentTooLarge", result.ErrorCode);
+    }
+
+    [Fact]
     public async Task Transport_failure_is_retryable()
     {
         var client = Client(new StubHandler((_, _) =>
@@ -202,5 +263,27 @@ public sealed class HttpBranchCloudOutboxDeliveryClientTests
             HttpRequestMessage request,
             CancellationToken cancellationToken) =>
             _handler(request, cancellationToken);
+    }
+
+    private sealed class UnknownLengthContent : HttpContent
+    {
+        private readonly byte[] _content;
+
+        public UnknownLengthContent(byte[] content)
+        {
+            _content = content;
+            Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
+
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context) =>
+            stream.WriteAsync(_content).AsTask();
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 }
