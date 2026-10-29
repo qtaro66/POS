@@ -85,6 +85,30 @@ public sealed class BranchCloudOutboxCycleProcessorTests
         Assert.Null(stores.Confirmation);
     }
 
+    [Theory]
+    [InlineData(3, 40)]
+    [InlineData(10, 300)]
+    public async Task Persisted_retry_count_applies_bounded_backoff(
+        int retryCount,
+        int expectedDelaySeconds)
+    {
+        var stores = new RecordingStores { Lease = Lease(retryCount: retryCount) };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed("CLOUD_UNAVAILABLE")));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(
+            Now.AddSeconds(expectedDelaySeconds),
+            stores.Failure?.NextRetryAt);
+    }
+
     [Fact]
     public async Task Unexpected_client_error_is_persisted_as_retryable_failure()
     {
@@ -200,6 +224,23 @@ public sealed class BranchCloudOutboxCycleProcessorTests
         Assert.Equal(parameterName, exception.ParamName);
     }
 
+    [Fact]
+    public async Task Retry_delay_above_runtime_maximum_is_rejected_before_claim()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(stores, new RecordingClient(Acknowledged()));
+
+        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            processor.ProcessNextAsync(
+                "BRANCH-01",
+                "WORKER-01",
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMinutes(6)));
+
+        Assert.Equal("retryDelay", exception.ParamName);
+        Assert.Equal(0, stores.ClaimCount);
+    }
+
     private static BranchCloudOutboxCycleProcessor Processor(
         RecordingStores stores,
         IBranchCloudOutboxDeliveryClient client,
@@ -211,13 +252,16 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             client,
             stores,
             stores,
+            new ExponentialBranchCloudOutboxRetryDelayPolicy(),
+            TimeSpan.FromMinutes(5),
             timeProvider ?? new MutableTimeProvider(Now),
             () => "FAILURE-01",
             heartbeatDelay);
 
     private static BranchCloudOutboxLease Lease(
         DateTimeOffset? claimedAt = null,
-        DateTimeOffset? leaseExpiresAt = null) =>
+        DateTimeOffset? leaseExpiresAt = null,
+        int retryCount = 0) =>
         new(
             "OUTBOX-01",
             "BRANCH-01",
@@ -227,7 +271,7 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             TableSessionAction.SubmitOrder,
             3,
             Now.AddMinutes(-1),
-            0,
+            retryCount,
             "WORKER-01",
             claimedAt ?? Now,
             leaseExpiresAt ?? Now.AddSeconds(30));
@@ -248,6 +292,8 @@ public sealed class BranchCloudOutboxCycleProcessorTests
 
         public int RenewalCount { get; private set; }
 
+        public int ClaimCount { get; private set; }
+
         public BranchCloudDeliveryConfirmation? Confirmation { get; private set; }
 
         public BranchCloudOutboxDeliveryFailure? Failure { get; private set; }
@@ -262,8 +308,11 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             string leaseOwner,
             DateTimeOffset claimedAt,
             TimeSpan leaseDuration,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(Lease);
+            CancellationToken cancellationToken = default)
+        {
+            ClaimCount++;
+            return Task.FromResult(Lease);
+        }
 
         public Task<BranchCloudOutboxLease> RenewAsync(
             BranchCloudOutboxLease lease,
