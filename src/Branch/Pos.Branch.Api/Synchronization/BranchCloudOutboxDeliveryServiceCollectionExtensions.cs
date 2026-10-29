@@ -46,6 +46,7 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
             new SqliteBranchCloudOutboxDeliveryFailureStore(DatabasePath(provider)));
         services.TryAddSingleton<IBranchCloudDeliveryConfirmationStore>(provider =>
             new SqliteBranchCloudDeliveryConfirmationStore(DatabasePath(provider)));
+        services.AddBranchCloudOutboxHttpDeliveryClient();
         services.TryAddSingleton<IBranchCloudOutboxCycleProcessor>(provider =>
             new BranchCloudOutboxCycleProcessor(
                 provider.GetRequiredService<IBranchCloudOutboxClaimStore>(),
