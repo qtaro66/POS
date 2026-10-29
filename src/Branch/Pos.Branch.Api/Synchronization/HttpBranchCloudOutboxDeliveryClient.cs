@@ -10,6 +10,8 @@ namespace Pos.Branch.Api.Synchronization;
 public sealed class HttpBranchCloudOutboxDeliveryClient :
     IBranchCloudOutboxDeliveryClient
 {
+    public const int MaxAcknowledgmentBodySize = 16 * 1024;
+
     private const int CurrentSchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web);
@@ -62,13 +64,50 @@ public sealed class HttpBranchCloudOutboxDeliveryClient :
                         .ToString(CultureInfo.InvariantCulture));
             }
 
+            if (response.Content.Headers.ContentLength is >
+                    MaxAcknowledgmentBodySize)
+            {
+                return BranchCloudOutboxDeliveryResult.Failed(
+                    "AcknowledgmentTooLarge");
+            }
+
             BranchCloudEventIngestionResponse? acknowledgment;
             try
             {
-                acknowledgment = await response.Content.ReadFromJsonAsync<
-                    BranchCloudEventIngestionResponse>(
-                    SerializerOptions,
+                var mediaType = response.Content.Headers.ContentType?.MediaType;
+                if (!IsJsonMediaType(mediaType))
+                {
+                    return BranchCloudOutboxDeliveryResult.Failed(
+                        "InvalidAcknowledgmentPayload");
+                }
+
+                var payload = new byte[MaxAcknowledgmentBodySize + 1];
+                var length = 0;
+                using var stream = await response.Content.ReadAsStreamAsync(
                     cancellationToken);
+                while (length < payload.Length)
+                {
+                    var read = await stream.ReadAsync(
+                        payload.AsMemory(length),
+                        cancellationToken);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    length += read;
+                }
+
+                if (length > MaxAcknowledgmentBodySize)
+                {
+                    return BranchCloudOutboxDeliveryResult.Failed(
+                        "AcknowledgmentTooLarge");
+                }
+
+                acknowledgment = JsonSerializer.Deserialize<
+                    BranchCloudEventIngestionResponse>(
+                    payload.AsSpan(0, length),
+                    SerializerOptions);
             }
             catch (JsonException)
             {
@@ -109,7 +148,15 @@ public sealed class HttpBranchCloudOutboxDeliveryClient :
         {
             return BranchCloudOutboxDeliveryResult.Failed("TransportFailure");
         }
+        catch (IOException)
+        {
+            return BranchCloudOutboxDeliveryResult.Failed("TransportFailure");
+        }
     }
+
+    private static bool IsJsonMediaType(string? value) =>
+        string.Equals(value, "application/json", StringComparison.OrdinalIgnoreCase) ||
+        value?.EndsWith("+json", StringComparison.OrdinalIgnoreCase) == true;
 
     private static Uri RequireDeliveryEndpoint(Uri? value)
     {
