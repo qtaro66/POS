@@ -25,11 +25,16 @@ public sealed class BranchCloudOutboxDeliveryOptions
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(1);
 
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(5);
+
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
 }
 
 public sealed class BranchCloudOutboxDeliveryOptionsValidator :
     IValidateOptions<BranchCloudOutboxDeliveryOptions>
 {
+    private static readonly TimeSpan MaximumHttpClientTimeout =
+        TimeSpan.FromMilliseconds(int.MaxValue);
+
     private readonly IBranchCloudOutboxReadinessProbe _readiness;
 
     public BranchCloudOutboxDeliveryOptionsValidator(
@@ -58,6 +63,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidator :
         ValidatePositive(options.LeaseDuration, nameof(options.LeaseDuration), errors);
         ValidatePositive(options.IdleDelay, nameof(options.IdleDelay), errors);
         ValidatePositive(options.RetryDelay, nameof(options.RetryDelay), errors);
+        ValidateRequestTimeout(options.RequestTimeout, errors);
         ValidateDatabase(options.DatabasePath, errors);
 
         return errors.Count == 0
@@ -160,6 +166,18 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidator :
         if (value <= TimeSpan.Zero)
         {
             errors.Add($"{name} must be greater than zero.");
+        }
+    }
+
+    private static void ValidateRequestTimeout(
+        TimeSpan value,
+        ICollection<string> errors)
+    {
+        ValidatePositive(value, nameof(BranchCloudOutboxDeliveryOptions.RequestTimeout), errors);
+        if (value > MaximumHttpClientTimeout)
+        {
+            errors.Add(
+                "RequestTimeout exceeds the maximum supported HTTP client timeout.");
         }
     }
 }

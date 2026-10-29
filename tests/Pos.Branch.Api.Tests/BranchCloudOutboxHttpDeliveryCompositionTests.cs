@@ -37,6 +37,25 @@ public sealed class BranchCloudOutboxHttpDeliveryCompositionTests
     }
 
     [Fact]
+    public void Named_pipeline_uses_configured_request_timeout()
+    {
+        var services = Services(TimeSpan.FromSeconds(17));
+        services.AddSingleton<
+            IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>(
+            new RecordingHandlerFactory(new RecordingHandler()));
+        services.AddBranchCloudOutboxHttpDeliveryClient();
+        using var provider = services.BuildServiceProvider();
+
+        var client = provider
+            .GetRequiredService<IHttpClientFactory>()
+            .CreateClient(
+                BranchCloudOutboxHttpDeliveryServiceCollectionExtensions
+                    .HttpClientName);
+
+        Assert.Equal(TimeSpan.FromSeconds(17), client.Timeout);
+    }
+
+    [Fact]
     public void Missing_authenticated_handler_factory_fails_closed()
     {
         var services = Services();
@@ -97,7 +116,7 @@ public sealed class BranchCloudOutboxHttpDeliveryCompositionTests
                 .AddBranchCloudOutboxHttpDeliveryClient(null!));
     }
 
-    private static ServiceCollection Services()
+    private static ServiceCollection Services(TimeSpan? requestTimeout = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IOptions<BranchCloudOutboxDeliveryOptions>>(
@@ -105,7 +124,8 @@ public sealed class BranchCloudOutboxHttpDeliveryCompositionTests
                 new BranchCloudOutboxDeliveryOptions
                 {
                     ServiceOrigin = "https://cloud.example.test",
-                    DeliveryPath = "/api/v1/branch-events"
+                    DeliveryPath = "/api/v1/branch-events",
+                    RequestTimeout = requestTimeout ?? TimeSpan.FromSeconds(30)
                 }));
         return services;
     }
