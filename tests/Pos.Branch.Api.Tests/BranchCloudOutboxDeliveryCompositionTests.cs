@@ -86,7 +86,35 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
     }
 
     [Fact]
-    public async Task Enabled_delivery_fails_closed_without_delivery_client()
+    public async Task Enabled_delivery_composes_authenticated_http_client()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"branch-cloud-outbox-http-{Guid.NewGuid():N}.db");
+        try
+        {
+            await new SqliteTableSessionCommandStore(databasePath).InitializeAsync();
+            using var provider = Provider(
+                Enabled(databasePath),
+                services => services.AddSingleton<
+                    IBranchCloudDeliveryAuthenticatedHttpHandlerFactory,
+                    TestAuthenticatedHandlerFactory>());
+
+            provider.GetRequiredService<IStartupValidator>().Validate();
+
+            Assert.IsType<HttpBranchCloudOutboxDeliveryClient>(
+                provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>());
+            Assert.IsType<BranchCloudOutboxCycleProcessor>(
+                provider.GetRequiredService<IBranchCloudOutboxCycleProcessor>());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Enabled_delivery_fails_closed_without_authenticated_handler()
     {
         var databasePath = Path.Combine(
             Path.GetTempPath(),
@@ -101,7 +129,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 provider.GetRequiredService<IBranchCloudOutboxCycleProcessor>());
 
             Assert.Contains(
-                nameof(IBranchCloudOutboxDeliveryClient),
+                nameof(IBranchCloudDeliveryAuthenticatedHttpHandlerFactory),
                 exception.Message,
                 StringComparison.Ordinal);
         }
@@ -294,6 +322,21 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 BranchCloudOutboxDeliveryResult.Acknowledged(
                     envelope.EventId,
                     envelope.BranchSequence));
+    }
+
+    private sealed class TestAuthenticatedHandlerFactory :
+        IBranchCloudDeliveryAuthenticatedHttpHandlerFactory
+    {
+        public HttpMessageHandler CreateHandler() => new TestHandler();
+
+        private sealed class TestHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken) =>
+                throw new InvalidOperationException(
+                    "The composition test must not contact a network endpoint.");
+        }
     }
 
     private sealed class CustomProcessor : IBranchCloudOutboxCycleProcessor
