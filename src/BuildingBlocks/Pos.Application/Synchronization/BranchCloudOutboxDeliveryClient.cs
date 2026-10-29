@@ -12,7 +12,8 @@ public sealed class BranchCloudOutboxDeliveryResult
         BranchCloudOutboxDeliveryDisposition disposition,
         string? errorCode = null,
         string? acknowledgedEventId = null,
-        long? acknowledgedBranchSequence = null)
+        long? acknowledgedBranchSequence = null,
+        TimeSpan? suggestedRetryDelay = null)
     {
         if (!Enum.IsDefined(disposition))
         {
@@ -28,6 +29,13 @@ public sealed class BranchCloudOutboxDeliveryResult
                 throw new ArgumentException(
                     "A durable acknowledgment cannot contain an error code.",
                     nameof(errorCode));
+            }
+
+            if (suggestedRetryDelay is not null)
+            {
+                throw new ArgumentException(
+                    "A durable acknowledgment cannot contain a retry-delay hint.",
+                    nameof(suggestedRetryDelay));
             }
 
             AcknowledgedEventId = RequireIdentifier(
@@ -50,6 +58,14 @@ public sealed class BranchCloudOutboxDeliveryResult
         }
 
         ErrorCode = RequireErrorCode(errorCode);
+        SuggestedRetryDelay = suggestedRetryDelay switch
+        {
+            null => null,
+            { } delay when delay > TimeSpan.Zero => delay,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(suggestedRetryDelay),
+                "A retry-delay hint must be greater than zero.")
+        };
         Disposition = disposition;
     }
 
@@ -61,6 +77,8 @@ public sealed class BranchCloudOutboxDeliveryResult
 
     public long? AcknowledgedBranchSequence { get; }
 
+    public TimeSpan? SuggestedRetryDelay { get; }
+
     public static BranchCloudOutboxDeliveryResult Acknowledged(
         string eventId,
         long branchSequence) =>
@@ -69,8 +87,13 @@ public sealed class BranchCloudOutboxDeliveryResult
             acknowledgedEventId: eventId,
             acknowledgedBranchSequence: branchSequence);
 
-    public static BranchCloudOutboxDeliveryResult Failed(string errorCode) =>
-        new(BranchCloudOutboxDeliveryDisposition.RetryableFailure, errorCode);
+    public static BranchCloudOutboxDeliveryResult Failed(
+        string errorCode,
+        TimeSpan? suggestedRetryDelay = null) =>
+        new(
+            BranchCloudOutboxDeliveryDisposition.RetryableFailure,
+            errorCode,
+            suggestedRetryDelay: suggestedRetryDelay);
 
     private static string RequireErrorCode(string? errorCode) =>
         string.IsNullOrWhiteSpace(errorCode)
