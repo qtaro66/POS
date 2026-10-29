@@ -13,6 +13,13 @@ public static class BranchCloudOutboxHttpDeliveryServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        if (services.Any(descriptor =>
+                descriptor.ServiceType ==
+                    typeof(IBranchCloudOutboxDeliveryClient)))
+        {
+            return services;
+        }
+
         services
             .AddHttpClient(HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(provider =>
@@ -22,6 +29,10 @@ public static class BranchCloudOutboxHttpDeliveryServiceCollectionExtensions
                     .CreateHandler() ??
                 throw new InvalidOperationException(
                     "The authenticated Branch Cloud HTTP handler factory returned no handler."));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<BranchCloudOutboxDeliveryOptions>,
+                BranchCloudOutboxHttpDeliveryAuthenticationValidator>());
         services.TryAddSingleton<IBranchCloudOutboxDeliveryClient>(provider =>
         {
             var options = provider
