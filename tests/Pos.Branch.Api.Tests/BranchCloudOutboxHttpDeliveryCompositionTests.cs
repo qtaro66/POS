@@ -17,11 +17,9 @@ public sealed class BranchCloudOutboxHttpDeliveryCompositionTests
     {
         var handler = new RecordingHandler();
         var services = Services();
-        services
-            .AddHttpClient(
-                BranchCloudOutboxHttpDeliveryServiceCollectionExtensions
-                    .HttpClientName)
-            .ConfigurePrimaryHttpMessageHandler(() => handler);
+        services.AddSingleton<
+            IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>(
+            new RecordingHandlerFactory(handler));
         services.AddBranchCloudOutboxHttpDeliveryClient();
         using var provider = services.BuildServiceProvider();
 
@@ -36,6 +34,31 @@ public sealed class BranchCloudOutboxHttpDeliveryCompositionTests
         Assert.Equal(
             "https://cloud.example.test/api/v1/branch-events",
             handler.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
+    public void Missing_authenticated_handler_factory_fails_closed()
+    {
+        var services = Services();
+        services.AddBranchCloudOutboxHttpDeliveryClient();
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>());
+    }
+
+    [Fact]
+    public void Null_authenticated_handler_fails_closed()
+    {
+        var services = Services();
+        services.AddSingleton<
+            IBranchCloudDeliveryAuthenticatedHttpHandlerFactory,
+            NullHandlerFactory>();
+        services.AddBranchCloudOutboxHttpDeliveryClient();
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>());
     }
 
     [Fact]
@@ -122,6 +145,25 @@ public sealed class BranchCloudOutboxHttpDeliveryCompositionTests
                     "application/json")
             });
         }
+    }
+
+    private sealed class RecordingHandlerFactory :
+        IBranchCloudDeliveryAuthenticatedHttpHandlerFactory
+    {
+        private readonly HttpMessageHandler _handler;
+
+        public RecordingHandlerFactory(HttpMessageHandler handler)
+        {
+            _handler = handler;
+        }
+
+        public HttpMessageHandler CreateHandler() => _handler;
+    }
+
+    private sealed class NullHandlerFactory :
+        IBranchCloudDeliveryAuthenticatedHttpHandlerFactory
+    {
+        public HttpMessageHandler CreateHandler() => null!;
     }
 
     private sealed class CustomDeliveryClient : IBranchCloudOutboxDeliveryClient
