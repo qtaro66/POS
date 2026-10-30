@@ -12,6 +12,7 @@ public static class BranchCloudEventIngestionPrincipalHttpHandler
         Ok<BranchCloudEventIngestionResponse>,
         UnauthorizedHttpResult,
         ForbidHttpResult,
+        Conflict<BranchCloudEventSequenceGapResponse>,
         StatusCodeHttpResult>> HandleAsync(
         ClaimsPrincipal? principal,
         BranchCloudEventIngestionRequest request,
@@ -40,6 +41,11 @@ public static class BranchCloudEventIngestionPrincipalHttpHandler
         catch (BranchCloudEventBranchMismatchException)
         {
             return TypedResults.Forbid();
+        }
+        catch (BranchCloudEventSequenceGapException exception)
+        {
+            return TypedResults.Conflict(
+                BranchCloudEventIngestionResponseMapper.Map(exception));
         }
         catch (BranchCloudEventUniquenessConflictException)
         {
