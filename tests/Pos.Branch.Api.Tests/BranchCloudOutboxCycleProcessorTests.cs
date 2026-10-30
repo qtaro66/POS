@@ -155,6 +155,56 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             TimeSpan.FromSeconds(5));
 
         Assert.Equal(6, stores.Failure?.ExpectedBranchSequence);
+        Assert.Equal("FAILURE-01", stores.ReplayRequest?.RecoveryId);
+        Assert.Equal("BRANCH-01", stores.ReplayRequest?.BranchId);
+        Assert.Equal(6, stores.ReplayRequest?.ExpectedBranchSequence);
+        Assert.Equal(7, stores.ReplayRequest?.ReceivedBranchSequence);
+        Assert.Equal(Now, stores.ReplayRequest?.RequestedAt);
+    }
+
+    [Fact]
+    public async Task Retryable_failure_without_gap_does_not_request_replay()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed("CLOUD_UNAVAILABLE")));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Null(stores.ReplayRequest);
+    }
+
+    [Fact]
+    public async Task Missing_expected_replay_sequence_fails_after_recording_failure()
+    {
+        var stores = new RecordingStores
+        {
+            Lease = Lease(),
+            ReplayResult = BranchCloudOutboxSequenceReplayResult.ExpectedSequenceNotFound
+        };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed(
+                    "BranchSequenceGap",
+                    expectedBranchSequence: 6)));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            processor.ProcessNextAsync(
+                "BRANCH-01",
+                "WORKER-01",
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(5)));
+
+        Assert.Contains("no longer retained", exception.Message, StringComparison.Ordinal);
+        Assert.NotNull(stores.Failure);
+        Assert.NotNull(stores.ReplayRequest);
     }
 
     [Fact]
@@ -300,6 +350,7 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             client,
             stores,
             stores,
+            stores,
             new ExponentialBranchCloudOutboxRetryDelayPolicy(),
             TimeSpan.FromMinutes(5),
             timeProvider ?? new MutableTimeProvider(Now),
@@ -331,7 +382,8 @@ public sealed class BranchCloudOutboxCycleProcessorTests
         IBranchCloudOutboxClaimStore,
         IBranchCloudOutboxLeaseRenewalStore,
         IBranchCloudDeliveryConfirmationStore,
-        IBranchCloudOutboxDeliveryFailureStore
+        IBranchCloudOutboxDeliveryFailureStore,
+        IBranchCloudOutboxSequenceReplayStore
     {
         private readonly TaskCompletionSource _renewed =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -345,6 +397,11 @@ public sealed class BranchCloudOutboxCycleProcessorTests
         public BranchCloudDeliveryConfirmation? Confirmation { get; private set; }
 
         public BranchCloudOutboxDeliveryFailure? Failure { get; private set; }
+
+        public BranchCloudOutboxSequenceReplayRequest? ReplayRequest { get; private set; }
+
+        public BranchCloudOutboxSequenceReplayResult ReplayResult { get; set; } =
+            BranchCloudOutboxSequenceReplayResult.Requested;
 
         public DateTimeOffset? ConfirmationLeaseExpiry { get; private set; }
 
@@ -401,6 +458,14 @@ public sealed class BranchCloudOutboxCycleProcessorTests
         {
             Failure = failure;
             return Task.FromResult(new BranchCloudOutboxDeliveryFailureResult(1, false));
+        }
+
+        public Task<BranchCloudOutboxSequenceReplayResult> RequestAsync(
+            BranchCloudOutboxSequenceReplayRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ReplayRequest = request;
+            return Task.FromResult(ReplayResult);
         }
 
         public Task WaitForRenewalAsync(CancellationToken cancellationToken) =>

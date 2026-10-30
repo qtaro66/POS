@@ -10,6 +10,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
     private readonly IBranchCloudOutboxDeliveryClient _deliveryClient;
     private readonly IBranchCloudDeliveryConfirmationStore _confirmationStore;
     private readonly IBranchCloudOutboxDeliveryFailureStore _failureStore;
+    private readonly IBranchCloudOutboxSequenceReplayStore _replayStore;
     private readonly IBranchCloudOutboxRetryDelayPolicy _retryDelayPolicy;
     private readonly TimeSpan _maximumRetryDelay;
     private readonly TimeProvider _timeProvider;
@@ -22,6 +23,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
         IBranchCloudOutboxDeliveryClient deliveryClient,
         IBranchCloudDeliveryConfirmationStore confirmationStore,
         IBranchCloudOutboxDeliveryFailureStore failureStore,
+        IBranchCloudOutboxSequenceReplayStore replayStore,
         IBranchCloudOutboxRetryDelayPolicy retryDelayPolicy,
         TimeSpan maximumRetryDelay,
         TimeProvider timeProvider,
@@ -34,6 +36,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
         _confirmationStore = confirmationStore
             ?? throw new ArgumentNullException(nameof(confirmationStore));
         _failureStore = failureStore ?? throw new ArgumentNullException(nameof(failureStore));
+        _replayStore = replayStore ?? throw new ArgumentNullException(nameof(replayStore));
         _retryDelayPolicy = retryDelayPolicy
             ?? throw new ArgumentNullException(nameof(retryDelayPolicy));
         _maximumRetryDelay = maximumRetryDelay > TimeSpan.Zero
@@ -147,13 +150,29 @@ public sealed class BranchCloudOutboxCycleProcessor :
                 break;
 
             case BranchCloudOutboxDeliveryDisposition.RetryableFailure:
-                await RecordFailureAsync(
+                var failure = await RecordFailureAsync(
                     lease,
                     delivery.ErrorCode!,
                     retryDelay,
                     delivery.SuggestedRetryDelay,
                     delivery.ExpectedBranchSequence,
                     cancellationToken);
+                if (failure.ExpectedBranchSequence is { } expectedSequence)
+                {
+                    var replay = await _replayStore.RequestAsync(
+                        new BranchCloudOutboxSequenceReplayRequest(
+                            failure.FailureId,
+                            failure.Lease.BranchId,
+                            expectedSequence,
+                            failure.Lease.BranchSequence,
+                            failure.FailedAt),
+                        cancellationToken);
+                    if (replay is BranchCloudOutboxSequenceReplayResult.ExpectedSequenceNotFound)
+                    {
+                        throw new InvalidOperationException(
+                            "The Cloud-requested Branch sequence is no longer retained for replay.");
+                    }
+                }
                 break;
 
             default:
@@ -164,7 +183,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
         return new(BranchCloudOutboxCycleDisposition.Processed);
     }
 
-    private async Task RecordFailureAsync(
+    private async Task<BranchCloudOutboxDeliveryFailure> RecordFailureAsync(
         BranchCloudOutboxLease lease,
         string errorCode,
         TimeSpan retryDelay,
@@ -183,15 +202,15 @@ public sealed class BranchCloudOutboxCycleProcessor :
                 ? _maximumRetryDelay
                 : hint;
         }
-        await _failureStore.RecordAsync(
-            new BranchCloudOutboxDeliveryFailure(
-                RequireFailureId(_failureIdFactory()),
-                lease,
-                failedAt,
-                failedAt.Add(scheduledDelay),
-                errorCode,
-                expectedBranchSequence),
-            cancellationToken);
+        var failure = new BranchCloudOutboxDeliveryFailure(
+            RequireFailureId(_failureIdFactory()),
+            lease,
+            failedAt,
+            failedAt.Add(scheduledDelay),
+            errorCode,
+            expectedBranchSequence);
+        await _failureStore.RecordAsync(failure, cancellationToken);
+        return failure;
     }
 
     private static string RequireFailureId(string value) =>
