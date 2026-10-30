@@ -501,6 +501,83 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
             'BranchSequenceGap', 1, 5);
         """;
 
+    [Fact]
+    public async Task Replay_failure_schedules_retry_once_and_preserves_outbox()
+    {
+        await using var database = new ReplayDatabase();
+        var lease = await SeedClaimAsync(database);
+        var store = new SqliteBranchCloudOutboxSequenceReplayFailureStore(database.Path);
+        var failure = ReplayFailure(lease);
+
+        var first = await store.RecordAsync(failure);
+        var duplicate = await store.RecordAsync(failure);
+
+        Assert.Equal(1, first.RetryCount);
+        Assert.False(first.AlreadyRecorded);
+        Assert.Equal(1, duplicate.RetryCount);
+        Assert.True(duplicate.AlreadyRecorded);
+        Assert.Equal("1", await database.TextAsync("SELECT CAST(retry_count AS TEXT) FROM cloud_sync_sequence_replay_leases;"));
+        Assert.Equal("0", await database.TextAsync("SELECT CAST(retry_count AS TEXT) FROM cloud_sync_outbox;"));
+        Assert.Equal("2026-10-30T04:00:00.0000000+00:00", await database.ReadAcknowledgedAtAsync());
+        var claims = new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path);
+        Assert.Null(await claims.ClaimNextAsync("BRANCH-01", "WORKER-02", RequestedAt.AddSeconds(59), TimeSpan.FromSeconds(30)));
+        var retry = await claims.ClaimNextAsync("BRANCH-01", "WORKER-02", RequestedAt.AddMinutes(1), TimeSpan.FromSeconds(30));
+        Assert.Equal(1, retry?.RetryCount);
+    }
+
+    [Fact]
+    public async Task Replay_failure_rejects_conflicting_ID_reuse()
+    {
+        await using var database = new ReplayDatabase();
+        var lease = await SeedClaimAsync(database);
+        var store = new SqliteBranchCloudOutboxSequenceReplayFailureStore(database.Path);
+        await store.RecordAsync(ReplayFailure(lease));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.RecordAsync(
+            new("FAILURE-01", lease, RequestedAt.AddSeconds(5), RequestedAt.AddMinutes(1), "Other")));
+    }
+
+    [Theory]
+    [InlineData("completed")]
+    [InlineData("owner")]
+    [InlineData("expiry")]
+    [InlineData("missing")]
+    public async Task Replay_failure_rejects_stale_or_closed_lease(string state)
+    {
+        await using var database = new ReplayDatabase();
+        var lease = await SeedClaimAsync(database);
+        await database.ExecuteAsync(state switch
+        {
+            "completed" => "UPDATE cloud_sync_sequence_replay_requests SET completed_at = '2026-10-30T04:30:05Z';",
+            "owner" => "UPDATE cloud_sync_sequence_replay_leases SET lease_owner = 'OTHER';",
+            "expiry" => "UPDATE cloud_sync_sequence_replay_leases SET lease_expires_at = '2026-10-30T04:30:40Z';",
+            _ => "DELETE FROM cloud_sync_sequence_replay_leases;"
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new SqliteBranchCloudOutboxSequenceReplayFailureStore(database.Path).RecordAsync(ReplayFailure(lease)));
+        Assert.Null(await database.TextAsync("SELECT failure_id FROM cloud_sync_sequence_replay_failures;"));
+    }
+
+    [Fact]
+    public async Task Replay_failure_rolls_back_retry_state_when_evidence_insert_fails()
+    {
+        await using var database = new ReplayDatabase();
+        var lease = await SeedClaimAsync(database);
+        await database.ExecuteAsync("""
+            CREATE TRIGGER reject_replay_failure BEFORE INSERT ON cloud_sync_sequence_replay_failures
+            BEGIN SELECT RAISE(ABORT, 'simulated evidence failure'); END;
+            """);
+
+        await Assert.ThrowsAsync<SqliteException>(() =>
+            new SqliteBranchCloudOutboxSequenceReplayFailureStore(database.Path).RecordAsync(ReplayFailure(lease)));
+        Assert.Equal("WORKER-01", await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
+        Assert.Equal("0", await database.TextAsync("SELECT CAST(retry_count AS TEXT) FROM cloud_sync_sequence_replay_leases;"));
+    }
+
+    private static BranchCloudOutboxSequenceReplayFailure ReplayFailure(BranchCloudOutboxSequenceReplayLease lease) =>
+        new("FAILURE-01", lease, RequestedAt.AddSeconds(5), RequestedAt.AddMinutes(1), "BranchSequenceGap", 5);
+
     private static async Task<BranchCloudOutboxSequenceReplayLease> SeedClaimAsync(ReplayDatabase database)
     {
         await database.InitializeAsync();
