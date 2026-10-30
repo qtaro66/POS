@@ -138,6 +138,26 @@ public sealed class BranchCloudOutboxCycleProcessorTests
     }
 
     [Fact]
+    public async Task Sequence_gap_guidance_is_preserved_with_delivery_failure()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed(
+                    "BranchSequenceGap",
+                    expectedBranchSequence: 6)));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(6, stores.Failure?.ExpectedBranchSequence);
+    }
+
+    [Fact]
     public async Task Unexpected_client_error_is_persisted_as_retryable_failure()
     {
         var stores = new RecordingStores { Lease = Lease() };

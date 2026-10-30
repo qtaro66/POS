@@ -24,6 +24,40 @@ public sealed class BranchCloudOutboxDeliveryFailureTests
         Assert.Equal(ClaimedAt.AddSeconds(10), failure.FailedAt);
         Assert.Equal(ClaimedAt.AddMinutes(1), failure.NextRetryAt);
         Assert.Equal("CLOUD-UNAVAILABLE", failure.ErrorCode);
+        Assert.Null(failure.ExpectedBranchSequence);
+    }
+
+    [Fact]
+    public void Captures_expected_sequence_before_failed_sequence()
+    {
+        var failure = new BranchCloudOutboxDeliveryFailure(
+            "FAILURE-01",
+            Lease(),
+            ClaimedAt.AddSeconds(10),
+            ClaimedAt.AddMinutes(1),
+            "BranchSequenceGap",
+            expectedBranchSequence: 6);
+
+        Assert.Equal(6, failure.ExpectedBranchSequence);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public void Invalid_expected_sequence_is_rejected(long expectedSequence)
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new BranchCloudOutboxDeliveryFailure(
+                "FAILURE-01",
+                Lease(),
+                ClaimedAt.AddSeconds(10),
+                ClaimedAt.AddMinutes(1),
+                "BranchSequenceGap",
+                expectedSequence));
+
+        Assert.Equal("expectedBranchSequence", exception.ParamName);
     }
 
     [Theory]

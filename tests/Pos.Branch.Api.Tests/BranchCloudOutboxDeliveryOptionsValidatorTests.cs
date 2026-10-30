@@ -228,7 +228,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
     }
 
     [Theory]
-    [InlineData("SchemaVersionMismatch", "schema version must be 18; actual version is 17")]
+    [InlineData("SchemaVersionMismatch", "schema version must be 19; actual version is 17")]
     [InlineData("CloudSyncOutboxMissing", "missing the cloud_sync_outbox table")]
     [InlineData("CloudSyncOutboxColumnsMissing", "required columns: lease_expires_at")]
     [InlineData("CloudDeliveryFailuresMissing", "missing the cloud_sync_delivery_failures table")]
@@ -239,7 +239,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
         var path = ExistingFile();
         var probe = new RecordingProbe(new(
             false,
-            errorCode == "SchemaVersionMismatch" ? 17 : 18,
+            errorCode == "SchemaVersionMismatch" ? 17 : 19,
             errorCode != "CloudSyncOutboxMissing",
             errorCode is not ("CloudSyncOutboxMissing" or "CloudDeliveryFailuresMissing"),
             errorCode == "CloudSyncOutboxColumnsMissing" ? ["lease_expires_at"] : [],
@@ -304,7 +304,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
         };
 
     private static RecordingProbe ReadyProbe() =>
-        new(new(true, 18, true, true, [], [], null));
+        new(new(true, 19, true, true, [], [], null));
 
     private static void AssertFailure(
         ValidateOptionsResult result,
@@ -320,7 +320,7 @@ public sealed class BranchCloudOutboxDeliveryOptionsValidatorTests : IDisposable
         BranchCloudOutboxReadinessResult result) :
         IBranchCloudOutboxReadinessProbe
     {
-        public int ExpectedSchemaVersion => 18;
+        public int ExpectedSchemaVersion => 19;
 
         public string? DatabasePath { get; private set; }
 

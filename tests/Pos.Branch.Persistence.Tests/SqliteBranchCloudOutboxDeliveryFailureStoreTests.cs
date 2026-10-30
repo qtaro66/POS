@@ -49,6 +49,32 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStoreTests
     }
 
     [Fact]
+    public async Task Records_expected_sequence_for_gap_recovery()
+    {
+        await using var database = new FailureDatabase();
+        var lease = await database.CreateLeaseAsync(sequence: 7);
+        var store = new SqliteBranchCloudOutboxDeliveryFailureStore(database.Path);
+
+        await store.RecordAsync(Failure(lease, expectedBranchSequence: 6));
+
+        Assert.Equal(6, await database.ReadExpectedSequenceAsync());
+    }
+
+    [Fact]
+    public async Task Reusing_failure_id_with_different_expected_sequence_is_rejected()
+    {
+        await using var database = new FailureDatabase();
+        var lease = await database.CreateLeaseAsync(sequence: 7);
+        var store = new SqliteBranchCloudOutboxDeliveryFailureStore(database.Path);
+        await store.RecordAsync(Failure(lease, expectedBranchSequence: 6));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.RecordAsync(Failure(lease, expectedBranchSequence: 5)));
+
+        Assert.Equal(1, await database.FailureCountAsync());
+    }
+
+    [Fact]
     public async Task Reusing_failure_id_with_different_result_is_rejected()
     {
         await using var database = new FailureDatabase();
@@ -201,13 +227,17 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStoreTests
     }
 
     private static BranchCloudOutboxDeliveryFailure Failure(
-        BranchCloudOutboxLease lease) =>
+        BranchCloudOutboxLease lease,
+        long? expectedBranchSequence = null) =>
         new(
             "FAILURE-01",
             lease,
             ClaimedAt.AddSeconds(10),
             ClaimedAt.AddMinutes(1).AddSeconds(10),
-            "CLOUD-UNAVAILABLE");
+            expectedBranchSequence is null
+                ? "CLOUD-UNAVAILABLE"
+                : "BranchSequenceGap",
+            expectedBranchSequence);
 
     private static BranchCloudOutboxLease CopyLease(
         BranchCloudOutboxLease lease,
@@ -251,10 +281,10 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStoreTests
 
         public string Path => System.IO.Path.Combine(_directory, "branch.db");
 
-        public async Task<BranchCloudOutboxLease> CreateLeaseAsync()
+        public async Task<BranchCloudOutboxLease> CreateLeaseAsync(long sequence = 1)
         {
             await new SqliteTableSessionCommandStore(Path).InitializeAsync();
-            await SeedAsync("OUTBOX-01", 1);
+            await SeedAsync("OUTBOX-01", sequence);
             return (await new SqliteBranchCloudOutboxClaimStore(Path).ClaimNextAsync(
                 "BRANCH-01",
                 "WORKER-01",
@@ -302,6 +332,19 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStoreTests
             using var command = connection.CreateCommand();
             command.CommandText = "SELECT COUNT(*) FROM cloud_sync_delivery_failures;";
             return Convert.ToInt32(await command.ExecuteScalarAsync());
+        }
+
+        public async Task<long?> ReadExpectedSequenceAsync()
+        {
+            await using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT expected_branch_sequence
+                FROM cloud_sync_delivery_failures
+                WHERE failure_id = 'FAILURE-01';
+                """;
+            var value = await command.ExecuteScalarAsync();
+            return value is long sequence ? sequence : null;
         }
 
         private async Task SeedAsync(string outboxId, long sequence)

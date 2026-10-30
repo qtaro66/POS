@@ -78,7 +78,7 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStore :
         command.CommandText = """
             SELECT branch_id, outbox_id, branch_sequence, lease_owner,
                    claimed_at, lease_expires_at, failed_at, next_retry_at,
-                   error_code, retry_count_after
+                   error_code, retry_count_after, expected_branch_sequence
             FROM cloud_sync_delivery_failures
             WHERE failure_id = $failureId;
             """;
@@ -99,7 +99,8 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStore :
             string.Equals(reader.GetString(5), FormatTimestamp(lease.LeaseExpiresAt), StringComparison.Ordinal) &&
             string.Equals(reader.GetString(6), FormatTimestamp(failure.FailedAt), StringComparison.Ordinal) &&
             string.Equals(reader.GetString(7), FormatTimestamp(failure.NextRetryAt), StringComparison.Ordinal) &&
-            string.Equals(reader.GetString(8), failure.ErrorCode, StringComparison.Ordinal);
+            string.Equals(reader.GetString(8), failure.ErrorCode, StringComparison.Ordinal) &&
+            ReadNullableInt64(reader, 10) == failure.ExpectedBranchSequence;
         if (!matches)
         {
             throw new InvalidOperationException(
@@ -161,11 +162,13 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStore :
             INSERT INTO cloud_sync_delivery_failures (
                 failure_id, branch_id, outbox_id, branch_sequence,
                 lease_owner, claimed_at, lease_expires_at, failed_at,
-                next_retry_at, error_code, retry_count_after)
+                next_retry_at, error_code, retry_count_after,
+                expected_branch_sequence)
             VALUES (
                 $failureId, $branchId, $outboxId, $branchSequence,
                 $leaseOwner, $claimedAt, $leaseExpiresAt, $failedAt,
-                $nextRetryAt, $errorCode, $retryCount);
+                $nextRetryAt, $errorCode, $retryCount,
+                $expectedBranchSequence);
             """;
         AddFailureParameters(command, failure);
         command.Parameters.AddWithValue("$retryCount", retryCount);
@@ -195,7 +198,15 @@ public sealed class SqliteBranchCloudOutboxDeliveryFailureStore :
             "$nextRetryAt",
             FormatTimestamp(failure.NextRetryAt));
         command.Parameters.AddWithValue("$errorCode", failure.ErrorCode);
+        command.Parameters.AddWithValue(
+            "$expectedBranchSequence",
+            failure.ExpectedBranchSequence is { } expected
+                ? expected
+                : DBNull.Value);
     }
+
+    private static long? ReadNullableInt64(SqliteDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal);
 
     private static string FormatTimestamp(DateTimeOffset value) =>
         value.ToString("O", CultureInfo.InvariantCulture);
