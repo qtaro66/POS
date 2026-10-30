@@ -65,7 +65,7 @@ public sealed class BranchDeviceAuthenticationCompositionTests
         Assert.Contains(
             exception.Failures,
             failure => failure.Contains(
-                "schema version must be 19; actual version is 11",
+                "schema version must be 20; actual version is 11",
                 StringComparison.Ordinal));
     }
 
@@ -181,7 +181,7 @@ public sealed class BranchDeviceAuthenticationCompositionTests
         public async Task CreateEmptyVersionTwelveAsync()
         {
             Directory.CreateDirectory(_directory);
-            await ExecuteAsync("PRAGMA user_version = 19;", SqliteOpenMode.ReadWriteCreate);
+            await ExecuteAsync("PRAGMA user_version = 20;", SqliteOpenMode.ReadWriteCreate);
         }
 
         public async Task SeedActiveCredentialAsync(IssuedBranchDeviceCredential credential)
