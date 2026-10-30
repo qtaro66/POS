@@ -76,11 +76,41 @@ public sealed class PostgresBranchCloudEventIngestionSessionContractTests
     }
 
     [Fact]
+    public void Sequence_read_serializes_each_branch_before_selecting_next_value()
+    {
+        var lockSql = PostgresBranchCloudEventIngestionSessionContract
+            .AcquireBranchSequenceLockSql;
+        var readSql = PostgresBranchCloudEventIngestionSessionContract
+            .ReadNextBranchSequenceSql;
+
+        Assert.Contains(
+            "pg_advisory_xact_lock(hashtextextended(@branch_id, 0))",
+            lockSql,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "COALESCE(MAX(branch_sequence), 0) + 1",
+            readSql,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "FROM public.branch_cloud_events",
+            readSql,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "WHERE branch_id = @branch_id",
+            readSql,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Contract_never_updates_or_deletes_persisted_events()
     {
         var sql = string.Join(
             '\n',
             PostgresBranchCloudEventIngestionSessionContract.TryInsertSql,
+            PostgresBranchCloudEventIngestionSessionContract
+                .AcquireBranchSequenceLockSql,
+            PostgresBranchCloudEventIngestionSessionContract
+                .ReadNextBranchSequenceSql,
             PostgresBranchCloudEventIngestionSessionContract
                 .ReadIdentityMatchesSql);
 

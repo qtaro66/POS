@@ -69,6 +69,36 @@ public sealed class NpgsqlPostgresBranchCloudEventIngestionSessionFactory :
         private bool _committed;
         private bool _disposed;
 
+        public async Task<long> ReadNextBranchSequenceAsync(
+            string branchId,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureActive();
+            branchId = RequireIdentifier(branchId, nameof(branchId));
+
+            await using (var lockCommand = connection.CreateCommand())
+            {
+                lockCommand.Transaction = transaction;
+                lockCommand.CommandText =
+                    PostgresBranchCloudEventIngestionSessionContract
+                        .AcquireBranchSequenceLockSql;
+                AddBranchIdParameter(lockCommand, branchId);
+                await lockCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using var readCommand = connection.CreateCommand();
+            readCommand.Transaction = transaction;
+            readCommand.CommandText =
+                PostgresBranchCloudEventIngestionSessionContract
+                    .ReadNextBranchSequenceSql;
+            AddBranchIdParameter(readCommand, branchId);
+            var value = await readCommand.ExecuteScalarAsync(cancellationToken);
+            return value is long nextBranchSequence && nextBranchSequence >= 1
+                ? nextBranchSequence
+                : throw new InvalidOperationException(
+                    "PostgreSQL returned an invalid next Branch sequence.");
+        }
+
         public async Task<bool> TryInsertAsync(
             PostgresBranchCloudEventRecord cloudEvent,
             CancellationToken cancellationToken = default)
@@ -231,6 +261,15 @@ public sealed class NpgsqlPostgresBranchCloudEventIngestionSessionFactory :
                 NpgsqlDbType.Bigint,
                 branchSequence);
         }
+
+        private static void AddBranchIdParameter(
+            NpgsqlCommand command,
+            string branchId) =>
+            command.Parameters.AddWithValue(
+                PostgresBranchCloudEventIngestionSessionContract
+                    .BranchIdParameter,
+                NpgsqlDbType.Text,
+                branchId);
 
         private static string RequireIdentifier(
             string value,
