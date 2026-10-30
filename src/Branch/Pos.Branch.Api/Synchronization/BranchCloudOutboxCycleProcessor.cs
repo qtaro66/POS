@@ -106,6 +106,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
                 lease,
                 $"DeliveryClientException:{exception.GetType().Name}",
                 retryDelay,
+                suggestedRetryDelay: null,
                 cancellationToken);
             return new(BranchCloudOutboxCycleDisposition.Processed);
         }
@@ -124,6 +125,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
                         lease,
                         "AcknowledgmentIdentityMismatch",
                         retryDelay,
+                        suggestedRetryDelay: null,
                         cancellationToken);
                     break;
                 }
@@ -147,6 +149,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
                     lease,
                     delivery.ErrorCode!,
                     retryDelay,
+                    delivery.SuggestedRetryDelay,
                     cancellationToken);
                 break;
 
@@ -162,6 +165,7 @@ public sealed class BranchCloudOutboxCycleProcessor :
         BranchCloudOutboxLease lease,
         string errorCode,
         TimeSpan retryDelay,
+        TimeSpan? suggestedRetryDelay,
         CancellationToken cancellationToken)
     {
         var failedAt = _timeProvider.GetUtcNow();
@@ -169,6 +173,12 @@ public sealed class BranchCloudOutboxCycleProcessor :
             retryDelay,
             _maximumRetryDelay,
             lease.RetryCount);
+        if (suggestedRetryDelay is { } hint && hint > scheduledDelay)
+        {
+            scheduledDelay = hint > _maximumRetryDelay
+                ? _maximumRetryDelay
+                : hint;
+        }
         await _failureStore.RecordAsync(
             new BranchCloudOutboxDeliveryFailure(
                 RequireFailureId(_failureIdFactory()),

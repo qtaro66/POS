@@ -109,6 +109,34 @@ public sealed class BranchCloudOutboxCycleProcessorTests
             stores.Failure?.NextRetryAt);
     }
 
+    [Theory]
+    [InlineData(3, 90, 90)]
+    [InlineData(3, 20, 40)]
+    [InlineData(3, 600, 300)]
+    public async Task Retry_hint_cannot_accelerate_or_exceed_bounded_local_backoff(
+        int retryCount,
+        int suggestedDelaySeconds,
+        int expectedDelaySeconds)
+    {
+        var stores = new RecordingStores { Lease = Lease(retryCount: retryCount) };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed(
+                    "CLOUD_UNAVAILABLE",
+                    TimeSpan.FromSeconds(suggestedDelaySeconds))));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(
+            Now.AddSeconds(expectedDelaySeconds),
+            stores.Failure?.NextRetryAt);
+    }
+
     [Fact]
     public async Task Unexpected_client_error_is_persisted_as_retryable_failure()
     {
