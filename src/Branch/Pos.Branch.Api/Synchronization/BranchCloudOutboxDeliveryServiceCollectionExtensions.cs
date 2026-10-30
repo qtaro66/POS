@@ -63,6 +63,7 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
                     provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>(),
                     provider.GetRequiredService<IBranchCloudDeliveryConfirmationStore>(),
                     provider.GetRequiredService<IBranchCloudOutboxDeliveryFailureStore>(),
+                    provider.GetRequiredService<IBranchCloudOutboxSequenceReplayStore>(),
                     provider.GetRequiredService<IBranchCloudOutboxRetryDelayPolicy>(),
                     provider
                         .GetRequiredService<IOptions<BranchCloudOutboxDeliveryOptions>>()
