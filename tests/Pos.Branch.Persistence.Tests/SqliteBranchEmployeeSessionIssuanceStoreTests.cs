@@ -15,7 +15,7 @@ public sealed class SqliteBranchEmployeeSessionIssuanceStoreTests
         await using var database = new SessionDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(19L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(20L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'branch_employee_sessions';

@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 19;
+    public const int CurrentVersion = 20;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1011,6 +1011,37 @@ internal static class SqliteBranchSchema
                     AND expected_branch_sequence < branch_sequence));
         """;
 
+    private const string SchemaVersion20 = """
+        CREATE TABLE IF NOT EXISTS cloud_sync_sequence_replay_requests (
+            recovery_id TEXT NOT NULL PRIMARY KEY CHECK (
+                length(trim(recovery_id)) > 0),
+            branch_id TEXT NOT NULL CHECK (length(trim(branch_id)) > 0),
+            expected_branch_sequence INTEGER NOT NULL CHECK (
+                expected_branch_sequence >= 1),
+            received_branch_sequence INTEGER NOT NULL CHECK (
+                received_branch_sequence > expected_branch_sequence),
+            expected_outbox_id TEXT NOT NULL,
+            requested_at TEXT NOT NULL,
+            completed_at TEXT NULL,
+            FOREIGN KEY (
+                branch_id, expected_outbox_id, expected_branch_sequence)
+                REFERENCES cloud_sync_outbox (
+                    branch_id, outbox_id, branch_sequence)
+                ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_cloud_sync_sequence_replay_pending
+            ON cloud_sync_sequence_replay_requests (
+                branch_id, expected_branch_sequence, requested_at)
+            WHERE completed_at IS NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            ux_cloud_sync_sequence_replay_active
+            ON cloud_sync_sequence_replay_requests (
+                branch_id, expected_branch_sequence)
+            WHERE completed_at IS NULL;
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -1132,6 +1163,15 @@ internal static class SqliteBranchSchema
             await MigrateToVersion19Async(
                 connection,
                 transaction,
+                cancellationToken);
+        }
+
+        if (storedVersion < 20)
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                SchemaVersion20,
                 cancellationToken);
         }
 
