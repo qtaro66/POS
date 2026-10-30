@@ -349,6 +349,104 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
                 .RenewAsync(lease, RequestedAt.AddSeconds(30), TimeSpan.FromSeconds(30)));
     }
 
+    [Fact]
+    public async Task Replay_completion_is_idempotent_and_preserves_first_evidence()
+    {
+        await using var database = new ReplayDatabase();
+        var lease = await SeedClaimAsync(database);
+        var store = new SqliteBranchCloudOutboxSequenceReplayCompletionStore(database.Path);
+
+        var result = await store.CompleteAsync(new(lease, lease.OutboxId, 6, RequestedAt.AddSeconds(10)));
+        var duplicate = await store.CompleteAsync(new(lease, lease.OutboxId, 6, RequestedAt.AddSeconds(15)));
+
+        Assert.Equal(BranchCloudOutboxSequenceReplayCompletionResult.Completed, result);
+        Assert.Equal(BranchCloudOutboxSequenceReplayCompletionResult.AlreadyCompleted, duplicate);
+        Assert.Equal("2026-10-30T04:30:10.0000000+00:00", await database.TextAsync(
+            "SELECT completed_at FROM cloud_sync_sequence_replay_requests;"));
+        Assert.Null(await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
+        Assert.Equal("2026-10-30T04:00:00.0000000+00:00", await database.ReadAcknowledgedAtAsync());
+        Assert.Null(await new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path)
+            .ClaimNextAsync("BRANCH-01", "WORKER-02", RequestedAt.AddMinutes(1), TimeSpan.FromSeconds(30)));
+    }
+
+    [Theory]
+    [InlineData("owner")]
+    [InlineData("expiry")]
+    [InlineData("missing")]
+    public async Task Replay_completion_rejects_stale_ownership_without_completing(string change)
+    {
+        await using var database = new ReplayDatabase();
+        var lease = await SeedClaimAsync(database);
+        await database.ExecuteAsync(change switch
+        {
+            "owner" => "UPDATE cloud_sync_sequence_replay_leases SET lease_owner = 'OTHER';",
+            "expiry" => "UPDATE cloud_sync_sequence_replay_leases SET lease_expires_at = '2026-10-30T04:30:40Z';",
+            _ => "DELETE FROM cloud_sync_sequence_replay_leases;"
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new SqliteBranchCloudOutboxSequenceReplayCompletionStore(database.Path)
+                .CompleteAsync(new(lease, lease.OutboxId, 6, RequestedAt.AddSeconds(10))));
+        Assert.Null(await database.TextAsync("SELECT completed_at FROM cloud_sync_sequence_replay_requests;"));
+    }
+
+    [Theory]
+    [InlineData("OTHER-BRANCH", "RECOVERY-01", "OUTBOX-6", false)]
+    [InlineData("BRANCH-01", "MISSING", "OUTBOX-6", false)]
+    [InlineData("BRANCH-01", "RECOVERY-01", "OTHER-EVENT", true)]
+    public async Task Replay_completion_checks_recovery_and_event_identity(
+        string branch, string recovery, string outbox, bool conflict)
+    {
+        await using var database = new ReplayDatabase();
+        var original = await SeedClaimAsync(database);
+        var lease = new BranchCloudOutboxSequenceReplayLease(
+            recovery, outbox, branch, 6, original.RequestId, original.TableSessionId,
+            original.Action, original.TableVersion, original.CreatedAt, original.RetryCount,
+            original.LeaseOwner, original.ClaimedAt, original.LeaseExpiresAt);
+        var store = new SqliteBranchCloudOutboxSequenceReplayCompletionStore(database.Path);
+        var completion = new BranchCloudOutboxSequenceReplayCompletion(lease, outbox, 6, RequestedAt.AddSeconds(10));
+
+        if (conflict)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => store.CompleteAsync(completion));
+        }
+        else
+        {
+            Assert.Equal(BranchCloudOutboxSequenceReplayCompletionResult.NotFound,
+                await store.CompleteAsync(completion));
+        }
+        Assert.Null(await database.TextAsync("SELECT completed_at FROM cloud_sync_sequence_replay_requests;"));
+    }
+
+    [Fact]
+    public async Task Replay_completion_rolls_back_when_lease_release_fails()
+    {
+        await using var database = new ReplayDatabase();
+        var lease = await SeedClaimAsync(database);
+        await database.ExecuteAsync("""
+            CREATE TRIGGER reject_replay_release BEFORE UPDATE OF lease_owner
+            ON cloud_sync_sequence_replay_leases
+            WHEN NEW.lease_owner IS NULL
+            BEGIN SELECT RAISE(ABORT, 'simulated release failure'); END;
+            """);
+
+        await Assert.ThrowsAsync<SqliteException>(() =>
+            new SqliteBranchCloudOutboxSequenceReplayCompletionStore(database.Path)
+                .CompleteAsync(new(lease, lease.OutboxId, 6, RequestedAt.AddSeconds(10))));
+
+        Assert.Null(await database.TextAsync("SELECT completed_at FROM cloud_sync_sequence_replay_requests;"));
+        Assert.Equal("WORKER-01", await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
+    }
+
+    private static async Task<BranchCloudOutboxSequenceReplayLease> SeedClaimAsync(ReplayDatabase database)
+    {
+        await database.InitializeAsync();
+        await database.SeedAsync(6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path).RequestAsync(Request());
+        return (await new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path)
+            .ClaimNextAsync("BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(30)))!;
+    }
+
     private static BranchCloudOutboxSequenceReplayRequest Request() =>
         new(
             "RECOVERY-01",
@@ -404,6 +502,14 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
             using var command = connection.CreateCommand();
             command.CommandText = sql;
             await command.ExecuteNonQueryAsync();
+        }
+
+        public async Task<string?> TextAsync(string sql)
+        {
+            await using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            return await command.ExecuteScalarAsync() as string;
         }
 
         public async Task<int> ReplayCountAsync()
