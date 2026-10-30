@@ -81,6 +81,62 @@ public sealed class HttpBranchCloudOutboxDeliveryClientTests
     }
 
     [Fact]
+    public async Task Valid_sequence_gap_response_returns_expected_sequence()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.Conflict)
+        {
+            Content = JsonContent.Create(
+                new BranchCloudEventSequenceGapResponse(
+                    1,
+                    "BranchSequenceGap",
+                    "BRANCH-01",
+                    6,
+                    7))
+        };
+        var client = Client(new StubHandler((_, _) => Task.FromResult(response)));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Equal(
+            BranchCloudOutboxDeliveryDisposition.RetryableFailure,
+            result.Disposition);
+        Assert.Equal("BranchSequenceGap", result.ErrorCode);
+        Assert.Equal(6, result.ExpectedBranchSequence);
+    }
+
+    [Theory]
+    [InlineData(2, "BranchSequenceGap", "BRANCH-01", 6, 7)]
+    [InlineData(1, "OtherError", "BRANCH-01", 6, 7)]
+    [InlineData(1, "BranchSequenceGap", "OTHER-BRANCH", 6, 7)]
+    [InlineData(1, "BranchSequenceGap", "BRANCH-01", 0, 7)]
+    [InlineData(1, "BranchSequenceGap", "BRANCH-01", 7, 7)]
+    [InlineData(1, "BranchSequenceGap", "BRANCH-01", 6, 8)]
+    public async Task Invalid_sequence_gap_response_remains_generic_conflict(
+        int schemaVersion,
+        string errorCode,
+        string branchId,
+        long expectedBranchSequence,
+        long receivedBranchSequence)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.Conflict)
+        {
+            Content = JsonContent.Create(
+                new BranchCloudEventSequenceGapResponse(
+                    schemaVersion,
+                    errorCode,
+                    branchId,
+                    expectedBranchSequence,
+                    receivedBranchSequence))
+        };
+        var client = Client(new StubHandler((_, _) => Task.FromResult(response)));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Equal("HttpStatus409", result.ErrorCode);
+        Assert.Null(result.ExpectedBranchSequence);
+    }
+
+    [Fact]
     public async Task Retry_after_delta_is_returned_as_retry_hint()
     {
         var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
