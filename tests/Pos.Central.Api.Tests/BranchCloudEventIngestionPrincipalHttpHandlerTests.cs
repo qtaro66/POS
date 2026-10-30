@@ -76,6 +76,24 @@ public sealed class BranchCloudEventIngestionPrincipalHttpHandlerTests
     }
 
     [Fact]
+    public async Task Sequence_gap_returns_versioned_409_recovery_payload()
+    {
+        var result = await BranchCloudEventIngestionPrincipalHttpHandler.HandleAsync(
+            Principal("BRANCH-01", authenticated: true),
+            Request("BRANCH-01"),
+            new BranchCloudEventIngestionService(new SequenceGapStore()));
+
+        var conflict = Assert.IsType<
+            Conflict<BranchCloudEventSequenceGapResponse>>(result.Result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
+        Assert.Equal(1, conflict.Value?.SchemaVersion);
+        Assert.Equal("BranchSequenceGap", conflict.Value?.ErrorCode);
+        Assert.Equal("BRANCH-01", conflict.Value?.BranchId);
+        Assert.Equal(6, conflict.Value?.ExpectedBranchSequence);
+        Assert.Equal(7, conflict.Value?.ReceivedBranchSequence);
+    }
+
+    [Fact]
     public async Task Persistence_unavailable_returns_bodyless_503()
     {
         var result = await BranchCloudEventIngestionPrincipalHttpHandler.HandleAsync(
@@ -179,5 +197,17 @@ public sealed class BranchCloudEventIngestionPrincipalHttpHandlerTests
             Task.FromException<BranchCloudEventPersistenceResult>(
                 new BranchCloudEventPersistenceUnavailableException(
                     new IOException("Synthetic persistence failure.")));
+    }
+
+    private sealed class SequenceGapStore : IBranchCloudEventIngestionStore
+    {
+        public Task<BranchCloudEventPersistenceResult> PersistAsync(
+            BranchCloudOutboxEventEnvelope envelope,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<BranchCloudEventPersistenceResult>(
+                new BranchCloudEventSequenceGapException(
+                    envelope.BranchId,
+                    expectedBranchSequence: 6,
+                    receivedBranchSequence: envelope.BranchSequence));
     }
 }

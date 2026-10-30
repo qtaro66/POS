@@ -7,6 +7,8 @@ public static class BranchCloudEventIngestionResponseMapper
 {
     public const int CurrentSchemaVersion = 1;
 
+    public const string SequenceGapErrorCode = "BranchSequenceGap";
+
     public static BranchCloudEventIngestionResponse Map(
         BranchCloudEventPersistenceResult result)
     {
@@ -17,5 +19,18 @@ public static class BranchCloudEventIngestionResponseMapper
             result.EventId,
             result.BranchId,
             result.BranchSequence);
+    }
+
+    public static BranchCloudEventSequenceGapResponse Map(
+        BranchCloudEventSequenceGapException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return new BranchCloudEventSequenceGapResponse(
+            CurrentSchemaVersion,
+            SequenceGapErrorCode,
+            exception.BranchId,
+            exception.ExpectedBranchSequence,
+            exception.ReceivedBranchSequence);
     }
 }
