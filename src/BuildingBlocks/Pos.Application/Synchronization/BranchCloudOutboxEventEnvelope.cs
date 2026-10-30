@@ -78,6 +78,21 @@ public sealed class BranchCloudOutboxEventEnvelope
             lease.CreatedAt);
     }
 
+    public static BranchCloudOutboxEventEnvelope FromReplayLease(
+        BranchCloudOutboxSequenceReplayLease lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        return Create(
+            lease.OutboxId,
+            lease.BranchId,
+            lease.BranchSequence,
+            lease.RequestId,
+            lease.TableSessionId,
+            lease.Action,
+            lease.TableVersion,
+            lease.CreatedAt);
+    }
+
     public static BranchCloudOutboxEventEnvelope Create(
         string eventId,
         string branchId,
