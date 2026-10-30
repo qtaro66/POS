@@ -57,7 +57,8 @@ public sealed class SqliteBranchCloudOutboxReadinessProbe :
         "failed_at",
         "next_retry_at",
         "error_code",
-        "retry_count_after"
+        "retry_count_after",
+        "expected_branch_sequence"
     ];
 
     public int ExpectedSchemaVersion => SqliteBranchSchema.CurrentVersion;

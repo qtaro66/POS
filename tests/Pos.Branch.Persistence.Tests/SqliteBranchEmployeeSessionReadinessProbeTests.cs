@@ -15,10 +15,10 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.True(result.IsReady);
-        Assert.Equal(18, result.ActualSchemaVersion);
+        Assert.Equal(19, result.ActualSchemaVersion);
         Assert.Empty(result.MissingTables);
         Assert.Null(result.ErrorCode);
-        Assert.Equal(18, probe.ExpectedSchemaVersion);
+        Assert.Equal(19, probe.ExpectedSchemaVersion);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.False(result.IsReady);
-        Assert.Equal(18, result.ActualSchemaVersion);
+        Assert.Equal(19, result.ActualSchemaVersion);
         Assert.Equal(
             ["branch_devices", "branch_employee_status", "branch_employee_sessions"],
             result.MissingTables);
@@ -100,7 +100,7 @@ public sealed class SqliteBranchEmployeeSessionReadinessProbeTests
         public async Task CreateEmptyCurrentVersionAsync()
         {
             Directory.CreateDirectory(_directory);
-            await ExecuteAsync("PRAGMA user_version = 18;", create: true);
+            await ExecuteAsync("PRAGMA user_version = 19;", create: true);
         }
 
         public Task ExecuteAsync(string sql) => ExecuteAsync(sql, create: false);

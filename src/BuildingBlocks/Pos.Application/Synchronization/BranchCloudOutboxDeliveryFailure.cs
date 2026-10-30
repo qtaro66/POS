@@ -7,13 +7,23 @@ public sealed class BranchCloudOutboxDeliveryFailure
         BranchCloudOutboxLease lease,
         DateTimeOffset failedAt,
         DateTimeOffset nextRetryAt,
-        string errorCode)
+        string errorCode,
+        long? expectedBranchSequence = null)
     {
         FailureId = RequireIdentifier(failureId, nameof(failureId));
         Lease = lease ?? throw new ArgumentNullException(nameof(lease));
         FailedAt = RequireUtc(failedAt, nameof(failedAt));
         NextRetryAt = RequireUtc(nextRetryAt, nameof(nextRetryAt));
         ErrorCode = RequireIdentifier(errorCode, nameof(errorCode));
+        ExpectedBranchSequence = expectedBranchSequence switch
+        {
+            null => null,
+            >= 1 when expectedBranchSequence < Lease.BranchSequence =>
+                expectedBranchSequence,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(expectedBranchSequence),
+                "The expected Branch sequence must be positive and lower than the failed sequence.")
+        };
 
         if (FailedAt < Lease.ClaimedAt || FailedAt >= Lease.LeaseExpiresAt)
         {
@@ -39,6 +49,8 @@ public sealed class BranchCloudOutboxDeliveryFailure
     public DateTimeOffset NextRetryAt { get; }
 
     public string ErrorCode { get; }
+
+    public long? ExpectedBranchSequence { get; }
 
     private static string RequireIdentifier(string value, string parameterName) =>
         string.IsNullOrWhiteSpace(value)

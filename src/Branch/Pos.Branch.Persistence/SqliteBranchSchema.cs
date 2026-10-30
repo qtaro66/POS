@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1001,6 +1001,16 @@ internal static class SqliteBranchSchema
                 branch_id, outbox_id, branch_sequence, failed_at);
         """;
 
+    private const string SchemaVersion19 = """
+        ALTER TABLE cloud_sync_delivery_failures
+            ADD COLUMN expected_branch_sequence INTEGER NULL
+            CHECK (
+                expected_branch_sequence IS NULL
+                OR (
+                    expected_branch_sequence >= 1
+                    AND expected_branch_sequence < branch_sequence));
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -1117,6 +1127,14 @@ internal static class SqliteBranchSchema
                 cancellationToken);
         }
 
+        if (storedVersion < 19)
+        {
+            await MigrateToVersion19Async(
+                connection,
+                transaction,
+                cancellationToken);
+        }
+
         if (storedVersion != CurrentVersion)
         {
             await ExecuteAsync(
@@ -1127,6 +1145,26 @@ internal static class SqliteBranchSchema
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task MigrateToVersion19Async(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!await ColumnExistsAsync(
+                connection,
+                transaction,
+                "cloud_sync_delivery_failures",
+                "expected_branch_sequence",
+                cancellationToken))
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                SchemaVersion19,
+                cancellationToken);
+        }
     }
 
     private static async Task<int> ReadVersionAsync(
