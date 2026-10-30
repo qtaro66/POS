@@ -43,6 +43,22 @@ npm run build
 
 GitHub pull requests run the same .NET and frontend checks automatically. Dependency Review rejects newly introduced dependencies with known high or critical severity findings.
 
+## Agent continuation
+
+After a READY handoff is tracked, send OpenAI `continue` to consume that exact
+result and prepare the next validated local handoff when the merge is complete.
+Pending PRs remain with Antigravity; approvals and GitHub ownership are unchanged.
+
+```powershell
+# Track an explicitly selected, validated READY handoff (normally done by OpenAI).
+pwsh tools/continue-handoff.ps1 -TrackBranch 'feature/exact-task-branch' -Round 1
+# Read the next action without changing Git, code, or remote state.
+pwsh tools/continue-handoff.ps1
+```
+
+Tracking is local to this checkout in ignored `.handoff/continue.json` and is
+not shared across clones or worktrees. See `AGENTS.md` for sequencing rules.
+
 ## Safety boundaries
 
 - Automated tests must not contact a physical printer, open a cash drawer, or use production endpoints.
