@@ -135,6 +135,50 @@ public sealed class BranchCloudOutboxSequenceReplayLeaseTests
         Assert.Equal("leaseExpiresAt", exception.ParamName);
     }
 
+    [Fact]
+    public void Renewal_preserves_identity_and_original_claim_without_mutating_token()
+    {
+        var original = Create();
+        var renewed = original.Renew(ClaimedAt.AddSeconds(10), TimeSpan.FromSeconds(30));
+
+        Assert.Equal(ClaimedAt.AddSeconds(30), original.LeaseExpiresAt);
+        Assert.Equal(ClaimedAt.AddSeconds(40), renewed.LeaseExpiresAt);
+        Assert.Equal(original.ClaimedAt, renewed.ClaimedAt);
+        Assert.Equal(original.RecoveryId, renewed.RecoveryId);
+        Assert.Equal(original.OutboxId, renewed.OutboxId);
+        Assert.Equal(original.BranchId, renewed.BranchId);
+        Assert.Equal(original.BranchSequence, renewed.BranchSequence);
+        Assert.Equal(original.RequestId, renewed.RequestId);
+        Assert.Equal(original.TableSessionId, renewed.TableSessionId);
+        Assert.Equal(original.Action, renewed.Action);
+        Assert.Equal(original.TableVersion, renewed.TableVersion);
+        Assert.Equal(original.CreatedAt, renewed.CreatedAt);
+        Assert.Equal(original.RetryCount, renewed.RetryCount);
+        Assert.Equal(original.LeaseOwner, renewed.LeaseOwner);
+    }
+
+    [Theory]
+    [InlineData(-1, 40)]
+    [InlineData(30, 40)]
+    [InlineData(31, 40)]
+    [InlineData(10, 0)]
+    [InlineData(10, -1)]
+    [InlineData(10, 20)]
+    [InlineData(10, 19)]
+    public void Renewal_rejects_invalid_window_or_non_extending_duration(int seconds, int duration)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Create().Renew(ClaimedAt.AddSeconds(seconds), TimeSpan.FromSeconds(duration)));
+    }
+
+    [Fact]
+    public void Renewal_rejects_non_UTC_time()
+    {
+        Assert.Throws<ArgumentException>(() => Create().Renew(
+            ClaimedAt.AddSeconds(10).ToOffset(TimeSpan.FromHours(7)),
+            TimeSpan.FromSeconds(30)));
+    }
+
     private static BranchCloudOutboxSequenceReplayLease Create(
         IReadOnlyDictionary<string, string>? values = null,
         long branchSequence = 6,

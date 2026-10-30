@@ -83,6 +83,33 @@ public sealed class BranchCloudOutboxSequenceReplayLease
 
     public DateTimeOffset LeaseExpiresAt { get; }
 
+    public BranchCloudOutboxSequenceReplayLease Renew(
+        DateTimeOffset renewedAt,
+        TimeSpan leaseDuration)
+    {
+        RequireUtc(renewedAt, nameof(renewedAt));
+        if (renewedAt < ClaimedAt || renewedAt >= LeaseExpiresAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(renewedAt), "Renewal must occur within the active lease window.");
+        }
+        if (leaseDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(leaseDuration));
+        }
+        var expiresAt = renewedAt.Add(leaseDuration);
+        if (expiresAt <= LeaseExpiresAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(leaseDuration), "Renewal must extend the current lease expiry.");
+        }
+
+        return new(
+            RecoveryId, OutboxId, BranchId, BranchSequence, RequestId,
+            TableSessionId, Action, TableVersion, CreatedAt, RetryCount,
+            LeaseOwner, ClaimedAt, expiresAt);
+    }
+
     private static string RequireIdentifier(string value, string parameterName) =>
         string.IsNullOrWhiteSpace(value)
             ? throw new ArgumentException(
@@ -112,6 +139,21 @@ public interface IBranchCloudOutboxSequenceReplayClaimStore
         string branchId,
         string leaseOwner,
         DateTimeOffset claimedAt,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IBranchCloudOutboxSequenceReplayLeaseRenewalStore
+{
+    /// <summary>
+    /// Extends an incomplete replay's active lease only when its recovery and
+    /// event identity, owner, claim time, and expiry match persisted ownership.
+    /// Rejects completed, expired, replaced, or non-extending renewals. Returns
+    /// the renewed lease token without altering original event acknowledgment.
+    /// </summary>
+    Task<BranchCloudOutboxSequenceReplayLease> RenewAsync(
+        BranchCloudOutboxSequenceReplayLease lease,
+        DateTimeOffset renewedAt,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken = default);
 }
