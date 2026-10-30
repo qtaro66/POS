@@ -210,6 +210,86 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
             """));
     }
 
+    [Fact]
+    public async Task Replay_claim_preserves_original_ack_and_reclaims_at_expiry()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path).RequestAsync(Request());
+        var store = new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path);
+
+        var lease = await store.ClaimNextAsync("BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(30));
+        Assert.NotNull(lease);
+        Assert.Equal("RECOVERY-01", lease.RecoveryId);
+        Assert.Equal(6, lease.BranchSequence);
+        Assert.Equal("OUTBOX-6", lease.OutboxId);
+        Assert.Equal(0, lease.RetryCount);
+        Assert.Null(await store.ClaimNextAsync("BRANCH-01", "WORKER-02", RequestedAt.AddSeconds(29), TimeSpan.FromSeconds(30)));
+        var reclaimed = await store.ClaimNextAsync("BRANCH-01", "WORKER-02", RequestedAt.AddSeconds(30), TimeSpan.FromSeconds(30));
+        Assert.Equal("WORKER-02", reclaimed?.LeaseOwner);
+        Assert.Equal("2026-10-30T04:00:00.0000000+00:00", await database.ReadAcknowledgedAtAsync());
+    }
+
+    [Fact]
+    public async Task Replay_claim_does_not_skip_earliest_sequence_waiting_for_retry()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(5, acknowledged: true);
+        await database.SeedAsync(6, acknowledged: true);
+        var requests = new SqliteBranchCloudOutboxSequenceReplayStore(database.Path);
+        await requests.RequestAsync(Request());
+        await requests.RequestAsync(new("RECOVERY-02", "BRANCH-01", 5, 7, RequestedAt.AddSeconds(1)));
+        await database.ExecuteAsync("""
+            INSERT INTO cloud_sync_sequence_replay_leases (recovery_id, retry_count, next_retry_at)
+            VALUES ('RECOVERY-02', 2, '2026-10-30T04:31:00Z');
+            """);
+        var store = new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path);
+
+        Assert.Null(await store.ClaimNextAsync("BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(30)));
+        var lease = await store.ClaimNextAsync("BRANCH-01", "WORKER-01", RequestedAt.AddMinutes(1), TimeSpan.FromSeconds(30));
+        Assert.Equal(5, lease?.BranchSequence);
+        Assert.Equal(2, lease?.RetryCount);
+    }
+
+    [Fact]
+    public async Task Replay_claim_excludes_completed_requests_and_other_branches()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path).RequestAsync(Request());
+        var store = new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path);
+        Assert.Null(await store.ClaimNextAsync("OTHER", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(30)));
+        await database.ExecuteAsync("UPDATE cloud_sync_sequence_replay_requests SET completed_at = '2026-10-30T04:30:00Z';");
+        Assert.Null(await store.ClaimNextAsync("BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(30)));
+    }
+
+    [Fact]
+    public async Task Concurrent_replay_claims_grant_one_owner()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path).RequestAsync(Request());
+        var results = await Task.WhenAll(Enumerable.Range(0, 2).Select(index => Task.Run(() =>
+            new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path).ClaimNextAsync(
+                "BRANCH-01", $"WORKER-{index}", RequestedAt, TimeSpan.FromSeconds(30)))));
+
+        Assert.Single(results, result => result is not null);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Replay_claim_rejects_invalid_duration_before_database_access(int seconds)
+    {
+        var store = new SqliteBranchCloudOutboxSequenceReplayClaimStore("missing-replay.db");
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.ClaimNextAsync(
+            "BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(seconds)));
+    }
+
     private static BranchCloudOutboxSequenceReplayRequest Request() =>
         new(
             "RECOVERY-01",
