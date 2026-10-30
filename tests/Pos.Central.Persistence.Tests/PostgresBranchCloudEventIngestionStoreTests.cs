@@ -29,6 +29,64 @@ public sealed class PostgresBranchCloudEventIngestionStoreTests
     }
 
     [Fact]
+    public async Task Sequence_gap_is_rejected_before_insert()
+    {
+        var session = new RecordingSession(
+            inserted: true,
+            matches: [],
+            nextBranchSequence: 6);
+        var store = Store(session);
+
+        var exception = await Assert.ThrowsAsync<
+            BranchCloudEventSequenceGapException>(() =>
+                store.PersistAsync(Envelope()));
+
+        Assert.Equal("BRANCH-01", exception.BranchId);
+        Assert.Equal(6, exception.ExpectedBranchSequence);
+        Assert.Equal(7, exception.ReceivedBranchSequence);
+        Assert.Equal("BRANCH-01", session.SequenceReadBranchId);
+        Assert.Null(session.InsertedEvent);
+        Assert.False(session.Committed);
+        Assert.True(session.Disposed);
+    }
+
+    [Fact]
+    public async Task Earlier_sequence_uses_existing_identity_replay_path()
+    {
+        var expected = PostgresBranchCloudEventRecord.FromEnvelope(Envelope());
+        var session = new RecordingSession(
+            inserted: false,
+            matches: [expected],
+            nextBranchSequence: 8);
+        var store = Store(session);
+
+        var result = await store.PersistAsync(Envelope());
+
+        Assert.Equal(
+            BranchCloudEventPersistenceDisposition.AlreadyStored,
+            result.Disposition);
+        Assert.True(session.IdentityRead);
+        Assert.True(session.Committed);
+    }
+
+    [Fact]
+    public async Task Invalid_next_sequence_fails_closed_before_insert()
+    {
+        var session = new RecordingSession(
+            inserted: true,
+            matches: [],
+            nextBranchSequence: 0);
+        var store = Store(session);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.PersistAsync(Envelope()));
+
+        Assert.Contains("invalid next Branch sequence", exception.Message);
+        Assert.Null(session.InsertedEvent);
+        Assert.False(session.Committed);
+    }
+
+    [Fact]
     public async Task Matching_identity_with_different_payload_conflicts()
     {
         var expected = PostgresBranchCloudEventRecord.FromEnvelope(Envelope());
@@ -268,7 +326,8 @@ public sealed class PostgresBranchCloudEventIngestionStoreTests
 
     private sealed class RecordingSession(
         bool inserted,
-        IReadOnlyList<PostgresBranchCloudEventRecord>? matches) :
+        IReadOnlyList<PostgresBranchCloudEventRecord>? matches,
+        long nextBranchSequence = 7) :
         IPostgresBranchCloudEventIngestionSession
     {
         public bool Committed { get; private set; }
@@ -279,7 +338,18 @@ public sealed class PostgresBranchCloudEventIngestionStoreTests
 
         public PostgresBranchCloudEventRecord? InsertedEvent { get; private set; }
 
+        public string? SequenceReadBranchId { get; private set; }
+
         public List<CancellationToken> CancellationTokens { get; } = [];
+
+        public Task<long> ReadNextBranchSequenceAsync(
+            string branchId,
+            CancellationToken cancellationToken = default)
+        {
+            SequenceReadBranchId = branchId;
+            CancellationTokens.Add(cancellationToken);
+            return Task.FromResult(nextBranchSequence);
+        }
 
         public Task<bool> TryInsertAsync(
             PostgresBranchCloudEventRecord cloudEvent,

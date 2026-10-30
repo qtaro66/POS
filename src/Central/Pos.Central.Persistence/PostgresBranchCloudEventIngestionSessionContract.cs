@@ -18,6 +18,16 @@ public static class PostgresBranchCloudEventIngestionSessionContract
 
     public const string OccurredAtParameter = "occurred_at";
 
+    public const string AcquireBranchSequenceLockSql = """
+        SELECT pg_advisory_xact_lock(hashtextextended(@branch_id, 0));
+        """;
+
+    public const string ReadNextBranchSequenceSql = """
+        SELECT COALESCE(MAX(branch_sequence), 0) + 1
+        FROM public.branch_cloud_events
+        WHERE branch_id = @branch_id;
+        """;
+
     public const string TryInsertSql = """
         INSERT INTO public.branch_cloud_events (
             event_id,

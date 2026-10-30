@@ -81,6 +81,10 @@ public interface IPostgresBranchCloudEventIngestionSessionFactory
 
 public interface IPostgresBranchCloudEventIngestionSession : IAsyncDisposable
 {
+    Task<long> ReadNextBranchSequenceAsync(
+        string branchId,
+        CancellationToken cancellationToken = default);
+
     Task<bool> TryInsertAsync(
         PostgresBranchCloudEventRecord cloudEvent,
         CancellationToken cancellationToken = default);
@@ -144,6 +148,23 @@ public sealed class PostgresBranchCloudEventIngestionStore :
             .OpenTransactionAsync(cancellationToken)
             ?? throw new InvalidOperationException(
                 "The PostgreSQL ingestion session factory returned no session.");
+
+        var nextBranchSequence = await session.ReadNextBranchSequenceAsync(
+            expected.BranchId,
+            cancellationToken);
+        if (nextBranchSequence < 1)
+        {
+            throw new InvalidOperationException(
+                "The PostgreSQL ingestion session returned an invalid next Branch sequence.");
+        }
+
+        if (expected.BranchSequence > nextBranchSequence)
+        {
+            throw new BranchCloudEventSequenceGapException(
+                expected.BranchId,
+                nextBranchSequence,
+                expected.BranchSequence);
+        }
 
         if (await session.TryInsertAsync(expected, cancellationToken))
         {
