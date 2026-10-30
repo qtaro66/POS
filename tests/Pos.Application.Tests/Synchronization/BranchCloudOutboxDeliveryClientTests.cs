@@ -14,6 +14,7 @@ public sealed class BranchCloudOutboxDeliveryClientTests
             result.Disposition);
         Assert.Null(result.ErrorCode);
         Assert.Null(result.SuggestedRetryDelay);
+        Assert.Null(result.ExpectedBranchSequence);
         Assert.Equal("EVENT-01", result.AcknowledgedEventId);
         Assert.Equal(7, result.AcknowledgedBranchSequence);
     }
@@ -28,6 +29,7 @@ public sealed class BranchCloudOutboxDeliveryClientTests
             result.Disposition);
         Assert.Equal("CLOUD_TIMEOUT", result.ErrorCode);
         Assert.Null(result.SuggestedRetryDelay);
+        Assert.Null(result.ExpectedBranchSequence);
     }
 
     [Fact]
@@ -38,6 +40,16 @@ public sealed class BranchCloudOutboxDeliveryClientTests
             TimeSpan.FromSeconds(45));
 
         Assert.Equal(TimeSpan.FromSeconds(45), result.SuggestedRetryDelay);
+    }
+
+    [Fact]
+    public void Retryable_failure_preserves_expected_branch_sequence()
+    {
+        var result = BranchCloudOutboxDeliveryResult.Failed(
+            "BranchSequenceGap",
+            expectedBranchSequence: 6);
+
+        Assert.Equal(6, result.ExpectedBranchSequence);
     }
 
     [Fact]
@@ -64,6 +76,19 @@ public sealed class BranchCloudOutboxDeliveryClientTests
                 suggestedRetryDelay: TimeSpan.FromSeconds(5)));
 
         Assert.Equal("suggestedRetryDelay", exception.ParamName);
+    }
+
+    [Fact]
+    public void Durable_acknowledgment_rejects_expected_branch_sequence()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new BranchCloudOutboxDeliveryResult(
+                BranchCloudOutboxDeliveryDisposition.DurablyAcknowledged,
+                acknowledgedEventId: "EVENT-01",
+                acknowledgedBranchSequence: 7,
+                expectedBranchSequence: 6));
+
+        Assert.Equal("expectedBranchSequence", exception.ParamName);
     }
 
     [Theory]
@@ -127,6 +152,19 @@ public sealed class BranchCloudOutboxDeliveryClientTests
                 TimeSpan.FromSeconds(seconds)));
 
         Assert.Equal("suggestedRetryDelay", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Retryable_failure_requires_positive_expected_sequence(long sequence)
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            BranchCloudOutboxDeliveryResult.Failed(
+                "BranchSequenceGap",
+                expectedBranchSequence: sequence));
+
+        Assert.Equal("expectedBranchSequence", exception.ParamName);
     }
 
     [Fact]

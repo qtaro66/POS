@@ -62,10 +62,20 @@ public sealed class HttpBranchCloudOutboxDeliveryClient :
 
             if (response.StatusCode is not HttpStatusCode.OK)
             {
+                var expectedBranchSequence = response.StatusCode is
+                        HttpStatusCode.Conflict
+                    ? await ReadExpectedBranchSequenceAsync(
+                        response,
+                        envelope,
+                        cancellationToken)
+                    : null;
                 return BranchCloudOutboxDeliveryResult.Failed(
-                    "HttpStatus" + ((int)response.StatusCode)
-                        .ToString(CultureInfo.InvariantCulture),
-                    ReadRetryAfter(response));
+                    expectedBranchSequence is null
+                        ? "HttpStatus" + ((int)response.StatusCode)
+                            .ToString(CultureInfo.InvariantCulture)
+                        : BranchCloudEventSequenceGapResponse.ErrorCodeValue,
+                    ReadRetryAfter(response),
+                    expectedBranchSequence);
             }
 
             if (response.Content.Headers.ContentLength is >
@@ -181,6 +191,72 @@ public sealed class HttpBranchCloudOutboxDeliveryClient :
             return delay > TimeSpan.Zero ? delay : null;
         }
         catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<long?> ReadExpectedBranchSequenceAsync(
+        HttpResponseMessage response,
+        BranchCloudOutboxEventEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        if (response.Content.Headers.ContentLength is >
+                MaxAcknowledgmentBodySize ||
+            !IsJsonMediaType(response.Content.Headers.ContentType?.MediaType))
+        {
+            return null;
+        }
+
+        try
+        {
+            var payload = new byte[MaxAcknowledgmentBodySize + 1];
+            var length = 0;
+            using var stream = await response.Content.ReadAsStreamAsync(
+                cancellationToken);
+            while (length < payload.Length)
+            {
+                var read = await stream.ReadAsync(
+                    payload.AsMemory(length),
+                    cancellationToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                length += read;
+            }
+
+            if (length > MaxAcknowledgmentBodySize)
+            {
+                return null;
+            }
+
+            var gap = JsonSerializer.Deserialize<
+                BranchCloudEventSequenceGapResponse>(
+                payload.AsSpan(0, length),
+                SerializerOptions);
+            return gap is not null &&
+                gap.SchemaVersion == CurrentSchemaVersion &&
+                string.Equals(
+                    gap.ErrorCode,
+                    BranchCloudEventSequenceGapResponse.ErrorCodeValue,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    gap.BranchId,
+                    envelope.BranchId,
+                    StringComparison.Ordinal) &&
+                gap.ReceivedBranchSequence == envelope.BranchSequence &&
+                gap.ExpectedBranchSequence >= 1 &&
+                gap.ExpectedBranchSequence < gap.ReceivedBranchSequence
+                    ? gap.ExpectedBranchSequence
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
         {
             return null;
         }

@@ -5,4 +5,7 @@ public sealed record BranchCloudEventSequenceGapResponse(
     string ErrorCode,
     string BranchId,
     long ExpectedBranchSequence,
-    long ReceivedBranchSequence);
+    long ReceivedBranchSequence)
+{
+    public const string ErrorCodeValue = "BranchSequenceGap";
+}
