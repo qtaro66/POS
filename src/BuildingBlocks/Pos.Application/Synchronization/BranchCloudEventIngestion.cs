@@ -74,6 +74,38 @@ public sealed class BranchCloudEventUniquenessConflictException : Exception
     public long BranchSequence { get; }
 }
 
+public sealed class BranchCloudEventSequenceGapException : Exception
+{
+    public BranchCloudEventSequenceGapException(
+        string branchId,
+        long expectedBranchSequence,
+        long receivedBranchSequence)
+        : base("The Cloud event arrived after the next expected Branch sequence.")
+    {
+        BranchId = string.IsNullOrWhiteSpace(branchId)
+            ? throw new ArgumentException(
+                "The Branch identifier cannot be empty.",
+                nameof(branchId))
+            : branchId.Trim();
+        ExpectedBranchSequence = expectedBranchSequence >= 1
+            ? expectedBranchSequence
+            : throw new ArgumentOutOfRangeException(
+                nameof(expectedBranchSequence),
+                "The expected Branch sequence must be positive.");
+        ReceivedBranchSequence = receivedBranchSequence > expectedBranchSequence
+            ? receivedBranchSequence
+            : throw new ArgumentOutOfRangeException(
+                nameof(receivedBranchSequence),
+                "The received Branch sequence must be greater than the expected sequence.");
+    }
+
+    public string BranchId { get; }
+
+    public long ExpectedBranchSequence { get; }
+
+    public long ReceivedBranchSequence { get; }
+}
+
 public sealed class BranchCloudEventPersistenceUnavailableException : Exception
 {
     public BranchCloudEventPersistenceUnavailableException(Exception innerException)
