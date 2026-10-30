@@ -57,6 +57,45 @@ public sealed class BranchCloudOutboxEventEnvelopeTests
     }
 
     [Fact]
+    public void Replay_envelope_matches_original_durable_event_without_recovery_metadata()
+    {
+        var occurredAt = new DateTimeOffset(2026, 10, 30, 13, 0, 0, TimeSpan.Zero);
+        var session = TableSessionId.From("SESSION-01");
+        var original = new BranchCloudOutboxLease(
+            "EVENT-01", "BRANCH-01", 6, "REQUEST-01", session,
+            TableSessionAction.SubmitOrder, 3, occurredAt, 0, "ORIGINAL-WORKER",
+            occurredAt.AddMinutes(1), occurredAt.AddMinutes(2));
+        var replay = new BranchCloudOutboxSequenceReplayLease(
+            "RECOVERY-01", "EVENT-01", "BRANCH-01", 6, "REQUEST-01", session,
+            TableSessionAction.SubmitOrder, 3, occurredAt, 4, "REPLAY-WORKER",
+            occurredAt.AddHours(1), occurredAt.AddHours(1).AddMinutes(1));
+
+        var expected = BranchCloudOutboxEventEnvelope.FromLease(original);
+        var actual = BranchCloudOutboxEventEnvelope.FromReplayLease(replay);
+
+        Assert.Equal(expected.EventId, actual.EventId);
+        Assert.Equal(expected.BranchId, actual.BranchId);
+        Assert.Equal(expected.BranchSequence, actual.BranchSequence);
+        Assert.Equal(expected.RequestId, actual.RequestId);
+        Assert.Equal(expected.TableSessionId, actual.TableSessionId);
+        Assert.Equal(expected.Action, actual.Action);
+        Assert.Equal(expected.TableVersion, actual.TableVersion);
+        Assert.Equal(expected.OccurredAt, actual.OccurredAt);
+        Assert.Equal(
+            System.Text.Json.JsonSerializer.Serialize(expected),
+            System.Text.Json.JsonSerializer.Serialize(actual));
+        Assert.DoesNotContain(actual.GetType().GetProperties(), property => property.Name is
+            "RecoveryId" or "RetryCount" or "LeaseOwner" or "ClaimedAt" or "LeaseExpiresAt");
+    }
+
+    [Fact]
+    public void Replay_envelope_rejects_missing_lease()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            BranchCloudOutboxEventEnvelope.FromReplayLease(null!));
+    }
+
+    [Fact]
     public void Create_normalizes_identifiers()
     {
         var occurredAt = new DateTimeOffset(
