@@ -24,6 +24,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         Assert.Null(provider.GetService<IBranchCloudOutboxClaimStore>());
         Assert.Null(provider.GetService<IBranchCloudOutboxLeaseRenewalStore>());
         Assert.Null(provider.GetService<IBranchCloudOutboxDeliveryFailureStore>());
+        Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayStore>());
         Assert.Null(provider.GetService<IBranchCloudDeliveryConfirmationStore>());
         Assert.IsType<SqliteBranchCloudOutboxReadinessProbe>(
             provider.GetRequiredService<IBranchCloudOutboxReadinessProbe>());
@@ -71,6 +72,8 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 SqliteBranchCloudOutboxLeaseRenewalStore>(provider);
             AssertSingleton<IBranchCloudOutboxDeliveryFailureStore,
                 SqliteBranchCloudOutboxDeliveryFailureStore>(provider);
+            AssertSingleton<IBranchCloudOutboxSequenceReplayStore,
+                SqliteBranchCloudOutboxSequenceReplayStore>(provider);
             AssertSingleton<IBranchCloudDeliveryConfirmationStore,
                 SqliteBranchCloudDeliveryConfirmationStore>(provider);
             AssertSingleton<IBranchCloudOutboxCycleProcessor,
@@ -186,6 +189,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                     services.AddSingleton<IBranchCloudOutboxClaimStore>(custom);
                     services.AddSingleton<IBranchCloudOutboxLeaseRenewalStore>(custom);
                     services.AddSingleton<IBranchCloudOutboxDeliveryFailureStore>(custom);
+                    services.AddSingleton<IBranchCloudOutboxSequenceReplayStore>(custom);
                     services.AddSingleton<IBranchCloudDeliveryConfirmationStore>(custom);
                 });
 
@@ -198,6 +202,9 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             Assert.Same(
                 custom,
                 provider.GetRequiredService<IBranchCloudOutboxDeliveryFailureStore>());
+            Assert.Same(
+                custom,
+                provider.GetRequiredService<IBranchCloudOutboxSequenceReplayStore>());
             Assert.Same(
                 custom,
                 provider.GetRequiredService<IBranchCloudDeliveryConfirmationStore>());
@@ -289,6 +296,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         IBranchCloudOutboxClaimStore,
         IBranchCloudOutboxLeaseRenewalStore,
         IBranchCloudOutboxDeliveryFailureStore,
+        IBranchCloudOutboxSequenceReplayStore,
         IBranchCloudDeliveryConfirmationStore
     {
         public Task<BranchCloudOutboxLease?> ClaimNextAsync(
@@ -310,6 +318,11 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             BranchCloudOutboxDeliveryFailure failure,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new BranchCloudOutboxDeliveryFailureResult(1, false));
+
+        public Task<BranchCloudOutboxSequenceReplayResult> RequestAsync(
+            BranchCloudOutboxSequenceReplayRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(BranchCloudOutboxSequenceReplayResult.Requested);
 
         public Task<BranchCloudDeliveryConfirmationResult> ConfirmAsync(
             BranchCloudDeliveryConfirmation confirmation,

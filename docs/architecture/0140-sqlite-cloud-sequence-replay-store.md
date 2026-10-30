@@ -19,6 +19,6 @@ retains every detected gap independently.
 
 This slice persists replay intent only. The regular outbox claimant does not yet
 select replay requests, and confirmation does not yet complete them. Claim,
-confirmation, readiness, composition, and runtime activation remain separate
-follow-up slices. Automated tests use temporary SQLite databases and contact no
-network or Branch hardware.
+confirmation, and runtime activation remain separate follow-up slices.
+Automated tests use temporary SQLite databases and contact no network or Branch
+hardware.
