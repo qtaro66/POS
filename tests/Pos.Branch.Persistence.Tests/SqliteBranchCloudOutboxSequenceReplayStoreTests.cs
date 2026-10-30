@@ -578,6 +578,79 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
     private static BranchCloudOutboxSequenceReplayFailure ReplayFailure(BranchCloudOutboxSequenceReplayLease lease) =>
         new("FAILURE-01", lease, RequestedAt.AddSeconds(5), RequestedAt.AddMinutes(1), "BranchSequenceGap", 5);
 
+    [Fact]
+    public async Task Replay_readiness_accepts_current_schema_without_changing_evidence()
+    {
+        await using var database = new ReplayDatabase();
+        await SeedClaimAsync(database);
+
+        var result = new SqliteBranchCloudReplayReadinessProbe().Check(database.Path);
+
+        Assert.True(result.IsReady);
+        Assert.Equal(22, result.ActualSchemaVersion);
+        Assert.Empty(result.MissingTables);
+        Assert.Empty(result.MissingColumns);
+        Assert.Equal("WORKER-01", await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
+    }
+
+    [Theory]
+    [InlineData("cloud_sync_sequence_replay_requests")]
+    [InlineData("cloud_sync_sequence_replay_leases")]
+    [InlineData("cloud_sync_sequence_replay_failures")]
+    public async Task Replay_readiness_detects_missing_tables_without_repair(string table)
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.ExecuteAsync($"DROP TABLE {table};");
+
+        var result = new SqliteBranchCloudReplayReadinessProbe().Check(database.Path);
+
+        Assert.False(result.IsReady);
+        Assert.Equal("ReplayTablesMissing", result.ErrorCode);
+        Assert.Contains(table, result.MissingTables);
+        Assert.Equal("0", await database.TextAsync($"SELECT CAST(COUNT(*) AS TEXT) FROM sqlite_schema WHERE name = '{table}';"));
+    }
+
+    [Theory]
+    [InlineData("cloud_sync_sequence_replay_requests", "requested_at")]
+    [InlineData("cloud_sync_sequence_replay_leases", "next_retry_at")]
+    [InlineData("cloud_sync_sequence_replay_failures", "error_code")]
+    public async Task Replay_readiness_reports_exact_missing_columns(string table, string column)
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.ExecuteAsync($"ALTER TABLE {table} RENAME COLUMN {column} TO renamed_column;");
+
+        var result = new SqliteBranchCloudReplayReadinessProbe().Check(database.Path);
+
+        Assert.Equal("ReplayColumnsMissing", result.ErrorCode);
+        Assert.Contains(column, result.MissingColumns[table]);
+    }
+
+    [Fact]
+    public async Task Replay_readiness_rejects_schema_mismatch_without_migrating()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.ExecuteAsync("PRAGMA user_version = 21;");
+
+        var result = new SqliteBranchCloudReplayReadinessProbe().Check(database.Path);
+
+        Assert.Equal("SchemaVersionMismatch", result.ErrorCode);
+        Assert.Equal(21, result.ActualSchemaVersion);
+        Assert.Equal("21", await database.TextAsync("SELECT CAST(user_version AS TEXT) FROM pragma_user_version;"));
+    }
+
+    [Fact]
+    public void Replay_readiness_does_not_create_missing_database()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"missing-replay-{Guid.NewGuid():N}.db");
+        var result = new SqliteBranchCloudReplayReadinessProbe().Check(path);
+        Assert.False(result.IsReady);
+        Assert.Equal("DatabaseUnreadable", result.ErrorCode);
+        Assert.False(File.Exists(path));
+    }
+
     private static async Task<BranchCloudOutboxSequenceReplayLease> SeedClaimAsync(ReplayDatabase database)
     {
         await database.InitializeAsync();
