@@ -222,6 +222,15 @@ Updated:
 
 ### Trigger phrases
 
+#### Single-command continuation
+
+- To OpenAI, **`continue`**: run `pwsh tools/continue-handoff.ps1` in the shared checkout. Read only the exact branch and round recorded in ignored `.handoff/continue.json`; never infer them from checkout, timestamps, or other chats. This command replaces the user's repeated `take result <branch>` plus `next handoff` instruction, but grants no GitHub authority.
+- After every validated READY handoff, run `pwsh tools/continue-handoff.ps1 -TrackBranch <exact-branch> -Round <round>` to atomically track that handoff. Tracking requires the existing handoff gate to pass. There is one continuation pointer per checkout; another task may replace it only on an explicit user task/handoff trigger. Concurrent unrelated tasks need separate worktrees.
+- `AwaitingResult` or `WaitForAntigravity`: report the pending result/PR and stop without code changes. `UserDecisionRequired`: read the tracked BLOCKED result and report the decision required. `CorrectAndHandoff`: apply only the tracked NEEDS_CHANGES corrections under the existing protocol, validate and prepare the next READY round, then track it.
+- `TakeResultThenNext`: inspect the tracked MERGED result and verify post-merge cleanup under the existing take-result rules. Then implement the next dependency-safe slice using the versioned requirements and current repository, validate, commit, create its READY handoff, track it, and stop. If the next scope requires a material user decision, report it instead of inventing a requirement.
+- A missing, malformed, stale, withdrawn, or mismatching pointer/result fails closed. Ask for an exact branch/round to establish tracking; do not search by recency or silently repair state. A result source changed by Antigravity corrections requires explicit `take result <branch>` review before tracking a new READY round.
+- `continue` does not auto-approve D21.3 areas, change Antigravity's push/PR/merge ownership, poll indefinitely, or start the next slice while the tracked PR remains open. The existing explicit commands below remain supported.
+
 The user controls the sequence with these phrases:
 
 - To OpenAI, **`handoff`**: use the current checked-out task branch. Reject `main`, a detached HEAD, a dirty worktree, or a commit without a passing `validation.md` (see Verification gate). Write the next `to-antigravity.md` round with `READY`, append `log.md`, and stop. This is the only trigger that may infer the branch from the current checkout.
