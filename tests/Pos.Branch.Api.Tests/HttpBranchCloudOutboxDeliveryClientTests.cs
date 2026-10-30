@@ -14,6 +14,8 @@ public sealed class HttpBranchCloudOutboxDeliveryClientTests
 {
     private static readonly Uri Endpoint =
         new("https://cloud.example.test/api/v1/branch-events");
+    private static readonly DateTimeOffset Now =
+        new(2026, 10, 29, 9, 30, 0, TimeSpan.Zero);
 
     [Theory]
     [InlineData("http://cloud.example.test/api/v1/branch-events")]
@@ -75,6 +77,65 @@ public sealed class HttpBranchCloudOutboxDeliveryClientTests
             BranchCloudOutboxDeliveryDisposition.RetryableFailure,
             result.Disposition);
         Assert.Equal("HttpStatus503", result.ErrorCode);
+        Assert.Null(result.SuggestedRetryDelay);
+    }
+
+    [Fact]
+    public async Task Retry_after_delta_is_returned_as_retry_hint()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        response.Headers.RetryAfter = new RetryConditionHeaderValue(
+            TimeSpan.FromSeconds(45));
+        var client = Client(new StubHandler((_, _) => Task.FromResult(response)));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Equal(TimeSpan.FromSeconds(45), result.SuggestedRetryDelay);
+    }
+
+    [Fact]
+    public async Task Retry_after_http_date_is_calculated_from_current_utc_time()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        response.Headers.RetryAfter = new RetryConditionHeaderValue(
+            Now.AddSeconds(90));
+        var client = Client(
+            new StubHandler((_, _) => Task.FromResult(response)),
+            new FixedTimeProvider(Now));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Equal(TimeSpan.FromSeconds(90), result.SuggestedRetryDelay);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("not-a-retry-date")]
+    public async Task Invalid_or_nonpositive_retry_after_is_ignored(string value)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        response.Headers.TryAddWithoutValidation("Retry-After", value);
+        var client = Client(new StubHandler((_, _) => Task.FromResult(response)));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Null(result.SuggestedRetryDelay);
+    }
+
+    [Fact]
+    public async Task Expired_retry_after_http_date_is_ignored()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        response.Headers.RetryAfter = new RetryConditionHeaderValue(
+            Now.AddSeconds(-1));
+        var client = Client(
+            new StubHandler((_, _) => Task.FromResult(response)),
+            new FixedTimeProvider(Now));
+
+        var result = await client.DeliverAsync(Envelope());
+
+        Assert.Null(result.SuggestedRetryDelay);
     }
 
     [Fact]
@@ -217,8 +278,9 @@ public sealed class HttpBranchCloudOutboxDeliveryClientTests
     }
 
     private static HttpBranchCloudOutboxDeliveryClient Client(
-        HttpMessageHandler handler) =>
-        new(new HttpClient(handler), Endpoint);
+        HttpMessageHandler handler,
+        TimeProvider? timeProvider = null) =>
+        new(new HttpClient(handler), Endpoint, timeProvider);
 
     private static BranchCloudOutboxEventEnvelope Envelope() =>
         BranchCloudOutboxEventEnvelope.Create(
@@ -285,5 +347,10 @@ public sealed class HttpBranchCloudOutboxDeliveryClientTests
             length = 0;
             return false;
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
