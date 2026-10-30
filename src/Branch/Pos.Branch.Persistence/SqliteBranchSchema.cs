@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 21;
+    public const int CurrentVersion = 22;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1063,6 +1063,43 @@ internal static class SqliteBranchSchema
         );
         """;
 
+    private const string SchemaVersion22 = """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_cloud_sync_replay_request_identity
+            ON cloud_sync_sequence_replay_requests (
+                recovery_id, branch_id, expected_outbox_id, expected_branch_sequence);
+
+        CREATE TABLE IF NOT EXISTS cloud_sync_sequence_replay_failures (
+            failure_id TEXT NOT NULL PRIMARY KEY CHECK (length(trim(failure_id)) > 0),
+            recovery_id TEXT NOT NULL,
+            branch_id TEXT NOT NULL,
+            outbox_id TEXT NOT NULL,
+            branch_sequence INTEGER NOT NULL CHECK (branch_sequence >= 1),
+            lease_owner TEXT NOT NULL CHECK (length(trim(lease_owner)) > 0),
+            claimed_at TEXT NOT NULL,
+            lease_expires_at TEXT NOT NULL,
+            failed_at TEXT NOT NULL,
+            next_retry_at TEXT NOT NULL,
+            error_code TEXT NOT NULL CHECK (length(trim(error_code)) > 0),
+            retry_count_after INTEGER NOT NULL CHECK (retry_count_after >= 1),
+            expected_branch_sequence INTEGER NULL CHECK (
+                expected_branch_sequence IS NULL OR (
+                    expected_branch_sequence >= 1 AND expected_branch_sequence < branch_sequence)),
+            CHECK (julianday(claimed_at) IS NOT NULL
+                AND julianday(lease_expires_at) IS NOT NULL
+                AND julianday(failed_at) IS NOT NULL
+                AND julianday(next_retry_at) IS NOT NULL
+                AND julianday(failed_at) >= julianday(claimed_at)
+                AND julianday(failed_at) < julianday(lease_expires_at)
+                AND julianday(next_retry_at) > julianday(failed_at)),
+            FOREIGN KEY (recovery_id, branch_id, outbox_id, branch_sequence)
+                REFERENCES cloud_sync_sequence_replay_requests (
+                    recovery_id, branch_id, expected_outbox_id, expected_branch_sequence)
+                ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS ix_cloud_sync_replay_failures_recovery
+            ON cloud_sync_sequence_replay_failures (recovery_id, failed_at);
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -1203,6 +1240,11 @@ internal static class SqliteBranchSchema
                 transaction,
                 SchemaVersion21,
                 cancellationToken);
+        }
+
+        if (storedVersion < 22)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion22, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
