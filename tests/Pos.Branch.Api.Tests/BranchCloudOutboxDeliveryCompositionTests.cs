@@ -264,6 +264,39 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             services.AddBranchCloudOutboxDelivery(null!));
     }
 
+    [Fact]
+    public async Task Startup_rejects_missing_replay_structure_even_when_normal_outbox_is_ready()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"replay-startup-{Guid.NewGuid():N}.db");
+        try
+        {
+            await new SqliteTableSessionCommandStore(path).InitializeAsync();
+            await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+                {
+                    DataSource = path,
+                    Pooling = false
+                }.ToString()))
+            {
+                await connection.OpenAsync();
+                using var command = connection.CreateCommand();
+                command.CommandText = "DROP TABLE cloud_sync_sequence_replay_failures;";
+                await command.ExecuteNonQueryAsync();
+            }
+            using var provider = Provider(Enabled(path), services =>
+                services.AddSingleton<IBranchCloudOutboxDeliveryClient, AlwaysAcknowledgedClient>());
+
+            var error = Assert.Throws<OptionsValidationException>(() =>
+                provider.GetRequiredService<IStartupValidator>().Validate());
+
+            Assert.Contains(error.Failures, failure => failure.Contains("ReplayTablesMissing", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static ServiceProvider Provider(
         IReadOnlyDictionary<string, string?> values,
         Action<IServiceCollection>? configure = null)

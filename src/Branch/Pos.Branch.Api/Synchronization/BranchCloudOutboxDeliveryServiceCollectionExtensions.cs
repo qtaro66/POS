@@ -17,6 +17,7 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
         services.TryAddSingleton<
             IBranchCloudOutboxReadinessProbe,
             SqliteBranchCloudOutboxReadinessProbe>();
+        services.TryAddSingleton<IBranchCloudReplayReadinessProbe, SqliteBranchCloudReplayReadinessProbe>();
         services
             .AddOptions<BranchCloudOutboxDeliveryOptions>()
             .Bind(configuration.GetSection(BranchCloudOutboxDeliveryOptions.SectionName))
@@ -24,6 +25,8 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
         services.AddSingleton<
             IValidateOptions<BranchCloudOutboxDeliveryOptions>,
             BranchCloudOutboxDeliveryOptionsValidator>();
+        services.AddSingleton<IValidateOptions<BranchCloudOutboxDeliveryOptions>,
+            BranchCloudReplayReadinessOptionsValidator>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<
             IBranchCloudOutboxWorkerIdentity,
