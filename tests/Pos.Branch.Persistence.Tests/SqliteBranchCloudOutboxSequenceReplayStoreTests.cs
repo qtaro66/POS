@@ -123,6 +123,93 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
             new SqliteBranchCloudOutboxSequenceReplayStore(databasePath));
     }
 
+    [Fact]
+    public async Task Version_20_upgrade_preserves_replay_intent_and_acknowledgment()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(sequence: 6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path)
+            .RequestAsync(Request());
+        await database.ExecuteAsync("""
+            DROP TABLE cloud_sync_sequence_replay_leases;
+            PRAGMA user_version = 20;
+            """);
+
+        await database.InitializeAsync();
+        await database.InitializeAsync();
+        await database.ExecuteAsync("""
+            INSERT INTO cloud_sync_sequence_replay_leases (recovery_id)
+            VALUES ('RECOVERY-01');
+            """);
+
+        Assert.Equal(1, await database.ReplayCountAsync());
+        Assert.Equal(
+            "2026-10-30T04:00:00.0000000+00:00",
+            await database.ReadAcknowledgedAtAsync());
+    }
+
+    [Theory]
+    [InlineData("retry_count", "-1")]
+    [InlineData("lease_owner", "'WORKER-01'")]
+    [InlineData("claimed_at", "'2026-10-30T05:00:00Z'")]
+    [InlineData("lease_expires_at", "'2026-10-30T05:00:30Z'")]
+    public async Task Replay_lease_rejects_invalid_state(string column, string value)
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(sequence: 6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path)
+            .RequestAsync(Request());
+
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync(
+            $"INSERT INTO cloud_sync_sequence_replay_leases (recovery_id, {column}) VALUES ('RECOVERY-01', {value});"));
+    }
+
+    [Theory]
+    [InlineData("2026-10-30T05:00:00Z")]
+    [InlineData("2026-10-30T04:59:59Z")]
+    [InlineData("invalid")]
+    public async Task Replay_lease_rejects_invalid_expiry(string expiry)
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(sequence: 6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path)
+            .RequestAsync(Request());
+
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync($"""
+            INSERT INTO cloud_sync_sequence_replay_leases (
+                recovery_id, lease_owner, claimed_at, lease_expires_at)
+            VALUES ('RECOVERY-01', 'WORKER-01', '2026-10-30T05:00:00Z', '{expiry}');
+            """));
+    }
+
+    [Fact]
+    public async Task Replay_lease_accepts_active_ownership_and_enforces_request_identity()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(sequence: 6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path)
+            .RequestAsync(Request());
+        await database.ExecuteAsync("""
+            INSERT INTO cloud_sync_sequence_replay_leases (
+                recovery_id, lease_owner, claimed_at, lease_expires_at)
+            VALUES ('RECOVERY-01', 'WORKER-01', '2026-10-30T05:00:00Z',
+                '2026-10-30T05:00:30Z');
+            """);
+
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync("""
+            INSERT INTO cloud_sync_sequence_replay_leases (recovery_id)
+            VALUES ('RECOVERY-01');
+            """));
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync("""
+            INSERT INTO cloud_sync_sequence_replay_leases (recovery_id)
+            VALUES ('MISSING');
+            """));
+    }
+
     private static BranchCloudOutboxSequenceReplayRequest Request() =>
         new(
             "RECOVERY-01",
@@ -169,6 +256,14 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
                 acknowledged
                     ? "2026-10-30T04:00:00.0000000+00:00"
                     : DBNull.Value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        public async Task ExecuteAsync(string sql)
+        {
+            await using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
             await command.ExecuteNonQueryAsync();
         }
 

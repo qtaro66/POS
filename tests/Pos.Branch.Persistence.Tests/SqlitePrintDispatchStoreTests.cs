@@ -16,7 +16,7 @@ public sealed class SqlitePrintDispatchStoreTests
 
         await new SqliteTableSessionCommandStore(database.Path).InitializeAsync();
 
-        Assert.Equal(20L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(21L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'print_attempts';
