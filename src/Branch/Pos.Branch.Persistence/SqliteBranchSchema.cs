@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 20;
+    public const int CurrentVersion = 21;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1042,6 +1042,27 @@ internal static class SqliteBranchSchema
             WHERE completed_at IS NULL;
         """;
 
+    private const string SchemaVersion21 = """
+        CREATE TABLE IF NOT EXISTS cloud_sync_sequence_replay_leases (
+            recovery_id TEXT NOT NULL PRIMARY KEY
+                REFERENCES cloud_sync_sequence_replay_requests (recovery_id)
+                ON DELETE CASCADE,
+            retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+            next_retry_at TEXT NULL,
+            lease_owner TEXT NULL CHECK (
+                lease_owner IS NULL OR length(trim(lease_owner)) > 0),
+            claimed_at TEXT NULL,
+            lease_expires_at TEXT NULL,
+            CHECK (
+                (lease_owner IS NULL AND claimed_at IS NULL AND lease_expires_at IS NULL)
+                OR (lease_owner IS NOT NULL AND claimed_at IS NOT NULL
+                    AND lease_expires_at IS NOT NULL
+                    AND julianday(claimed_at) IS NOT NULL
+                    AND julianday(lease_expires_at) IS NOT NULL
+                    AND julianday(lease_expires_at) > julianday(claimed_at)))
+        );
+        """;
+
     public static async Task InitializeAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -1172,6 +1193,15 @@ internal static class SqliteBranchSchema
                 connection,
                 transaction,
                 SchemaVersion20,
+                cancellationToken);
+        }
+
+        if (storedVersion < 21)
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                SchemaVersion21,
                 cancellationToken);
         }
 

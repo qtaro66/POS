@@ -90,7 +90,7 @@ public sealed class SqliteCatalogSnapshotResolverTests
         await using var database = new CatalogDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(20L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(21L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'master_data_sellable_items';

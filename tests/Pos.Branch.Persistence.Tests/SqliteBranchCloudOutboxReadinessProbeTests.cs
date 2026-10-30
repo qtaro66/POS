@@ -15,13 +15,13 @@ public sealed class SqliteBranchCloudOutboxReadinessProbeTests
         var result = probe.Check(database.Path);
 
         Assert.True(result.IsReady);
-        Assert.Equal(20, result.ActualSchemaVersion);
+        Assert.Equal(21, result.ActualSchemaVersion);
         Assert.True(result.CloudSyncOutboxPresent);
         Assert.True(result.DeliveryFailuresPresent);
         Assert.Empty(result.MissingOutboxColumns);
         Assert.Empty(result.MissingDeliveryFailureColumns);
         Assert.Null(result.ErrorCode);
-        Assert.Equal(20, probe.ExpectedSchemaVersion);
+        Assert.Equal(21, probe.ExpectedSchemaVersion);
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public sealed class SqliteBranchCloudOutboxReadinessProbeTests
             new SqliteTableSessionCommandStore(Path).InitializeAsync();
 
         public Task CreateEmptyCurrentVersionAsync() =>
-            ExecuteAsync("PRAGMA user_version = 20;", create: true);
+            ExecuteAsync("PRAGMA user_version = 21;", create: true);
 
         public Task CreatePartialSchemaAsync(
             bool includeOutboxLeaseExpiry,
@@ -182,7 +182,7 @@ public sealed class SqliteBranchCloudOutboxReadinessProbeTests
 
             return ExecuteAsync(
                 $$"""
-                PRAGMA user_version = 20;
+                PRAGMA user_version = 21;
                 CREATE TABLE cloud_sync_outbox (
                     outbox_id TEXT PRIMARY KEY,
                     branch_id TEXT NOT NULL,
