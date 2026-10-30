@@ -49,6 +49,14 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
             new SqliteBranchCloudOutboxDeliveryFailureStore(DatabasePath(provider)));
         services.TryAddSingleton<IBranchCloudOutboxSequenceReplayStore>(provider =>
             new SqliteBranchCloudOutboxSequenceReplayStore(DatabasePath(provider)));
+        services.TryAddSingleton<IBranchCloudOutboxSequenceReplayClaimStore>(provider =>
+            new SqliteBranchCloudOutboxSequenceReplayClaimStore(DatabasePath(provider)));
+        services.TryAddSingleton<IBranchCloudOutboxSequenceReplayLeaseRenewalStore>(provider =>
+            new SqliteBranchCloudOutboxSequenceReplayLeaseRenewalStore(DatabasePath(provider)));
+        services.TryAddSingleton<IBranchCloudOutboxSequenceReplayCompletionStore>(provider =>
+            new SqliteBranchCloudOutboxSequenceReplayCompletionStore(DatabasePath(provider)));
+        services.TryAddSingleton<IBranchCloudOutboxSequenceReplayFailureStore>(provider =>
+            new SqliteBranchCloudOutboxSequenceReplayFailureStore(DatabasePath(provider)));
         services.TryAddSingleton<IBranchCloudDeliveryConfirmationStore>(provider =>
             new SqliteBranchCloudDeliveryConfirmationStore(DatabasePath(provider)));
         if (!services.Any(descriptor =>

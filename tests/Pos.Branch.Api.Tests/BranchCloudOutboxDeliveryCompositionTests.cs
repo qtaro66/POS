@@ -25,6 +25,10 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         Assert.Null(provider.GetService<IBranchCloudOutboxLeaseRenewalStore>());
         Assert.Null(provider.GetService<IBranchCloudOutboxDeliveryFailureStore>());
         Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayStore>());
+        Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayClaimStore>());
+        Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayLeaseRenewalStore>());
+        Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayCompletionStore>());
+        Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayFailureStore>());
         Assert.Null(provider.GetService<IBranchCloudDeliveryConfirmationStore>());
         Assert.IsType<SqliteBranchCloudOutboxReadinessProbe>(
             provider.GetRequiredService<IBranchCloudOutboxReadinessProbe>());
@@ -74,6 +78,14 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 SqliteBranchCloudOutboxDeliveryFailureStore>(provider);
             AssertSingleton<IBranchCloudOutboxSequenceReplayStore,
                 SqliteBranchCloudOutboxSequenceReplayStore>(provider);
+            AssertSingleton<IBranchCloudOutboxSequenceReplayClaimStore,
+                SqliteBranchCloudOutboxSequenceReplayClaimStore>(provider);
+            AssertSingleton<IBranchCloudOutboxSequenceReplayLeaseRenewalStore,
+                SqliteBranchCloudOutboxSequenceReplayLeaseRenewalStore>(provider);
+            AssertSingleton<IBranchCloudOutboxSequenceReplayCompletionStore,
+                SqliteBranchCloudOutboxSequenceReplayCompletionStore>(provider);
+            AssertSingleton<IBranchCloudOutboxSequenceReplayFailureStore,
+                SqliteBranchCloudOutboxSequenceReplayFailureStore>(provider);
             AssertSingleton<IBranchCloudDeliveryConfirmationStore,
                 SqliteBranchCloudDeliveryConfirmationStore>(provider);
             AssertSingleton<IBranchCloudOutboxCycleProcessor,
@@ -190,6 +202,10 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                     services.AddSingleton<IBranchCloudOutboxLeaseRenewalStore>(custom);
                     services.AddSingleton<IBranchCloudOutboxDeliveryFailureStore>(custom);
                     services.AddSingleton<IBranchCloudOutboxSequenceReplayStore>(custom);
+                    services.AddSingleton<IBranchCloudOutboxSequenceReplayClaimStore>(custom);
+                    services.AddSingleton<IBranchCloudOutboxSequenceReplayLeaseRenewalStore>(custom);
+                    services.AddSingleton<IBranchCloudOutboxSequenceReplayCompletionStore>(custom);
+                    services.AddSingleton<IBranchCloudOutboxSequenceReplayFailureStore>(custom);
                     services.AddSingleton<IBranchCloudDeliveryConfirmationStore>(custom);
                 });
 
@@ -205,6 +221,10 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             Assert.Same(
                 custom,
                 provider.GetRequiredService<IBranchCloudOutboxSequenceReplayStore>());
+            Assert.Same(custom, provider.GetRequiredService<IBranchCloudOutboxSequenceReplayClaimStore>());
+            Assert.Same(custom, provider.GetRequiredService<IBranchCloudOutboxSequenceReplayLeaseRenewalStore>());
+            Assert.Same(custom, provider.GetRequiredService<IBranchCloudOutboxSequenceReplayCompletionStore>());
+            Assert.Same(custom, provider.GetRequiredService<IBranchCloudOutboxSequenceReplayFailureStore>());
             Assert.Same(
                 custom,
                 provider.GetRequiredService<IBranchCloudDeliveryConfirmationStore>());
@@ -297,6 +317,10 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         IBranchCloudOutboxLeaseRenewalStore,
         IBranchCloudOutboxDeliveryFailureStore,
         IBranchCloudOutboxSequenceReplayStore,
+        IBranchCloudOutboxSequenceReplayClaimStore,
+        IBranchCloudOutboxSequenceReplayLeaseRenewalStore,
+        IBranchCloudOutboxSequenceReplayCompletionStore,
+        IBranchCloudOutboxSequenceReplayFailureStore,
         IBranchCloudDeliveryConfirmationStore
     {
         public Task<BranchCloudOutboxLease?> ClaimNextAsync(
@@ -323,6 +347,30 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             BranchCloudOutboxSequenceReplayRequest request,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(BranchCloudOutboxSequenceReplayResult.Requested);
+
+        Task<BranchCloudOutboxSequenceReplayLease?> IBranchCloudOutboxSequenceReplayClaimStore.ClaimNextAsync(
+            string branchId,
+            string leaseOwner,
+            DateTimeOffset claimedAt,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<BranchCloudOutboxSequenceReplayLease?>(null);
+
+        public Task<BranchCloudOutboxSequenceReplayLease> RenewAsync(
+            BranchCloudOutboxSequenceReplayLease lease,
+            DateTimeOffset renewedAt,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken = default) => Task.FromResult(lease);
+
+        public Task<BranchCloudOutboxSequenceReplayCompletionResult> CompleteAsync(
+            BranchCloudOutboxSequenceReplayCompletion completion,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(BranchCloudOutboxSequenceReplayCompletionResult.Completed);
+
+        public Task<BranchCloudOutboxDeliveryFailureResult> RecordAsync(
+            BranchCloudOutboxSequenceReplayFailure failure,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new BranchCloudOutboxDeliveryFailureResult(1, false));
 
         public Task<BranchCloudDeliveryConfirmationResult> ConfirmAsync(
             BranchCloudDeliveryConfirmation confirmation,
