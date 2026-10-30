@@ -290,6 +290,65 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
             "BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(seconds)));
     }
 
+    [Fact]
+    public async Task Replay_renewal_extends_exact_token_and_rejects_stale_token()
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path).RequestAsync(Request());
+        var claims = new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path);
+        var lease = (await claims.ClaimNextAsync("BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(30)))!;
+        var store = new SqliteBranchCloudOutboxSequenceReplayLeaseRenewalStore(database.Path);
+
+        var renewed = await store.RenewAsync(lease, RequestedAt.AddSeconds(10), TimeSpan.FromSeconds(30));
+        Assert.Equal(RequestedAt.AddSeconds(40), renewed.LeaseExpiresAt);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.RenewAsync(
+            lease, RequestedAt.AddSeconds(15), TimeSpan.FromSeconds(30)));
+        Assert.Null(await claims.ClaimNextAsync("BRANCH-01", "WORKER-02", RequestedAt.AddSeconds(35), TimeSpan.FromSeconds(30)));
+        Assert.Equal("2026-10-30T04:00:00.0000000+00:00", await database.ReadAcknowledgedAtAsync());
+    }
+
+    [Theory]
+    [InlineData("completed")]
+    [InlineData("owner")]
+    [InlineData("claimed")]
+    [InlineData("missing")]
+    public async Task Replay_renewal_rejects_changed_persisted_ownership(string change)
+    {
+        await using var database = new ReplayDatabase();
+        await database.InitializeAsync();
+        await database.SeedAsync(6, acknowledged: true);
+        await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path).RequestAsync(Request());
+        var lease = (await new SqliteBranchCloudOutboxSequenceReplayClaimStore(database.Path)
+            .ClaimNextAsync("BRANCH-01", "WORKER-01", RequestedAt, TimeSpan.FromSeconds(30)))!;
+        await database.ExecuteAsync(change switch
+        {
+            "completed" => "UPDATE cloud_sync_sequence_replay_requests SET completed_at = '2026-10-30T04:30:05Z';",
+            "owner" => "UPDATE cloud_sync_sequence_replay_leases SET lease_owner = 'OTHER';",
+            "claimed" => "UPDATE cloud_sync_sequence_replay_leases SET claimed_at = '2026-10-30T04:30:01Z';",
+            _ => "DELETE FROM cloud_sync_sequence_replay_leases;"
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new SqliteBranchCloudOutboxSequenceReplayLeaseRenewalStore(database.Path)
+                .RenewAsync(lease, RequestedAt.AddSeconds(10), TimeSpan.FromSeconds(30)));
+    }
+
+    [Fact]
+    public async Task Replay_renewal_rejects_expiry_before_opening_database()
+    {
+        var lease = new BranchCloudOutboxSequenceReplayLease(
+            "RECOVERY-01", "OUTBOX-6", "BRANCH-01", 6, "REQUEST-6",
+            Pos.Domain.TableSessions.TableSessionId.From("SESSION-6"),
+            Pos.Domain.TableSessions.TableSessionAction.SubmitOrder,
+            3, RequestedAt, 0, "WORKER-01", RequestedAt, RequestedAt.AddSeconds(30));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            new SqliteBranchCloudOutboxSequenceReplayLeaseRenewalStore("missing-replay.db")
+                .RenewAsync(lease, RequestedAt.AddSeconds(30), TimeSpan.FromSeconds(30)));
+    }
+
     private static BranchCloudOutboxSequenceReplayRequest Request() =>
         new(
             "RECOVERY-01",
