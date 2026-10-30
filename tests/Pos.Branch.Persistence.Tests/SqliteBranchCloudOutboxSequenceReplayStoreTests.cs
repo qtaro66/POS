@@ -438,6 +438,69 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
         Assert.Equal("WORKER-01", await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
     }
 
+    [Fact]
+    public async Task Version_21_upgrade_preserves_recovery_and_lease_evidence()
+    {
+        await using var database = new ReplayDatabase();
+        await SeedClaimAsync(database);
+        await database.ExecuteAsync("""
+            DROP TABLE cloud_sync_sequence_replay_failures;
+            DROP INDEX ux_cloud_sync_replay_request_identity;
+            PRAGMA user_version = 21;
+            """);
+
+        await database.InitializeAsync();
+        await database.InitializeAsync();
+        await database.ExecuteAsync(FailureInsert());
+
+        Assert.Equal("22", await database.TextAsync("SELECT CAST(user_version AS TEXT) FROM pragma_user_version;"));
+        Assert.Equal("WORKER-01", await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
+        Assert.Equal("2026-10-30T04:00:00.0000000+00:00", await database.ReadAcknowledgedAtAsync());
+    }
+
+    [Theory]
+    [InlineData("retry_count_after", "0")]
+    [InlineData("expected_branch_sequence", "6")]
+    [InlineData("expected_branch_sequence", "0")]
+    [InlineData("failed_at", "'2026-10-30T04:30:30Z'")]
+    [InlineData("next_retry_at", "'2026-10-30T04:30:05Z'")]
+    [InlineData("claimed_at", "'invalid'")]
+    [InlineData("branch_id", "'OTHER'")]
+    [InlineData("outbox_id", "'OTHER'")]
+    [InlineData("recovery_id", "'MISSING'")]
+    public async Task Replay_failure_schema_rejects_invalid_evidence(string column, string value)
+    {
+        await using var database = new ReplayDatabase();
+        await SeedClaimAsync(database);
+        await database.ExecuteAsync(FailureInsert());
+
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync(
+            $"UPDATE cloud_sync_sequence_replay_failures SET {column} = {value};"));
+    }
+
+    [Fact]
+    public async Task Replay_failure_schema_enforces_unique_failure_identity()
+    {
+        await using var database = new ReplayDatabase();
+        await SeedClaimAsync(database);
+        await database.ExecuteAsync(FailureInsert());
+
+        await Assert.ThrowsAsync<SqliteException>(() => database.ExecuteAsync(FailureInsert()));
+        await database.ExecuteAsync("DELETE FROM cloud_sync_sequence_replay_requests;");
+        Assert.Null(await database.TextAsync("SELECT failure_id FROM cloud_sync_sequence_replay_failures;"));
+    }
+
+    private static string FailureInsert() => """
+        INSERT INTO cloud_sync_sequence_replay_failures (
+            failure_id, recovery_id, branch_id, outbox_id, branch_sequence,
+            lease_owner, claimed_at, lease_expires_at, failed_at, next_retry_at,
+            error_code, retry_count_after, expected_branch_sequence)
+        VALUES ('FAILURE-01', 'RECOVERY-01', 'BRANCH-01', 'OUTBOX-6', 6,
+            'WORKER-01', '2026-10-30T04:30:00Z', '2026-10-30T04:30:30Z',
+            '2026-10-30T04:30:05Z', '2026-10-30T04:31:00Z',
+            'BranchSequenceGap', 1, 5);
+        """;
+
     private static async Task<BranchCloudOutboxSequenceReplayLease> SeedClaimAsync(ReplayDatabase database)
     {
         await database.InitializeAsync();
