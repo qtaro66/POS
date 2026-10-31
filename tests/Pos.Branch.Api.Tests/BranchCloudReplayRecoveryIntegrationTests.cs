@@ -24,7 +24,9 @@ public sealed class BranchCloudReplayRecoveryIntegrationTests
             await new SqliteTableSessionCommandStore(path).InitializeAsync();
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
             {
-                DataSource = path, Pooling = false, ForeignKeys = true
+                DataSource = path,
+                Pooling = false,
+                ForeignKeys = true
             }.ToString());
             await connection.OpenAsync();
             using (var seed = connection.CreateCommand())
