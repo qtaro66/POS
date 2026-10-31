@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Branch\Pos.Branch.Api\Pos.Branch.Api.csproj" />
     <ProjectReference Include="..\..\src\Central\Pos.Central.Api\Pos.Central.Api.csproj" />
     <ProjectReference Include="..\..\src\Central\Pos.Central.Persistence\Pos.Central.Persistence.csproj" />
   </ItemGroup>
