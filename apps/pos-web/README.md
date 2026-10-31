@@ -1,8 +1,47 @@
 # PC POS web client
 
-React/TypeScript/Vite client for the branch cashier PC. The visible application
-is still the initial scaffold; production ordering screens and login/pairing UI
-are not wired up yet.
+React/TypeScript/Vite client for the branch cashier PC. It now includes a
+protected read-only active-table and sent-order workspace. Production
+login/pairing and order-entry integration are not wired up yet.
+
+## Read-only workspace
+
+`App` accepts an authenticated ordering client through its `client` prop and a
+Branch-provided display label through `branchLabel`. Create a stable client after
+successful authentication and replace it when the employee session changes.
+The default entrypoint supplies no client, so it shows the sign-in state and
+performs no Branch requests. Do not supply credentials through URLs, Vite
+environment variables, global browser objects, or the development preview.
+
+The workspace lists active sessions only, reads their accepted batches, groups
+lines by DineIn/Takeaway, and shows persisted option/comment/cancellation data.
+All financial values come from the Branch projection. No local totals are
+calculated; missing/empty bills are not replaced with invented values. The
+desktop order list scrolls independently while its current totals stay visible.
+
+Manual refresh rereads both the active list and selected detail even when the
+table state-transition version has not changed. Old financial content is cleared
+before any refresh and stays hidden after read errors. Obsolete responses and
+responses from a replaced client cannot restore old table data. Reads are
+cancelled when the screen unmounts or is locked. There is no live-update/polling
+claim: the screen labels amounts with the server read timestamp.
+
+The screen-lock button hides data and blocks reuse of that same supplied client
+within the mounted App. It does not stop the Branch Service or revoke server
+credentials. A production authentication host must verify PIN and supply a fresh
+authenticated client for re-entry; this slice does not implement that PIN flow,
+auto-lock policy, or lock diagnostics. No transaction/payment state is changed.
+
+The screen exposes no order, price, cancellation, payment or printer mutations.
+It is not a complete floor plan and has no available-table inventory, basket,
+menu entry, shift controls, history or device commissioning UI yet.
+
+For local visual review only, run the dev server and open
+`http://127.0.0.1:5173/?preview=sent-orders` (adjust the port if needed). The preview
+is prominently marked as synthetic, has no credentials and uses no Branch or
+printer transport. Its data module is dynamically imported behind Vite's DEV
+flag and is absent from the production build. Reloading a preview is not a
+production login/unlock workflow.
 
 ## Ordering API adapter
 
@@ -62,13 +101,14 @@ npm run lint --workspace apps/pos-web
 npm run build --workspace apps/pos-web
 ```
 
-Tests use Node's built-in runner and injected fetch responses; they never
-contact the network, printers, or a production Branch. The root verification
-gate includes this workspace automatically. No new dependency is required;
-Node 24 or newer is the repository baseline.
+Adapter/controller tests use Node's built-in runner. React screen tests use
+Vitest/jsdom and Testing Library, at the exact versions already used by the
+Mobile workspace. Tests never contact a Branch, printer or production service.
+The root verification gate includes both test suites automatically. Node 24 or
+newer is the repository baseline.
 
 Types are currently handwritten mirrors of the v1 DTOs, with runtime shape and
 identity validation. OpenAPI-generated client tooling, real Branch integration,
-credential UI/lifecycle, accessible ordering screens, and durable request
-reconciliation remain follow-up work. This adapter is not imported by App.tsx
-and does not change the visible screen or activate any backend feature.
+credential UI/lifecycle, order-entry screens, and durable request reconciliation
+remain follow-up work. The workspace uses the supplied client's read methods;
+this does not activate backend features or provide a production session provider.
