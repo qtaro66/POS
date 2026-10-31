@@ -196,3 +196,68 @@ test('input validation rejects invalid quantities and oversized baskets before s
   assert.throws(() => harness([]).client.prepareSubmitOrder('SESSION-01', [{ ...line, comment: 'x'.repeat(65536) }]), /64 KiB/)
   assert.throws(() => harness([]).client.prepareOpenTable('A01', '..'))
 })
+
+function sessionDetailFixture() {
+  return {
+    schemaVersion: 1, session: { tableSessionId: 'SESSION-01', tableId: 'A01', status: 'Ordering', tableVersion: 1 },
+    asOf: '2026-10-31T05:00:00Z', hasOpenCancellationRequest: false,
+    billPreviewTotals: {
+      masterDataVersion: 'MASTER-OLD', calculationPolicyVersion: 'CALC-1', vatRate: 7, serviceChargeRate: 0,
+      itemGrossAmount: 110, lineDiscountAmount: 0, itemNetAmount: 110, billDiscountAmount: 0,
+      serviceChargeBase: 110, serviceChargeAmount: 0, totalBeforeRounding: 110,
+      roundingAdjustment: 0, netTotal: 110, vatInclusiveAmount: 7.2, amountBeforeVat: 102.8,
+    },
+    batches: [{
+      orderBatchId: 'BRANCH-01:REQUEST-01:batch:1', requestId: 'REQUEST-01', branchSequence: 2,
+      serverReceivedAt: '2026-10-31T05:00:00Z', acceptanceStatus: 'BranchAccepted',
+      activeGrossAmount: 110, activeLineDiscountAmount: 0, activeItemNetAmount: 110,
+      lines: [{
+        orderLineId: 'BRANCH-01:REQUEST-01:line:1', lineSequence: 1, sellableItemId: 'ITEM-01', displayName: 'Test item',
+        originalQuantity: 1, activeQuantity: 1, status: 'Active', unitPrice: 100, fulfillmentType: 'Takeaway', comment: null,
+        options: [{ sellableItemId: 'OPTION-1', optionGroupId: 'GROUP-1', displayName: 'Test option', quantityPerItem: 1, unitPrice: 10 }],
+        activeGrossAmount: 110, activeDiscountAmount: 0, activeNetAmount: 110,
+      }],
+    }],
+  }
+}
+
+test('session detail preserves authoritative batches, fulfillment, options and amounts unchanged', async () => {
+  const body = sessionDetailFixture()
+  const { client, calls } = harness([json(body)])
+  assert.deepEqual(await client.sessionDetail('SESSION-01'), { kind: 'ok', value: body })
+  assert.ok(calls[0].url.endsWith('/table-sessions/SESSION-01'))
+  assert.equal(calls[0].init.method, 'GET')
+})
+
+test('empty and fully cancelled session detail have no active bill; missing session stays not found', async () => {
+  const empty = { ...sessionDetailFixture(), batches: [], billPreviewTotals: null }
+  const cancelled = sessionDetailFixture()
+  cancelled.batches[0].lines[0].activeQuantity = 0
+  cancelled.batches[0].lines[0].status = 'Cancelled'
+  cancelled.batches[0].lines[0].activeGrossAmount = 0
+  cancelled.batches[0].lines[0].activeNetAmount = 0
+  cancelled.batches[0].activeGrossAmount = 0
+  cancelled.batches[0].activeItemNetAmount = 0
+  const noActiveBill = { ...cancelled, billPreviewTotals: null }
+  const { client } = harness([json(empty), json(noActiveBill), json({ schemaVersion: 1, errorCode: 'ActiveTableSessionNotFound' }, 404)])
+  assert.deepEqual(await client.sessionDetail('SESSION-01'), { kind: 'ok', value: empty })
+  assert.deepEqual(await client.sessionDetail('SESSION-01'), { kind: 'ok', value: noActiveBill })
+  assert.deepEqual(await client.sessionDetail('SESSION-01'), { kind: 'notFound' })
+})
+
+for (const fault of ['session', 'receipt', 'duplicateLine', 'missingTotals', 'negativeTotal', 'quantity', 'readTime']) {
+  test(`invalid session-detail ${fault} does not become authoritative UI data`, async () => {
+    const body = sessionDetailFixture()
+    switch (fault) {
+      case 'session': body.session.tableSessionId = 'OTHER'; break
+      case 'receipt': body.batches[0].acceptanceStatus = 'Rejected'; break
+      case 'duplicateLine': body.batches[0].lines.push(body.batches[0].lines[0]); break
+      case 'missingTotals': (body as Record<string, unknown>).billPreviewTotals = null; break
+      case 'negativeTotal': body.billPreviewTotals.netTotal = -1; break
+      case 'quantity': body.batches[0].lines[0].activeQuantity = 2; break
+      case 'readTime': body.asOf = 'invalid'; break
+    }
+    const { client } = harness([json(body)])
+    assert.deepEqual(await client.sessionDetail('SESSION-01'), { kind: 'unavailable', reason: 'protocol' })
+  })
+}

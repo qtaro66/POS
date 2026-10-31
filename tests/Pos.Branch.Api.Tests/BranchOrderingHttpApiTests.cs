@@ -17,7 +17,7 @@ using Pos.Branch.Infrastructure.Sqlite;
 
 namespace Pos.Branch.Api.Tests;
 
-public sealed class BranchOrderingHttpApiTests
+public sealed partial class BranchOrderingHttpApiTests
 {
     [Fact]
     public async Task Open_menu_submit_and_query_use_durable_results_and_server_prices()

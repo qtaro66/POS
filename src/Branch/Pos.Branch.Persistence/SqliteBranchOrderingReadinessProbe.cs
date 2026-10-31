@@ -27,13 +27,17 @@ public static class SqliteBranchOrderingReadinessProbe
                 SELECT option_group_id FROM master_data_option_groups LIMIT 0;
                 SELECT option_sellable_item_id FROM master_data_option_group_items LIMIT 0;
                 SELECT is_sold_out FROM branch_sold_out_overrides LIMIT 0;
-                SELECT order_batch_id FROM order_batches LIMIT 0;
-                SELECT order_line_id FROM order_lines LIMIT 0;
-                SELECT order_line_id FROM order_line_options LIMIT 0;
+                SELECT order_batch_id, request_id, branch_sequence, submitted_at FROM order_batches LIMIT 0;
+                SELECT order_line_id, original_quantity, active_quantity, status, line_sequence,
+                       unit_price, fulfillment_type, comment FROM order_lines LIMIT 0;
+                SELECT order_line_id, option_id, option_group_id, option_sequence,
+                       quantity_per_item, unit_price FROM order_line_options LIMIT 0;
+                SELECT request_id, outcome, server_received_at FROM command_receipts LIMIT 0;
                 SELECT audit_id FROM table_session_audit LIMIT 0;
                 SELECT outbox_id FROM cloud_sync_outbox LIMIT 0;
                 SELECT snapshot_id FROM production_order_snapshots LIMIT 0;
                 SELECT print_job_id FROM print_jobs LIMIT 0;
+                SELECT status, table_session_id FROM cancellation_requests LIMIT 0;
                 """;
             using var reader = command.ExecuteReader();
             while (reader.NextResult()) { }
