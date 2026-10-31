@@ -95,6 +95,83 @@ public sealed class BranchCloudReplayRecoveryIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Reconstructed_processor_recovers_acknowledged_replay_after_interrupted_local_completion()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "pos-recovery-integration", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "branch.db");
+        try
+        {
+            await new SqliteTableSessionCommandStore(path).InitializeAsync();
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Pooling = false,
+                ForeignKeys = true
+            }.ToString());
+            await connection.OpenAsync();
+            using (var seed = connection.CreateCommand())
+            {
+                seed.CommandText = """
+                    INSERT INTO cloud_sync_outbox (
+                        outbox_id, branch_id, branch_sequence, request_id, table_session_id,
+                        action, table_version, created_at, processing_status, retry_count, successfully_sent_at)
+                    VALUES ('EVENT-6', 'BRANCH-01', 6, 'REQUEST-6', 'SESSION-01',
+                        'SubmitOrder', 2, '2026-10-31T03:00:00Z', 'Completed', 0, '2026-10-31T03:05:00Z');
+                    """;
+                await seed.ExecuteNonQueryAsync();
+            }
+            var clock = new Clock();
+            await new SqliteBranchCloudOutboxSequenceReplayStore(path).RequestAsync(
+                new("RECOVERY-01", "BRANCH-01", 6, 7, clock.Now));
+            using var handler = new CentralStub(false);
+            using var http = new HttpClient(handler);
+            var client = new HttpBranchCloudOutboxDeliveryClient(http, new Uri("https://cloud.example.test/events"), clock);
+            BranchCloudReplayCycleProcessor Processor(IBranchCloudOutboxSequenceReplayCompletionStore completion) =>
+                new(new SqliteBranchCloudOutboxSequenceReplayClaimStore(path),
+                    new SqliteBranchCloudOutboxSequenceReplayLeaseRenewalStore(path), client, completion,
+                    new SqliteBranchCloudOutboxSequenceReplayFailureStore(path),
+                    new SqliteBranchCloudOutboxSequenceReplayStore(path),
+                    new ExponentialBranchCloudOutboxRetryDelayPolicy(), TimeSpan.FromMinutes(5), clock);
+            Task<BranchCloudOutboxCycleResult> Cycle(BranchCloudReplayCycleProcessor processor, string owner) =>
+                processor.ProcessNextAsync("BRANCH-01", owner, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5));
+
+            await Assert.ThrowsAsync<IOException>(() => Cycle(Processor(new InterruptedCompletion()), "OLD-WORKER"));
+            Assert.Equal(new long[] { 6 }, handler.Sequences);
+            Assert.Null(Scalar(connection, "SELECT completed_at FROM cloud_sync_sequence_replay_requests;"));
+            Assert.Equal("OLD-WORKER", Scalar(connection, "SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
+            Assert.Equal("0", Scalar(connection, "SELECT CAST(COUNT(*) AS TEXT) FROM cloud_sync_sequence_replay_failures;"));
+
+            var restarted = Processor(new SqliteBranchCloudOutboxSequenceReplayCompletionStore(path));
+            clock.Now = clock.Now.AddSeconds(29);
+            Assert.Equal(BranchCloudOutboxCycleDisposition.NoWork, (await Cycle(restarted, "NEW-WORKER")).Disposition);
+            Assert.Single(handler.Sequences);
+            clock.Now = clock.Now.AddSeconds(1);
+            Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, (await Cycle(restarted, "NEW-WORKER")).Disposition);
+
+            Assert.Equal(new long[] { 6, 6 }, handler.Sequences);
+            Assert.Equal("2026-10-31T03:05:00Z", Scalar(connection, "SELECT successfully_sent_at FROM cloud_sync_outbox;"));
+            Assert.NotNull(Scalar(connection, "SELECT completed_at FROM cloud_sync_sequence_replay_requests;"));
+            Assert.Null(Scalar(connection, "SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
+            Assert.Equal(BranchCloudOutboxCycleDisposition.NoWork, (await Cycle(restarted, "NEW-WORKER")).Disposition);
+        }
+        finally
+        {
+            var resolved = Path.GetFullPath(directory);
+            var expectedRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "pos-recovery-integration")) + Path.DirectorySeparatorChar;
+            if (!resolved.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase)) { throw new InvalidOperationException("Unsafe fixture path."); }
+            Directory.Delete(resolved, recursive: true);
+        }
+    }
+
+    private sealed class InterruptedCompletion : IBranchCloudOutboxSequenceReplayCompletionStore
+    {
+        public Task<BranchCloudOutboxSequenceReplayCompletionResult> CompleteAsync(
+            BranchCloudOutboxSequenceReplayCompletion completion, CancellationToken cancellationToken = default) =>
+            throw new IOException("simulated interruption after Cloud acknowledgment and before local completion");
+    }
+
     private static string? Scalar(SqliteConnection connection, string sql)
     {
         using var command = connection.CreateCommand();
