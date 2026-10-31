@@ -132,6 +132,28 @@ here. This adapter is not connected to App's read-only entrypoint.
 
 ## Verification and remaining work
 
+An authenticated host may opt into the command-inspection drawer with
+`<App client={orderingClient} journal={createCommandJournal()} />`. The typed
+props require a full ordering client when supplying a journal; the recovery
+adapter is constructed internally from that same client. The existing read-only
+client integration remains supported without a journal. Default production
+startup still supplies no authenticated client and remains at sign-in.
+
+The drawer lists original command IDs, session/employee identity, UTC timestamps,
+item/option codes, quantities, fulfillment and comments. Local resolved markers
+are explicitly historical, not fresh acceptance. Each operator-triggered check
+performs GET status only; it shows accepted/rejected/unresolved/unavailable
+outcomes and local-write warnings. No retry, delete, finalize, receipt, payment
+or printing control is exposed. Resolved entries remain for future basket
+reconciliation. Closing, refreshing, locking and changing client identity cancel
+or invalidate obsolete reads. Storage errors are distinct from empty lists.
+
+For synthetic visual review, run the development server and open
+`?preview=command-recovery`. The injected preview handles all reads in memory,
+disables mutations/deletion and makes no external fetch or IndexedDB writes.
+Its fixture module is excluded from production builds. Item codes are shown
+because snapshots do not contain authoritative display names or current prices.
+
 ```powershell
 npm run test --workspace apps/pos-web
 npm run lint --workspace apps/pos-web

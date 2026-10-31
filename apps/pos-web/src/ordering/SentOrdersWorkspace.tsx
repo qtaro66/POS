@@ -3,6 +3,8 @@ import type { AcceptedBatch, SessionDetail } from '../api/orderingContracts.ts'
 import { createOrderingReadController } from './readController.ts'
 import type { OrderingReadClient } from './readController.ts'
 import { sessionLabels, strings as s } from './strings.ts'
+import { CommandRecoveryPanel } from './CommandRecoveryPanel.tsx'
+import type { RecoveryReadPort } from './recoveryController.ts'
 
 const money = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 const clock = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' })
@@ -52,8 +54,8 @@ function Totals({ detail }: { detail: SessionDetail }) {
   </section>
 }
 
-export function SentOrdersWorkspace({ client, branchLabel, preview, onLock }: {
-  client: OrderingReadClient; branchLabel: string; preview: boolean; onLock: () => void
+export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, recovery }: {
+  client: OrderingReadClient; branchLabel: string; preview: boolean; onLock: () => void; recovery?: RecoveryReadPort
 }) {
   const controller = useMemo(() => createOrderingReadController(client), [client])
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
@@ -67,7 +69,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock }: {
       <aside className="pos-sidebar"><h1>{s.appTitle}</h1><nav aria-label="เมนูหลัก"><span aria-current="page">▦ &nbsp; โต๊ะ</span></nav><p>ข้อมูลรายการแบบอ่านอย่างเดียว</p></aside>
       <main className="ordering-main">
         <header className="page-header"><div><p className="eyebrow">การขาย / โต๊ะ</p><h2>{s.sent}</h2></div>
-          <button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></header>
+          <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         <div className="ordering-panels">
           <section className="table-panel panel" aria-labelledby="table-list-heading"><header><h2 id="table-list-heading">{s.tables}{state.tablesPhase === 'ready' && ` (${state.tables.length})`}</h2><p>{s.partialFloorPlan}</p></header>
             {(state.tablesPhase === 'idle' || state.tablesPhase === 'loading') && <p className="empty-state" role="status">{s.loadingTables}</p>}

@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { createOrderingClient } from './api/orderingClient.ts'
+import type { CommandJournal } from './ordering/commandJournal.ts'
+import { createCommandRecovery } from './ordering/commandRecovery.ts'
 import { SentOrdersWorkspace } from './ordering/SentOrdersWorkspace.tsx'
 import type { OrderingReadClient } from './ordering/readController.ts'
 import { strings } from './ordering/strings.ts'
@@ -20,11 +23,22 @@ function SignInRequired() {
     <h2 ref={heading} tabIndex={-1}>{strings.signInTitle}</h2><p>{strings.signInHint}</p></main>
 }
 
-function App({ client, branchLabel = 'สาขา', preview = false }: { client?: OrderingReadClient; branchLabel?: string; preview?: boolean }) {
+type AppProps = { branchLabel?: string; preview?: boolean } & (
+  { client?: OrderingReadClient; journal?: never } |
+  { client: ReturnType<typeof createOrderingClient>; journal: CommandJournal }
+)
+
+function App(props: AppProps) {
+  const { client, branchLabel = 'สาขา', preview = false } = props
+  const recovery = useMemo(() => {
+    if (!props.journal) return undefined
+    const adapter = createCommandRecovery(props.client, props.journal)
+    return { list: adapter.list, recover: adapter.recover }
+  }, [props.client, props.journal])
   const [locks] = useState(createScreenLocks)
   const locked = useSyncExternalStore(locks.subscribe, () => !client || locks.isLocked(client), () => true)
   if (!client || locked) return <SignInRequired />
-  return <SentOrdersWorkspace client={client} branchLabel={branchLabel} preview={preview} onLock={() => { locks.lock(client) }} />
+  return <SentOrdersWorkspace client={client} branchLabel={branchLabel} preview={preview} recovery={recovery} onLock={() => { locks.lock(client) }} />
 }
 
 export default App
