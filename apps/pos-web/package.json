@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --test tests/orderingClient.test.ts tests/orderingReadController.test.ts tests/commandRecovery.test.ts && vitest run",
+    "test": "node --test tests/orderingClient.test.ts tests/orderingReadController.test.ts tests/commandRecovery.test.ts tests/recoveryController.test.ts && vitest run",
     "preview": "vite preview"
   },
   "dependencies": {

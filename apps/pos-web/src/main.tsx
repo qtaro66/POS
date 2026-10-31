@@ -4,9 +4,12 @@ import './index.css'
 import App from './App.tsx'
 
 const root = createRoot(document.getElementById('root')!)
-if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === 'sent-orders') {
-  void import('./ordering/preview.ts').then(({ createPreviewReadClient }) => {
-    root.render(<StrictMode><App client={createPreviewReadClient()} branchLabel="สาขาตัวอย่าง 01" preview /></StrictMode>)
+const preview = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('preview') : null
+if (import.meta.env.DEV && (preview === 'sent-orders' || preview === 'command-recovery')) {
+  void import('./ordering/preview.ts').then(({ createPreviewReadClient, createPreviewRecoverySession }) => {
+    root.render(<StrictMode>{preview === 'command-recovery'
+      ? <App {...createPreviewRecoverySession()} branchLabel="สาขาตัวอย่าง 01" preview />
+      : <App client={createPreviewReadClient()} branchLabel="สาขาตัวอย่าง 01" preview />}</StrictMode>)
   }).catch(() => root.render(<StrictMode><App /></StrictMode>))
 } else {
   root.render(<StrictMode><App /></StrictMode>)
