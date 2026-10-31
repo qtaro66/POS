@@ -1,0 +1,584 @@
+using Pos.Application.Synchronization;
+using Pos.Branch.Api.Synchronization;
+using Pos.Domain.TableSessions;
+
+namespace Pos.Branch.Api.Tests;
+
+public sealed class BranchCloudReplayCycleProcessorTests
+{
+    private static readonly DateTimeOffset Now =
+        new(2026, 10, 25, 4, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task No_claim_returns_no_work_without_delivery()
+    {
+        var stores = new RecordingStores { Lease = null };
+        var client = new RecordingClient(Acknowledged());
+        var processor = Processor(stores, client);
+
+        var result = await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BranchCloudOutboxCycleDisposition.NoWork, result.Disposition);
+        Assert.Equal(0, client.CallCount);
+        Assert.Null(stores.Confirmation);
+        Assert.Null(stores.Failure);
+    }
+
+    [Theory]
+    [InlineData(BranchCloudOutboxSequenceReplayCompletionResult.Completed)]
+    [InlineData(BranchCloudOutboxSequenceReplayCompletionResult.AlreadyCompleted)]
+    public async Task Durable_acknowledgment_is_confirmed(
+        BranchCloudOutboxSequenceReplayCompletionResult confirmationResult)
+    {
+        var stores = new RecordingStores
+        {
+            Lease = Lease(),
+            ConfirmationResult = confirmationResult
+        };
+        var client = new RecordingClient(Acknowledged());
+        var processor = Processor(stores, client);
+
+        var result = await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, result.Disposition);
+        Assert.Equal("OUTBOX-01", client.Envelope?.EventId);
+        Assert.Equal("BRANCH-01", client.Envelope?.BranchId);
+        Assert.Equal(7, client.Envelope?.BranchSequence);
+        Assert.Equal("REQUEST-01", client.Envelope?.RequestId);
+        Assert.Equal("SESSION-01", client.Envelope?.TableSessionId.Value);
+        Assert.Equal(TableSessionAction.SubmitOrder, client.Envelope?.Action);
+        Assert.Equal(3, client.Envelope?.TableVersion);
+        Assert.Equal(Now.AddMinutes(-1), client.Envelope?.OccurredAt);
+        Assert.Equal("BRANCH-01", stores.Confirmation?.Lease.BranchId);
+        Assert.Equal("OUTBOX-01", stores.Confirmation?.Lease.OutboxId);
+        Assert.Equal(Now, stores.Confirmation?.AcknowledgedAt);
+        Assert.Null(stores.Failure);
+    }
+
+    [Fact]
+    public async Task Retryable_result_records_failure_and_next_retry()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var client = new RecordingClient(
+            BranchCloudOutboxDeliveryResult.Failed("CLOUD_UNAVAILABLE"));
+        var processor = Processor(stores, client);
+
+        var result = await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, result.Disposition);
+        Assert.Equal("FAILURE-01", stores.Failure?.FailureId);
+        Assert.Equal("CLOUD_UNAVAILABLE", stores.Failure?.ErrorCode);
+        Assert.Equal(Now, stores.Failure?.FailedAt);
+        Assert.Equal(Now.AddSeconds(5), stores.Failure?.NextRetryAt);
+        Assert.Null(stores.Confirmation);
+    }
+
+    [Theory]
+    [InlineData(3, 40)]
+    [InlineData(10, 300)]
+    public async Task Persisted_retry_count_applies_bounded_backoff(
+        int retryCount,
+        int expectedDelaySeconds)
+    {
+        var stores = new RecordingStores { Lease = Lease(retryCount: retryCount) };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed("CLOUD_UNAVAILABLE")));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(
+            Now.AddSeconds(expectedDelaySeconds),
+            stores.Failure?.NextRetryAt);
+    }
+
+    [Theory]
+    [InlineData(3, 90, 90)]
+    [InlineData(3, 20, 40)]
+    [InlineData(3, 600, 300)]
+    public async Task Retry_hint_cannot_accelerate_or_exceed_bounded_local_backoff(
+        int retryCount,
+        int suggestedDelaySeconds,
+        int expectedDelaySeconds)
+    {
+        var stores = new RecordingStores { Lease = Lease(retryCount: retryCount) };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed(
+                    "CLOUD_UNAVAILABLE",
+                    TimeSpan.FromSeconds(suggestedDelaySeconds))));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(
+            Now.AddSeconds(expectedDelaySeconds),
+            stores.Failure?.NextRetryAt);
+    }
+
+    [Fact]
+    public async Task Sequence_gap_guidance_is_preserved_with_delivery_failure()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed(
+                    "BranchSequenceGap",
+                    expectedBranchSequence: 6)));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(6, stores.Failure?.ExpectedBranchSequence);
+        Assert.Equal("FAILURE-01", stores.ReplayRequest?.RecoveryId);
+        Assert.Equal("BRANCH-01", stores.ReplayRequest?.BranchId);
+        Assert.Equal(6, stores.ReplayRequest?.ExpectedBranchSequence);
+        Assert.Equal(7, stores.ReplayRequest?.ReceivedBranchSequence);
+        Assert.Equal(Now, stores.ReplayRequest?.RequestedAt);
+    }
+
+    [Fact]
+    public async Task Retryable_failure_without_gap_does_not_request_replay()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed("CLOUD_UNAVAILABLE")));
+
+        await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Null(stores.ReplayRequest);
+    }
+
+    [Fact]
+    public async Task Missing_expected_replay_sequence_fails_after_recording_failure()
+    {
+        var stores = new RecordingStores
+        {
+            Lease = Lease(),
+            ReplayResult = BranchCloudOutboxSequenceReplayResult.ExpectedSequenceNotFound
+        };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Failed(
+                    "BranchSequenceGap",
+                    expectedBranchSequence: 6)));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            processor.ProcessNextAsync(
+                "BRANCH-01",
+                "WORKER-01",
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(5)));
+
+        Assert.Contains("no longer retained", exception.Message, StringComparison.Ordinal);
+        Assert.NotNull(stores.Failure);
+        Assert.NotNull(stores.ReplayRequest);
+    }
+
+    [Fact]
+    public async Task Unexpected_client_error_is_persisted_as_retryable_failure()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var client = new RecordingClient(new IOException("simulated transport fault"));
+        var processor = Processor(stores, client);
+
+        var result = await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, result.Disposition);
+        Assert.Equal("DeliveryClientException:IOException", stores.Failure?.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Missing_event_after_durable_acknowledgment_fails_closed()
+    {
+        var stores = new RecordingStores
+        {
+            Lease = Lease(),
+            ConfirmationResult = BranchCloudOutboxSequenceReplayCompletionResult.NotFound
+        };
+        var processor = Processor(
+            stores,
+            new RecordingClient(Acknowledged()));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            processor.ProcessNextAsync(
+                "BRANCH-01",
+                "WORKER-01",
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(5)));
+
+        Assert.Contains("no longer exists", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("OTHER-EVENT", 7)]
+    [InlineData("OUTBOX-01", 8)]
+    public async Task Mismatched_acknowledgment_identity_remains_retryable(
+        string acknowledgedEventId,
+        long acknowledgedSequence)
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(
+            stores,
+            new RecordingClient(
+                BranchCloudOutboxDeliveryResult.Acknowledged(
+                    acknowledgedEventId,
+                    acknowledgedSequence)));
+
+        var result = await processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, result.Disposition);
+        Assert.Equal("AcknowledgmentIdentityMismatch", stores.Failure?.ErrorCode);
+        Assert.Equal(Now.AddSeconds(5), stores.Failure?.NextRetryAt);
+        Assert.Null(stores.Confirmation);
+    }
+
+    [Fact]
+    public async Task Slow_delivery_renews_lease_before_confirmation()
+    {
+        var time = new MutableTimeProvider(Now);
+        var delay = new ControlledHeartbeatDelay();
+        var stores = new RecordingStores { Lease = Lease() };
+        var client = new WaitForRenewalClient(stores);
+        var processor = Processor(stores, client, time, delay.DelayAsync);
+
+        var processing = processor.ProcessNextAsync(
+            "BRANCH-01",
+            "WORKER-01",
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(5));
+        await delay.WaitUntilStartedAsync(TimeSpan.FromSeconds(5));
+        time.UtcNow = Now.AddSeconds(10);
+        delay.Release();
+
+        var result = await processing.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(BranchCloudOutboxCycleDisposition.Processed, result.Disposition);
+        Assert.Equal(1, stores.RenewalCount);
+        Assert.Equal(Now.AddSeconds(40), stores.ConfirmationLeaseExpiry);
+    }
+
+    [Theory]
+    [InlineData(0, 1, "leaseDuration")]
+    [InlineData(-1, 1, "leaseDuration")]
+    [InlineData(1, 0, "retryDelay")]
+    [InlineData(1, -1, "retryDelay")]
+    public async Task Non_positive_durations_are_rejected(
+        int leaseSeconds,
+        int retrySeconds,
+        string parameterName)
+    {
+        var processor = Processor(
+            new RecordingStores { Lease = Lease() },
+            new RecordingClient(Acknowledged()));
+
+        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            processor.ProcessNextAsync(
+                "BRANCH-01",
+                "WORKER-01",
+                TimeSpan.FromSeconds(leaseSeconds),
+                TimeSpan.FromSeconds(retrySeconds)));
+
+        Assert.Equal(parameterName, exception.ParamName);
+    }
+
+    [Fact]
+    public async Task Retry_delay_above_runtime_maximum_is_rejected_before_claim()
+    {
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(stores, new RecordingClient(Acknowledged()));
+
+        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            processor.ProcessNextAsync(
+                "BRANCH-01",
+                "WORKER-01",
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMinutes(6)));
+
+        Assert.Equal("retryDelay", exception.ParamName);
+        Assert.Equal(0, stores.ClaimCount);
+    }
+
+    [Fact]
+    public async Task Lost_heartbeat_ownership_prevents_completion_and_failure_writes()
+    {
+        var stores = new RecordingStores { Lease = Lease(), RejectRenewal = true };
+        var processor = Processor(stores, new RecordingClient(Acknowledged()),
+            heartbeatDelay: (_, _) => Task.CompletedTask);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => processor.ProcessNextAsync(
+            "BRANCH-01", "WORKER-01", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+
+        Assert.Null(stores.Confirmation);
+        Assert.Null(stores.Failure);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_does_not_persist_even_if_client_returns_acknowledgment()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var stores = new RecordingStores { Lease = Lease() };
+        var processor = Processor(stores, new RecordingClient(Acknowledged()));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => processor.ProcessNextAsync(
+            "BRANCH-01", "WORKER-01", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5), cancellation.Token));
+
+        Assert.Null(stores.Confirmation);
+        Assert.Null(stores.Failure);
+    }
+
+    private static BranchCloudReplayCycleProcessor Processor(
+        RecordingStores stores,
+        IBranchCloudOutboxDeliveryClient client,
+        TimeProvider? timeProvider = null,
+        Func<TimeSpan, CancellationToken, Task>? heartbeatDelay = null) =>
+        new(
+            stores,
+            stores,
+            client,
+            stores,
+            stores,
+            stores,
+            new ExponentialBranchCloudOutboxRetryDelayPolicy(),
+            TimeSpan.FromMinutes(5),
+            timeProvider ?? new MutableTimeProvider(Now),
+            () => "FAILURE-01",
+            heartbeatDelay);
+
+    private static BranchCloudOutboxSequenceReplayLease Lease(
+        DateTimeOffset? claimedAt = null,
+        DateTimeOffset? leaseExpiresAt = null,
+        int retryCount = 0) =>
+        new(
+            "RECOVERY-01",
+            "OUTBOX-01",
+            "BRANCH-01",
+            7,
+            "REQUEST-01",
+            TableSessionId.From("SESSION-01"),
+            TableSessionAction.SubmitOrder,
+            3,
+            Now.AddMinutes(-1),
+            retryCount,
+            "WORKER-01",
+            claimedAt ?? Now,
+            leaseExpiresAt ?? Now.AddSeconds(30));
+
+    private static BranchCloudOutboxDeliveryResult Acknowledged() =>
+        BranchCloudOutboxDeliveryResult.Acknowledged("OUTBOX-01", 7);
+
+    private sealed class RecordingStores :
+        IBranchCloudOutboxSequenceReplayClaimStore,
+        IBranchCloudOutboxSequenceReplayLeaseRenewalStore,
+        IBranchCloudOutboxSequenceReplayCompletionStore,
+        IBranchCloudOutboxSequenceReplayFailureStore,
+        IBranchCloudOutboxSequenceReplayStore
+    {
+        private readonly TaskCompletionSource _renewed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public BranchCloudOutboxSequenceReplayLease? Lease { get; set; }
+
+        public int RenewalCount { get; private set; }
+
+        public bool RejectRenewal { get; init; }
+
+        public int ClaimCount { get; private set; }
+
+        public BranchCloudOutboxSequenceReplayCompletion? Confirmation { get; private set; }
+
+        public BranchCloudOutboxSequenceReplayFailure? Failure { get; private set; }
+
+        public BranchCloudOutboxSequenceReplayRequest? ReplayRequest { get; private set; }
+
+        public BranchCloudOutboxSequenceReplayResult ReplayResult { get; set; } =
+            BranchCloudOutboxSequenceReplayResult.Requested;
+
+        public DateTimeOffset? ConfirmationLeaseExpiry { get; private set; }
+
+        public BranchCloudOutboxSequenceReplayCompletionResult ConfirmationResult { get; set; } =
+            BranchCloudOutboxSequenceReplayCompletionResult.Completed;
+
+        public Task<BranchCloudOutboxSequenceReplayLease?> ClaimNextAsync(
+            string branchId,
+            string leaseOwner,
+            DateTimeOffset claimedAt,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken = default)
+        {
+            ClaimCount++;
+            return Task.FromResult(Lease);
+        }
+
+        public Task<BranchCloudOutboxSequenceReplayLease> RenewAsync(
+            BranchCloudOutboxSequenceReplayLease lease,
+            DateTimeOffset renewedAt,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken = default)
+        {
+            RenewalCount++;
+            if (RejectRenewal) { throw new InvalidOperationException("simulated ownership loss"); }
+            Lease = new BranchCloudOutboxSequenceReplayLease(
+                lease.RecoveryId,
+                lease.OutboxId,
+                lease.BranchId,
+                lease.BranchSequence,
+                lease.RequestId,
+                lease.TableSessionId,
+                lease.Action,
+                lease.TableVersion,
+                lease.CreatedAt,
+                lease.RetryCount,
+                lease.LeaseOwner,
+                lease.ClaimedAt,
+                renewedAt.Add(leaseDuration));
+            _renewed.TrySetResult();
+            return Task.FromResult(Lease);
+        }
+
+        public Task<BranchCloudOutboxSequenceReplayCompletionResult> CompleteAsync(
+            BranchCloudOutboxSequenceReplayCompletion confirmation,
+            CancellationToken cancellationToken = default)
+        {
+            Confirmation = confirmation;
+            ConfirmationLeaseExpiry = Lease?.LeaseExpiresAt;
+            return Task.FromResult(ConfirmationResult);
+        }
+
+        public Task<BranchCloudOutboxDeliveryFailureResult> RecordAsync(
+            BranchCloudOutboxSequenceReplayFailure failure,
+            CancellationToken cancellationToken = default)
+        {
+            Failure = failure;
+            return Task.FromResult(new BranchCloudOutboxDeliveryFailureResult(1, false));
+        }
+
+        public Task<BranchCloudOutboxSequenceReplayResult> RequestAsync(
+            BranchCloudOutboxSequenceReplayRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ReplayRequest = request;
+            return Task.FromResult(ReplayResult);
+        }
+
+        public Task WaitForRenewalAsync(CancellationToken cancellationToken) =>
+            _renewed.Task.WaitAsync(cancellationToken);
+    }
+
+    private sealed class RecordingClient : IBranchCloudOutboxDeliveryClient
+    {
+        private readonly BranchCloudOutboxDeliveryResult? _result;
+        private readonly Exception? _exception;
+
+        public RecordingClient(BranchCloudOutboxDeliveryResult result) =>
+            _result = result;
+
+        public RecordingClient(Exception exception) =>
+            _exception = exception;
+
+        public int CallCount { get; private set; }
+
+        public BranchCloudOutboxEventEnvelope? Envelope { get; private set; }
+
+        public Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
+            BranchCloudOutboxEventEnvelope envelope,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            Envelope = envelope;
+            return _exception is null
+                ? Task.FromResult(_result!)
+                : Task.FromException<BranchCloudOutboxDeliveryResult>(_exception);
+        }
+    }
+
+    private sealed class WaitForRenewalClient(RecordingStores stores) :
+        IBranchCloudOutboxDeliveryClient
+    {
+        public async Task<BranchCloudOutboxDeliveryResult> DeliverAsync(
+            BranchCloudOutboxEventEnvelope envelope,
+            CancellationToken cancellationToken = default)
+        {
+            await stores.WaitForRenewalAsync(cancellationToken);
+            return BranchCloudOutboxDeliveryResult.Acknowledged(
+                envelope.EventId,
+                envelope.BranchSequence);
+        }
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => UtcNow;
+    }
+
+    private sealed class ControlledHeartbeatDelay
+    {
+        private readonly TaskCompletionSource _started =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _calls;
+
+        public async Task DelayAsync(
+            TimeSpan delay,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                _started.TrySetResult();
+                await _release.Task.WaitAsync(cancellationToken);
+                return;
+            }
+
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        public Task WaitUntilStartedAsync(TimeSpan timeout) =>
+            _started.Task.WaitAsync(timeout);
+
+        public void Release() => _release.TrySetResult();
+    }
+}
