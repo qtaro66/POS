@@ -62,6 +62,17 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
             new SqliteBranchCloudOutboxSequenceReplayFailureStore(DatabasePath(provider)));
         services.TryAddSingleton<IBranchCloudDeliveryConfirmationStore>(provider =>
             new SqliteBranchCloudDeliveryConfirmationStore(DatabasePath(provider)));
+        services.TryAddSingleton<IBranchCloudReplayCycleProcessor>(provider =>
+            new BranchCloudReplayCycleProcessor(
+                provider.GetRequiredService<IBranchCloudOutboxSequenceReplayClaimStore>(),
+                provider.GetRequiredService<IBranchCloudOutboxSequenceReplayLeaseRenewalStore>(),
+                provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>(),
+                provider.GetRequiredService<IBranchCloudOutboxSequenceReplayCompletionStore>(),
+                provider.GetRequiredService<IBranchCloudOutboxSequenceReplayFailureStore>(),
+                provider.GetRequiredService<IBranchCloudOutboxSequenceReplayStore>(),
+                provider.GetRequiredService<IBranchCloudOutboxRetryDelayPolicy>(),
+                provider.GetRequiredService<IOptions<BranchCloudOutboxDeliveryOptions>>().Value.MaximumRetryDelay,
+                provider.GetRequiredService<TimeProvider>()));
         if (!services.Any(descriptor =>
                 descriptor.ServiceType ==
                     typeof(IBranchCloudOutboxCycleProcessor)))
