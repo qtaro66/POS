@@ -1,4 +1,5 @@
 using Pos.Branch.Api.Commands;
+using Pos.Branch.Api.Ordering;
 using Pos.Branch.Api.Printing;
 using Pos.Branch.Api.Security;
 using Pos.Branch.Api.Synchronization;
@@ -10,6 +11,7 @@ builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
 builder.Services.AddBranchEmployeeSessions(builder.Configuration);
 builder.Services.AddBranchPairing(builder.Configuration);
 builder.Services.AddBranchCommandStatusQuery(builder.Configuration);
+builder.Services.AddBranchOrdering(builder.Configuration);
 builder.Services.AddBranchCloudDataSentStatus(builder.Configuration);
 builder.Services.AddBranchCloudOutboxDelivery(builder.Configuration);
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
@@ -26,6 +28,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseBranchPairingHttpsOnly(builder.Configuration);
+app.UseBranchOrderingGuards(builder.Configuration);
 app.UseBranchEmployeeSessionHttpsOnly(builder.Configuration);
 app.UseBranchCloudDataSentStatusHttpsOnly(builder.Configuration);
 app.UseHttpsRedirection();
@@ -40,6 +43,7 @@ app.MapGet("/health", () => Results.Ok(new
     utc = DateTimeOffset.UtcNow,
 }));
 app.MapBranchPairingIssuanceEndpointIfEnabled(builder.Configuration);
+app.MapBranchOrderingIfEnabled(builder.Configuration);
 app.MapBranchPairingRedemptionEndpointIfEnabled(builder.Configuration);
 app.MapBranchEmployeeSessionLoginEndpointIfEnabled(builder.Configuration);
 app.MapBranchEmployeeDataSyncStatusEndpointIfEnabled(builder.Configuration);
