@@ -4,7 +4,7 @@ using Pos.Application.TableSessions;
 
 namespace Pos.Branch.Infrastructure.Sqlite;
 
-public sealed class SqliteBranchOrderingQuery : IBranchOrderingQuery
+public sealed partial class SqliteBranchOrderingQuery : IBranchOrderingQuery
 {
     private readonly string _connectionString;
     public SqliteBranchOrderingQuery(string databasePath)

@@ -14,6 +14,8 @@ are not wired up yet.
   creation time, including on an explicit manual retry.
 - Looking up a durable command result by request ID.
 - Reading active table sessions and the session-frozen menu/current availability.
+- Reading accepted batches, line/option details and authoritative bill-preview
+  totals with `sessionDetail(tableSessionId)`.
 
 Create the adapter only after the application has an authenticated device and
 employee session. Pass that session in memory; never put credentials in Vite
@@ -45,6 +47,12 @@ No prices, totals, tax, or batch IDs are calculated or supplied by the client.
 Both DineIn and Takeaway are retained per line. Server menu prices and
 availability flags are returned unchanged. The includesAvailableTables=false
 flag remains explicit; the active list is not a complete floor plan.
+
+Session detail retains server-provided quantities, cancellation state, fulfillment
+types, batch identifiers and monetary values unchanged. Empty/all-cancelled
+sessions have null bill-preview totals. A missing, mismatched or malformed detail
+response is not replaced with basket-derived or zero-valued bill data. These
+preview totals are not payment balances or receipts.
 
 ## Verification and remaining work
 

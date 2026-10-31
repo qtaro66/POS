@@ -9,4 +9,5 @@ public interface IBranchOrderingQuery
 {
     Task<IReadOnlyList<BranchActiveTableSession>> ListActiveAsync(string branchId, CancellationToken cancellationToken = default);
     Task<BranchSessionMenu?> MenuAsync(string branchId, string tableSessionId, CancellationToken cancellationToken = default);
+    Task<BranchOrderingSessionDetail?> DetailAsync(string branchId, string tableSessionId, DateTimeOffset asOf, CancellationToken cancellationToken = default);
 }

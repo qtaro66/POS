@@ -30,6 +30,8 @@ public static class BranchOrderingEndpoints
             .Produces<BranchActiveTableResponse>().WithName("ListActiveBranchTableSessions");
         group.MapGet("/table-sessions/{tableSessionId}/menu", BranchOrderingHttpHandlers.MenuAsync)
             .Produces<BranchSessionMenuResponse>().WithName("GetBranchSessionMenu");
+        group.MapGet("/table-sessions/{tableSessionId}", BranchOrderingHttpHandlers.DetailAsync)
+            .Produces<BranchSessionDetailResponse>().Produces<BranchOrderingError>(404).WithName("GetBranchOrderingSessionDetail");
         return endpoints;
     }
 

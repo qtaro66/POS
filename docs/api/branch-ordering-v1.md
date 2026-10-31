@@ -15,6 +15,7 @@ per command. Responses use `Cache-Control: no-store`.
 | GET | `/commands/{requestId}` | Query a durable result, including line rejection details |
 | GET | `/table-sessions` | List active sessions within the authenticated branch |
 | GET | `/table-sessions/{tableSessionId}/menu` | Frozen item/option prices plus current availability |
+| GET | `/table-sessions/{tableSessionId}` | Accepted batches, persisted lines and authoritative bill-preview totals |
 
 The endpoints are included in the development OpenAPI document when enabled.
 They remain disabled by default. Set `BranchOrdering:Enabled=true` and
@@ -110,8 +111,54 @@ Open still follows the existing Application rules for caller-supplied table IDs.
 Menu queries return the session's frozen `masterDataVersion`, item/option
 prices, group constraints, and current availability flags. Previously opened
 sessions do not switch prices when a new package activates. Closed sessions and
-sessions belonging to another branch return 404. Categories, table layout, sent
-order detail, print-job HTTP views, and client UI integration are follow-up work.
+sessions belonging to another branch return 404. Categories, table layout,
+print-job HTTP views, and client UI integration are follow-up work.
+
+### Active session detail
+
+The session-detail route returns schema version 1, the current session view, a
+UTC read-request timestamp (`asOf`), a session-level open-cancellation flag,
+accepted `batches`, and nullable `billPreviewTotals`. It uses one read-only SQLite
+transaction for all header, receipt, line, option and calculation reads. This
+is a current snapshot, not a historical query at the supplied `asOf` time.
+
+Batches are sorted by persisted Branch sequence, with deterministic legacy
+fallback ordering. Each contains its server batch ID, request ID, optional
+legacy sequence, receipt time and `acceptanceStatus=BranchAccepted`. A batch
+without an accepted durable command receipt fails the read instead of being
+presented as accepted. It does not expose employee/device credentials.
+
+Lines retain original/active quantities, current persisted status, unit prices,
+fulfillment type, comments and options. Cancelled lines remain visible, with
+zero active amounts. Legacy options may have a null option-group ID. The
+session-level cancellation flag does not claim to identify cancellation requests
+per line; that richer workflow remains separate work.
+
+`activeGrossAmount`, `activeDiscountAmount`, and `activeNetAmount` on lines come
+from the existing authoritative bill calculator. Batch sums include active
+items and line discounts only; they do not allocate a bill-level discount,
+service charge, VAT or rounding among batches. They are current active amounts,
+not a reconstruction of an original historical batch total before later changes.
+
+`billPreviewTotals` uses the frozen billing policy and the existing calculator,
+including item/line/bill discounts, service charge, VAT extraction and rounding.
+It is not a receipt, payment balance, or confirmation of received money; it does
+not add Card Charge, refunds, or payment-line information. No calculation rules
+are changed. If there are no active order lines, it is null even when cancelled
+lines remain in the batch list. Clients must show that no active bill exists,
+rather than inventing a payment result.
+
+Reading detail does not request payment, unlock a table, persist a preview,
+create a print job, produce audit/outbox events, or modify sales records. Unknown,
+closed, or other-branch sessions return 404 under the existing complete-identity
+authorization and HTTPS/no-store guards.
+
+During Ordering, display totals as current estimates (D10.1). Refresh this
+projection after order acknowledgments and other changes; do not use the current
+state-transition `tableVersion` alone as a content cache validator. Existing
+SubmitOrder behavior does not advance that version on every appended batch.
+This endpoint does not change version semantics or provide a replacement for
+the separately required completed-session/history workflows.
 
 ## Verification and rollout
 

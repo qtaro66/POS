@@ -14,6 +14,7 @@ public sealed class BranchOrderingOptions
 
 public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time)
 {
+    public TimeProvider Time { get; } = time;
     public TableSessionCommandService Commands { get; } = new(new SqliteTableSessionCommandStore(databasePath), new Clock(time));
     public IBranchCommandStatusQuery Status { get; } = new SqliteBranchCommandStatusQuery(databasePath);
     public IBranchOrderingQuery Queries { get; } = new SqliteBranchOrderingQuery(databasePath);

@@ -1,4 +1,4 @@
-import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionMenu } from './orderingContracts.ts'
+import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 
 export interface OrderingSession {
   readonly serviceOrigin: string
@@ -94,6 +94,43 @@ function menu(body: unknown, sessionId: string): SessionMenu {
   const ids = new Set<string>()
   for (const item of body.items) { menuItem(item, 'Item'); requireValid(!ids.has(item.sellableItemId)); ids.add(item.sellableItemId) }
   return body as unknown as SessionMenu
+}
+
+function utc(value: unknown): boolean { return typeof value === 'string' && /(?:Z|\+00:00)$/.test(value) && Number.isFinite(Date.parse(value)) }
+function money(value: unknown): boolean { return typeof value === 'number' && Number.isFinite(value) && value >= 0 }
+function detail(body: unknown, sessionId: string): SessionDetail {
+  requireValid(record(body) && body.schemaVersion === 1 && record(body.session))
+  requireValid(body.session.tableSessionId === sessionId && id(body.session.tableId) && activeStatuses.has(body.session.status as string) && integer(body.session.tableVersion))
+  requireValid(utc(body.asOf) && typeof body.hasOpenCancellationRequest === 'boolean' && Array.isArray(body.batches))
+  const batches = new Set<string>(), lines = new Set<string>()
+  let hasActiveLines = false
+  for (const batch of body.batches) {
+    requireValid(record(batch) && text(batch.orderBatchId) && id(batch.requestId) && !batches.has(batch.orderBatchId))
+    batches.add(batch.orderBatchId)
+    requireValid((batch.branchSequence === null || integer(batch.branchSequence)) && utc(batch.serverReceivedAt) && batch.acceptanceStatus === 'BranchAccepted' && Array.isArray(batch.lines))
+    requireValid([batch.activeGrossAmount, batch.activeLineDiscountAmount, batch.activeItemNetAmount].every(money))
+    for (const line of batch.lines) {
+      requireValid(record(line) && text(line.orderLineId) && !lines.has(line.orderLineId) && integer(line.lineSequence) && text(line.sellableItemId) && text(line.displayName))
+      lines.add(line.orderLineId)
+      requireValid(integer(line.originalQuantity) && integer(line.activeQuantity, 0) && line.activeQuantity <= line.originalQuantity)
+      requireValid(line.status === 'Active' || line.status === 'Cancelled')
+      requireValid(line.status !== 'Cancelled' || line.activeQuantity === 0)
+      hasActiveLines ||= line.status === 'Active' && line.activeQuantity > 0
+      requireValid(money(line.unitPrice) && (line.fulfillmentType === 'DineIn' || line.fulfillmentType === 'Takeaway') && (line.comment === null || typeof line.comment === 'string'))
+      requireValid([line.activeGrossAmount, line.activeDiscountAmount, line.activeNetAmount].every(money) && Array.isArray(line.options))
+      for (const option of line.options) {
+        requireValid(record(option) && text(option.sellableItemId) && (option.optionGroupId === null || text(option.optionGroupId)) && text(option.displayName) && integer(option.quantityPerItem) && money(option.unitPrice))
+      }
+    }
+  }
+  const totals = body.billPreviewTotals
+  requireValid(hasActiveLines ? record(totals) : totals === null)
+  if (record(totals)) {
+    requireValid(text(totals.masterDataVersion) && text(totals.calculationPolicyVersion))
+    requireValid(['vatRate', 'serviceChargeRate', 'itemGrossAmount', 'lineDiscountAmount', 'itemNetAmount', 'billDiscountAmount', 'serviceChargeBase', 'serviceChargeAmount', 'totalBeforeRounding', 'netTotal', 'vatInclusiveAmount', 'amountBeforeVat'].every(key => money(totals[key])))
+    requireValid(typeof totals.roundingAdjustment === 'number' && Number.isFinite(totals.roundingAdjustment))
+  }
+  return body as unknown as SessionDetail
 }
 
 /** Memory-only adapter. It never logs credentials, persists tokens, follows redirects, or retries a mutation. */
@@ -214,6 +251,14 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       if (result.status === 404) return { kind: 'notFound' }
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
       try { return { kind: 'ok', value: menu(result.body, tableSessionId) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async sessionDetail(tableSessionId: string, signal?: AbortSignal): Promise<QueryResult<SessionDetail>> {
+      if (!id(tableSessionId)) throw new Error('Invalid table session identifier.')
+      const result = await request(`/table-sessions/${encodeURIComponent(tableSessionId)}`, 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: detail(result.body, tableSessionId) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
   }
 }
