@@ -29,6 +29,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayLeaseRenewalStore>());
         Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayCompletionStore>());
         Assert.Null(provider.GetService<IBranchCloudOutboxSequenceReplayFailureStore>());
+        Assert.Null(provider.GetService<IBranchCloudReplayCycleProcessor>());
         Assert.Null(provider.GetService<IBranchCloudDeliveryConfirmationStore>());
         Assert.IsType<SqliteBranchCloudOutboxReadinessProbe>(
             provider.GetRequiredService<IBranchCloudOutboxReadinessProbe>());
@@ -90,6 +91,8 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 SqliteBranchCloudDeliveryConfirmationStore>(provider);
             AssertSingleton<IBranchCloudOutboxCycleProcessor,
                 BranchCloudOutboxCycleProcessor>(provider);
+            AssertSingleton<IBranchCloudReplayCycleProcessor,
+                BranchCloudReplayCycleProcessor>(provider);
             AssertSingleton<IBranchCloudOutboxRetryDelayPolicy,
                 ExponentialBranchCloudOutboxRetryDelayPolicy>(provider);
             Assert.Contains(
@@ -123,6 +126,8 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
                 provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>());
             Assert.IsType<BranchCloudOutboxCycleProcessor>(
                 provider.GetRequiredService<IBranchCloudOutboxCycleProcessor>());
+            Assert.IsType<BranchCloudReplayCycleProcessor>(
+                provider.GetRequiredService<IBranchCloudReplayCycleProcessor>());
         }
         finally
         {
@@ -295,6 +300,36 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public async Task Existing_replay_processor_registration_is_preserved()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"custom-replay-cycle-{Guid.NewGuid():N}.db");
+        try
+        {
+            await new SqliteTableSessionCommandStore(path).InitializeAsync();
+            var custom = new CustomReplayProcessor();
+            using var provider = Provider(Enabled(path), services =>
+            {
+                services.AddSingleton<IBranchCloudReplayCycleProcessor>(custom);
+                services.AddSingleton<IBranchCloudOutboxCycleProcessor>(new CustomProcessor());
+            });
+            provider.GetRequiredService<IStartupValidator>().Validate();
+            Assert.Same(custom, provider.GetRequiredService<IBranchCloudReplayCycleProcessor>());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private sealed class CustomReplayProcessor : IBranchCloudReplayCycleProcessor
+    {
+        public Task<BranchCloudOutboxCycleResult> ProcessNextAsync(
+            string branchId, string leaseOwner, TimeSpan leaseDuration,
+            TimeSpan retryDelay, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Composition must not execute replay delivery.");
     }
 
     private static ServiceProvider Provider(
