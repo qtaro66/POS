@@ -90,7 +90,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
             AssertSingleton<IBranchCloudDeliveryConfirmationStore,
                 SqliteBranchCloudDeliveryConfirmationStore>(provider);
             AssertSingleton<IBranchCloudOutboxCycleProcessor,
-                BranchCloudOutboxCycleProcessor>(provider);
+                BranchCloudReplayFirstCycleProcessor>(provider);
             AssertSingleton<IBranchCloudReplayCycleProcessor,
                 BranchCloudReplayCycleProcessor>(provider);
             AssertSingleton<IBranchCloudOutboxRetryDelayPolicy,
@@ -124,7 +124,7 @@ public sealed class BranchCloudOutboxDeliveryCompositionTests
 
             Assert.IsType<HttpBranchCloudOutboxDeliveryClient>(
                 provider.GetRequiredService<IBranchCloudOutboxDeliveryClient>());
-            Assert.IsType<BranchCloudOutboxCycleProcessor>(
+            Assert.IsType<BranchCloudReplayFirstCycleProcessor>(
                 provider.GetRequiredService<IBranchCloudOutboxCycleProcessor>());
             Assert.IsType<BranchCloudReplayCycleProcessor>(
                 provider.GetRequiredService<IBranchCloudReplayCycleProcessor>());
