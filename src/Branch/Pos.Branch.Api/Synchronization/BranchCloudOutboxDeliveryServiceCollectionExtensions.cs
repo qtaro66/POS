@@ -78,7 +78,7 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
                     typeof(IBranchCloudOutboxCycleProcessor)))
         {
             services.AddBranchCloudOutboxHttpDeliveryClient();
-            services.TryAddSingleton<IBranchCloudOutboxCycleProcessor>(provider =>
+            services.TryAddSingleton<BranchCloudOutboxCycleProcessor>(provider =>
                 new BranchCloudOutboxCycleProcessor(
                     provider.GetRequiredService<IBranchCloudOutboxClaimStore>(),
                     provider.GetRequiredService<IBranchCloudOutboxLeaseRenewalStore>(),
@@ -92,6 +92,10 @@ public static class BranchCloudOutboxDeliveryServiceCollectionExtensions
                         .Value
                         .MaximumRetryDelay,
                     provider.GetRequiredService<TimeProvider>()));
+            services.TryAddSingleton<IBranchCloudOutboxCycleProcessor>(provider =>
+                new BranchCloudReplayFirstCycleProcessor(
+                    provider.GetRequiredService<IBranchCloudReplayCycleProcessor>(),
+                    provider.GetRequiredService<BranchCloudOutboxCycleProcessor>()));
         }
         return services;
     }
