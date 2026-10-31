@@ -10,6 +10,9 @@ The temporary checkout is `C:\POS`. When the second internal NVMe is ready, crea
 
 ## Architecture
 
+The opt-in Branch ordering API is documented in
+[`docs/api/branch-ordering-v1.md`](docs/api/branch-ordering-v1.md).
+
 - `apps/pos-web` — cashier PC web application for Chromium/Edge kiosk
 - `apps/mobile-pwa` — Phase 0 Android/iOS installable PWA
 - `apps/backoffice` — central administration web application

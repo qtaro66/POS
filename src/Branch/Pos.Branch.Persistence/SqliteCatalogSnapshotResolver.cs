@@ -86,7 +86,7 @@ public sealed class SqliteCatalogSnapshotResolver : ISqliteCatalogSnapshotResolv
         return await command.ExecuteScalarAsync(cancellationToken) as string;
     }
 
-    private static async Task<CatalogSellableItemSnapshot?> ReadItemAsync(
+    internal static async Task<CatalogSellableItemSnapshot?> ReadItemAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         string branchId,
@@ -125,7 +125,7 @@ public sealed class SqliteCatalogSnapshotResolver : ISqliteCatalogSnapshotResolv
         return item;
     }
 
-    private static async Task<IReadOnlyList<CatalogOptionGroupSnapshot>> ReadGroupsAsync(
+    internal static async Task<IReadOnlyList<CatalogOptionGroupSnapshot>> ReadGroupsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         string branchId,
@@ -200,7 +200,7 @@ public sealed class SqliteCatalogSnapshotResolver : ISqliteCatalogSnapshotResolv
         return builders.Select(builder => builder.Build()).ToArray();
     }
 
-    private static async Task<IReadOnlyDictionary<string, CurrentCatalogAvailability>>
+    internal static async Task<IReadOnlyDictionary<string, CurrentCatalogAvailability>>
         ReadCurrentAvailabilityAsync(
             SqliteConnection connection,
             SqliteTransaction transaction,
