@@ -1,0 +1,37 @@
+import type { SessionDetail } from '../api/orderingContracts.ts'
+import type { OrderingReadClient } from './readController.ts'
+
+/** Development-only data. This module is imported only behind Vite's DEV flag. */
+export function previewDetail(tableSessionId = 'S-A04', tableId = 'A04'): SessionDetail {
+  const empty = tableSessionId === 'S-A08'
+  return {
+    schemaVersion: 1, session: { tableSessionId, tableId, status: tableId === 'B12' ? 'PaymentPending' : 'Ordering', tableVersion: 1 },
+    asOf: '2026-10-31T08:30:00Z', hasOpenCancellationRequest: false,
+    billPreviewTotals: empty ? null : {
+      masterDataVersion: 'PREVIEW-MASTER', calculationPolicyVersion: 'PREVIEW-CALC', vatRate: 7, serviceChargeRate: 0,
+      itemGrossAmount: 530, lineDiscountAmount: 0, itemNetAmount: 530, billDiscountAmount: 0,
+      serviceChargeBase: 530, serviceChargeAmount: 0, totalBeforeRounding: 530, roundingAdjustment: 0,
+      netTotal: 530, vatInclusiveAmount: 34.67, amountBeforeVat: 495.33,
+    },
+    batches: empty ? [] : [
+      { orderBatchId: `${tableSessionId}:PREVIEW-BATCH-1`, requestId: 'PREVIEW-REQUEST-1', branchSequence: 2, serverReceivedAt: '2026-10-31T08:10:00Z', acceptanceStatus: 'BranchAccepted', activeGrossAmount: 530, activeLineDiscountAmount: 0, activeItemNetAmount: 530,
+        lines: [
+          { orderLineId: `${tableSessionId}:L1`, lineSequence: 1, sellableItemId: 'F001', displayName: tableId === 'B12' ? 'ผัดไทยกุ้ง' : 'ข้าวผัดกุ้ง', originalQuantity: 2, activeQuantity: 2, status: 'Active', unitPrice: 185, fulfillmentType: 'DineIn', comment: 'ไม่ใส่ต้นหอม', options: [{ sellableItemId: 'TOP-1', optionGroupId: 'TOP', displayName: 'ไข่ดาว', quantityPerItem: 1, unitPrice: 15 }], activeGrossAmount: 400, activeDiscountAmount: 0, activeNetAmount: 400 },
+          { orderLineId: `${tableSessionId}:L2`, lineSequence: 2, sellableItemId: 'D001', displayName: 'น้ำมะนาวโซดา', originalQuantity: 2, activeQuantity: 2, status: 'Active', unitPrice: 65, fulfillmentType: 'Takeaway', comment: 'หวานน้อย', options: [], activeGrossAmount: 130, activeDiscountAmount: 0, activeNetAmount: 130 },
+        ] },
+      { orderBatchId: `${tableSessionId}:PREVIEW-BATCH-2`, requestId: 'PREVIEW-REQUEST-2', branchSequence: 3, serverReceivedAt: '2026-10-31T08:20:00Z', acceptanceStatus: 'BranchAccepted', activeGrossAmount: 0, activeLineDiscountAmount: 0, activeItemNetAmount: 0,
+        lines: [{ orderLineId: `${tableSessionId}:L3`, lineSequence: 1, sellableItemId: 'F002', displayName: 'ปีกไก่ทอด', originalQuantity: 1, activeQuantity: 0, status: 'Cancelled', unitPrice: 120, fulfillmentType: 'DineIn', comment: null, options: [], activeGrossAmount: 0, activeDiscountAmount: 0, activeNetAmount: 0 }] },
+    ],
+  }
+}
+
+export function createPreviewReadClient(): OrderingReadClient {
+  const sessions = [previewDetail().session, previewDetail('S-B12', 'B12').session, previewDetail('S-A08', 'A08').session]
+  return {
+    async activeTables() { return { kind: 'ok', value: { schemaVersion: 1, includesAvailableTables: false, sessions: structuredClone(sessions) } } },
+    async sessionDetail(id) {
+      const table = sessions.find(session => session.tableSessionId === id)
+      return table ? { kind: 'ok', value: previewDetail(id, table.tableId) } : { kind: 'notFound' }
+    },
+  }
+}
