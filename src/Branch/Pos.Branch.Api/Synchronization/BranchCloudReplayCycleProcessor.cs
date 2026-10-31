@@ -223,4 +223,3 @@ public sealed class BranchCloudReplayCycleProcessor :
             : value.Trim();
 
 }
-
