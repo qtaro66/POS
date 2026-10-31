@@ -59,9 +59,9 @@ production login/unlock workflow.
 Create the adapter only after the application has an authenticated device and
 employee session. Pass that session in memory; never put credentials in Vite
 environment variables, URLs, logs, localStorage, or source code. Credentials and
-identity are snapshotted at creation. Discard the client and prepared commands
-when the employee session ends or changes. Commands cannot be sent through a
-different client instance.
+identity are snapshotted at creation. Discard the client when the employee
+session ends or changes. Runtime prepared commands cannot cross client instances;
+validated journal snapshots can be restored only by the original identity.
 
 The adapter never automatically retries a mutation. Only a correlated, valid
 HTTP 200/409 command receipt becomes durable. Timeouts, network failures, 503s
@@ -70,10 +70,9 @@ replies are blocked, not durable business rejections. A command-query 404 with
 NoDurableResult remains unresolved, not accepted or rejected. Reconcile using
 `client.commandStatus(command.requestId)`; do not create a new order on uncertainty.
 
-Prepared commands are memory-only and retain a private serialized basket
-snapshot. They cannot be reconstructed across page reloads in this slice;
-durable client recovery/request-ID storage belongs to subsequent UI work. Do not
-use this foundation alone for production sales.
+Prepared commands retain a private immutable serialized basket snapshot.
+Use the recovery adapter below for persistence before sending. Do not use the
+low-level memory-only `execute` method alone for production sales.
 
 Requests use HTTPS only, omit cookies, disable caches and reject redirects.
 Default timeout is 10 seconds and response JSON is bounded to 2 MiB, configurable
@@ -93,6 +92,44 @@ sessions have null bill-preview totals. A missing, mismatched or malformed detai
 response is not replaced with basket-derived or zero-valued bill data. These
 preview totals are not payment balances or receipts.
 
+## Durable command recovery adapter
+
+`createCommandJournal()` in `src/ordering/commandJournal.ts` uses a separate
+IndexedDB database, `pos-pc-ordering-journal` version 1. It stores original
+OpenTable/SubmitOrder payloads, IDs, UTC creation times, origin/branch/device/
+employee identity and a pending/resolved marker. It never stores authentication
+tokens or receipts. This local format is independent of Branch SQLite schemas.
+
+Wrap an authenticated ordering client with
+`createCommandRecovery(client, journal)` from `src/ordering/commandRecovery.ts`:
+
+- `send(prepared)` waits for the journal transaction to commit before POST.
+  Storage errors stop sending. Reusing a journaled ID requires recovery/retry;
+  conflicting payloads cannot overwrite it.
+- `list()` includes pending and resolved entries for the current origin, branch
+  and terminal. Constructing/listing does not contact Branch or send orders.
+- `recover(requestId)` performs a fresh GET status lookup only. NoDurableResult
+  remains unresolved. SubmitOrder receipts must match the original session;
+  OpenTable may legitimately resolve to a previously opened session.
+- `retry(requestId)` first checks Branch. Only an explicit call, after
+  NoDurableResult for a pending entry, can POST the original exact bytes and ID.
+  Unavailable/malformed lookups stop it. The original employee must be signed in
+  for resend; a different authorized operator on the same terminal may query.
+  A previously resolved entry is never resent, even if Branch later lacks it.
+- Durable results are retained until `finalize(requestId)` after the caller
+  applies the result to its basket/workspace. Pending entries cannot be finalized.
+  A failed local resolve write returns the real durable Branch result with
+  `recoveryRecorded: false`; keep the entry and reconcile rather than resubmit.
+
+The canonical snapshot codec rejects unknown fields, malformed/context-mismatched
+or oversized payloads and derives paths from the action. It does not authenticate
+browser storage against a malicious same-origin script. IndexedDB is unencrypted,
+can be evicted or cleared, and is not a Branch backup. There is no automatic
+replay, expiry or background resend. The future UI must prevent a fresh order ID
+for an unresolved basket and coordinate applying receipts with local basket
+cleanup; that UI, basket persistence and session provisioning are not implemented
+here. This adapter is not connected to App's read-only entrypoint.
+
 ## Verification and remaining work
 
 ```powershell
@@ -109,6 +146,6 @@ newer is the repository baseline.
 
 Types are currently handwritten mirrors of the v1 DTOs, with runtime shape and
 identity validation. OpenAPI-generated client tooling, real Branch integration,
-credential UI/lifecycle, order-entry screens, and durable request reconciliation
-remain follow-up work. The workspace uses the supplied client's read methods;
+credential UI/lifecycle, order-entry screens, and visible recovery/basket
+coordination remain follow-up work. The workspace uses the supplied client's read methods;
 this does not activate backend features or provide a production session provider.

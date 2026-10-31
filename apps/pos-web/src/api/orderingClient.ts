@@ -9,6 +9,12 @@ export interface OrderingSession {
   readonly employeeSessionToken: string
 }
 export interface PreparedCommand { readonly requestId: string; readonly tableSessionId: string; readonly action: 'OpenTable' | 'SubmitOrder' }
+export interface CommandScope { readonly serviceOrigin: string; readonly branchId: string; readonly deviceId: string }
+export interface CommandSnapshot extends CommandScope, PreparedCommand {
+  readonly formatVersion: 1
+  readonly employeeId: string
+  readonly body: string
+}
 type FailureReason = 'network' | 'timeout' | 'aborted' | 'protocol' | 'http'
 export type CommandResult =
   | { readonly kind: 'durable'; readonly response: CommandResponse }
@@ -38,6 +44,37 @@ function text(value: unknown): value is string { return typeof value === 'string
 const statuses = new Set(['Ordering', 'PaymentPending', 'PaymentInProgress', 'PartiallyPaid', 'Completed', 'Cancelled', 'Closed'])
 const activeStatuses = new Set(['Ordering', 'PaymentPending', 'PaymentInProgress', 'PartiallyPaid'])
 function requireValid(condition: unknown): asserts condition { if (!condition) throw new ProtocolFailure('Invalid Branch ordering response.') }
+
+function orderLines(lines: readonly OrderLine[]) {
+  if (!Array.isArray(lines) || lines.length === 0) throw new Error('An order requires lines.')
+  return lines.map((line: OrderLine) => {
+    if (!line || !id(line.sellableItemId) || !integer(line.quantity) || !['DineIn', 'Takeaway'].includes(line.fulfillmentType) || line.comment != null && typeof line.comment !== 'string' || line.options != null && !Array.isArray(line.options)) throw new Error('Invalid order line.')
+    const options = (line.options ?? []).map((option: OrderOption) => {
+      if (!option || !id(option.optionGroupId) || !id(option.sellableItemId) || !integer(option.quantity)) throw new Error('Invalid order option.')
+      return { optionGroupId: option.optionGroupId, sellableItemId: option.sellableItemId, quantity: option.quantity }
+    })
+    return { sellableItemId: line.sellableItemId, quantity: line.quantity, fulfillmentType: line.fulfillmentType, comment: line.comment ?? null, options }
+  })
+}
+
+/** Local recovery format, not a Branch DTO. Reject unknown fields and noncanonical payloads. */
+export function validateCommandSnapshot(value: unknown): CommandSnapshot {
+  if (!record(value) || value.formatVersion !== 1 || !['OpenTable', 'SubmitOrder'].includes(value.action as string) || ![value.branchId, value.deviceId, value.employeeId, value.requestId, value.tableSessionId].every(id) || typeof value.serviceOrigin !== 'string' || typeof value.body !== 'string') throw new Error('Invalid command snapshot.')
+  const origin = new URL(value.serviceOrigin)
+  if (origin.protocol !== 'https:' || origin.origin !== value.serviceOrigin || new TextEncoder().encode(value.body).byteLength > 64 * 1024) throw new Error('Invalid command snapshot.')
+  const payload: unknown = JSON.parse(value.body)
+  if (!record(payload) || !record(payload.context)) throw new Error('Invalid command snapshot.')
+  const { requestId, branchId, deviceId, employeeId, tableSessionId } = value
+  const clientCreatedAt = payload.context.clientCreatedAt
+  if (typeof clientCreatedAt !== 'string' || new Date(clientCreatedAt).toISOString() !== clientCreatedAt) throw new Error('Invalid command timestamp.')
+  const fields = value.action === 'OpenTable'
+    ? (id(payload.tableId) ? { tableId: payload.tableId } : null)
+    : { lines: orderLines(payload.lines as OrderLine[]) }
+  if (!fields || value.body !== JSON.stringify({ schemaVersion: 1, context: { requestId, branchId, deviceId, employeeId, tableSessionId, clientCreatedAt }, ...fields })) throw new Error('Invalid command payload.')
+  const result = { formatVersion: 1 as const, serviceOrigin: value.serviceOrigin, branchId: branchId as string, deviceId: deviceId as string, employeeId: employeeId as string, requestId: requestId as string, tableSessionId: tableSessionId as string, action: value.action as PreparedCommand['action'], body: value.body }
+  if (Object.keys(value).length !== Object.keys(result).length || Object.keys(value).some(key => !(key in result))) throw new Error('Invalid command snapshot fields.')
+  return Object.freeze(result)
+}
 
 function commandResponse(body: unknown, requestId: string, expected: 'BranchAccepted' | 'Rejected' | 'NoDurableResult', sessionId?: string): CommandResponse {
   requireValid(record(body) && record(body.result))
@@ -148,7 +185,8 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   const requestIdFactory = options.requestId ?? (() => crypto.randomUUID())
   const now = options.now ?? (() => new Date())
   const prepared = new WeakMap<PreparedCommand, { path: string; body: string }>()
-  const issuedIds = new Set<string>()
+  const issuedBodies = new Map<string, string>()
+  const scope = Object.freeze({ serviceOrigin: origin.origin, branchId: identity.branchId, deviceId: identity.deviceId })
 
   async function request(path: string, method: 'GET' | 'POST', body?: string, callerSignal?: AbortSignal): Promise<TransportResult> {
     const controller = new AbortController()
@@ -191,30 +229,37 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   function prepare(action: PreparedCommand['action'], tableSessionId: string, payload: object): PreparedCommand {
     if (!id(tableSessionId)) throw new Error('Invalid table session identifier.')
     const requestId = requestIdFactory()
-    if (!id(requestId) || issuedIds.has(requestId)) throw new Error('A new request identifier is required.')
+    if (!id(requestId) || issuedBodies.has(requestId)) throw new Error('A new request identifier is required.')
     const command = Object.freeze({ action, requestId, tableSessionId })
     const body = JSON.stringify({ schemaVersion: 1, context: { requestId, ...identity, tableSessionId, clientCreatedAt: now().toISOString() }, ...payload })
     if (new TextEncoder().encode(body).byteLength > 64 * 1024) throw new Error('Ordering request exceeds 64 KiB.')
-    issuedIds.add(requestId)
+    issuedBodies.set(requestId, body)
     prepared.set(command, { path: action === 'OpenTable' ? '/tables/open' : '/orders', body })
     return command
   }
   return {
+    scope,
+    snapshot(command: PreparedCommand): CommandSnapshot {
+      const saved = prepared.get(command)
+      if (!saved) throw new Error('Command belongs to another ordering session.')
+      return validateCommandSnapshot({ formatVersion: 1, ...scope, employeeId: identity.employeeId, ...command, body: saved.body })
+    },
+    restore(value: unknown): PreparedCommand {
+      const snapshot = validateCommandSnapshot(value)
+      if (snapshot.serviceOrigin !== scope.serviceOrigin || snapshot.branchId !== scope.branchId || snapshot.deviceId !== scope.deviceId || snapshot.employeeId !== identity.employeeId) throw new Error('The original ordering identity is required.')
+      const existing = issuedBodies.get(snapshot.requestId)
+      if (existing !== undefined && existing !== snapshot.body) throw new Error('Request identifier already has another payload.')
+      const command = Object.freeze({ requestId: snapshot.requestId, tableSessionId: snapshot.tableSessionId, action: snapshot.action })
+      issuedBodies.set(command.requestId, snapshot.body)
+      prepared.set(command, { path: command.action === 'OpenTable' ? '/tables/open' : '/orders', body: snapshot.body })
+      return command
+    },
     prepareOpenTable(tableId: string, proposedSessionId: string) {
       if (!id(tableId)) throw new Error('Invalid table identifier.')
       return prepare('OpenTable', proposedSessionId, { tableId })
     },
     prepareSubmitOrder(tableSessionId: string, lines: readonly OrderLine[]) {
-      if (!Array.isArray(lines) || lines.length === 0) throw new Error('An order requires lines.')
-      const snapshot = lines.map((line: OrderLine) => {
-        if (!line || !id(line.sellableItemId) || !integer(line.quantity) || !['DineIn', 'Takeaway'].includes(line.fulfillmentType) || line.comment != null && typeof line.comment !== 'string' || line.options != null && !Array.isArray(line.options)) throw new Error('Invalid order line.')
-        const opts = (line.options ?? []).map((option: OrderOption) => {
-          if (!option || !id(option.optionGroupId) || !id(option.sellableItemId) || !integer(option.quantity)) throw new Error('Invalid order option.')
-          return { optionGroupId: option.optionGroupId, sellableItemId: option.sellableItemId, quantity: option.quantity }
-        })
-        return { sellableItemId: line.sellableItemId, quantity: line.quantity, fulfillmentType: line.fulfillmentType, comment: line.comment ?? null, options: opts }
-      })
-      return prepare('SubmitOrder', tableSessionId, { lines: snapshot })
+      return prepare('SubmitOrder', tableSessionId, { lines: orderLines(lines) })
     },
     async execute(command: PreparedCommand, signal?: AbortSignal): Promise<CommandResult> {
       const saved = prepared.get(command)
