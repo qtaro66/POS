@@ -5,6 +5,7 @@ import type { OrderingReadClient } from './readController.ts'
 import { sessionLabels, strings as s } from './strings.ts'
 import { CommandRecoveryPanel } from './CommandRecoveryPanel.tsx'
 import type { RecoveryReadPort } from './recoveryController.ts'
+import { PcPosShell } from '../shell/PcPosShell.tsx'
 
 const money = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 const clock = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' })
@@ -61,13 +62,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   useEffect(() => { void controller.refresh(); return controller.cancel }, [controller])
   const detail = state.tablesPhase === 'ready' && state.detailPhase === 'ready' ? state.detail : null
-  return <div className="pos-shell">
-    <header className="pos-topbar"><div><span className="brand-mark" aria-hidden="true">▣</span><strong>{branchLabel}</strong><span className="topbar-divider" /><span>PC POS</span></div>
-      <button className="lock-button" onClick={onLock}>{s.lock}</button></header>
-    {preview && <div className="preview-banner" role="note">{s.preview}</div>}
-    <div className="pos-layout">
-      <aside className="pos-sidebar"><h1>{s.appTitle}</h1><nav aria-label="เมนูหลัก"><span aria-current="page">▦ &nbsp; โต๊ะ</span></nav><p>ข้อมูลรายการแบบอ่านอย่างเดียว</p></aside>
-      <main className="ordering-main">
+  return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}>
         <header className="page-header"><div><p className="eyebrow">การขาย / โต๊ะ</p><h2>{s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         <div className="ordering-panels">
@@ -93,7 +88,5 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
               <Totals detail={detail} /></>}
           </section>
         </div>
-      </main>
-    </div>
-  </div>
+  </PcPosShell>
 }

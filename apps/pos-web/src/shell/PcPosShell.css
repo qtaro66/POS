@@ -1,0 +1,14 @@
+.pos-sidebar nav { display: flex; flex-direction: column; gap: 8px; }
+.pos-sidebar nav button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 12px 10px; background: transparent; color: white; border: 0; border-left: 4px solid transparent; border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; }
+.pos-sidebar nav button[aria-current="page"] { background: #007d93; border-left-color: #74e2ea; font-weight: bold; }
+.pos-sidebar nav button:hover { background: #205678; }
+.pos-sidebar nav button span { display: inline; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 20px; }
+.shell-unavailable { padding: 28px; overflow-y: auto; }
+.shell-unavailable h2 { font-size: 26px; margin: 8px 0 20px; }
+.shell-unavailable p + p { margin-top: 12px; color: #586e84; }
+.ordering-main:focus-visible { outline: 3px solid #e95e13; outline-offset: -3px; }
+@media (max-width: 800px) {
+  .pos-sidebar { flex-wrap: wrap; }
+  .pos-sidebar nav { flex: 1; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .pos-sidebar nav button { width: auto; padding: 8px; }
+}
