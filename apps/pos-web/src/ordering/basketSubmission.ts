@@ -14,7 +14,7 @@ export type BasketSubmissionResult =
 const available = (item: MenuItem) => item.unitPrice !== null && item.availability.existsInActivePackage && item.availability.centralActive && item.availability.branchEnabled && item.availability.hasCurrentPrice && !item.availability.soldOut
 
 /** Advisory checks mirror CatalogSelectionValidator; Branch still decides at commit. */
-function selectionProblem(basket: BasketRecord, menu: SessionMenu): BlockReason | undefined {
+export function basketSelectionProblem(basket: Pick<BasketRecord, 'lines'>, menu: SessionMenu): BlockReason | undefined {
   for (const line of basket.lines) {
     if (line.quantity > 2_147_483_647 || (line.options ?? []).some(option => option.quantity > 2_147_483_647)) return 'invalidSelection'
     const item = menu.items.find(item => item.sellableItemId === line.sellableItemId)
@@ -52,7 +52,7 @@ export function createBasketSubmission(client: Client, factory: IDBFactory | und
     if (signal?.aborted) return 'cancelled'
     if (menu.kind !== 'ok') return 'catalogUnavailable'
     if (menu.value.masterDataVersion !== basket.sessionMasterDataVersion) return 'catalogChanged'
-    return selectionProblem(basket, menu.value)
+    return basketSelectionProblem(basket, menu.value)
   }
 
   async function finish(basket: BasketRecord, outcome: RecoveryOutcome<CommandQueryResult | CommandResult>): Promise<BasketSubmissionResult> {

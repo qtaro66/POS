@@ -206,6 +206,39 @@ and implement the confirmed menu/Sub Item/Topping interface. Branch remains fina
 authority when availability/session state changes after a preflight read. Employee
 permission/revocation checks remain at Branch; local identity metadata grants none.
 
+## Persistent basket editor controller
+
+`createBasketEditor(orderingClient, tableSessionId, indexedDbFactory?)` in
+`src/ordering/basketEditor.ts` provides a subscribable state snapshot for the
+future table editor. Construction does no I/O; call `refresh()` on mount and
+`cancel()` on unmount/identity replacement. A new controller is required for a
+different authenticated client or table session. Refresh loads the local basket
+and reads Branch detail/menu, ignoring superseded results. Viewing an empty
+table does not create an empty saved basket.
+
+`addLine`, `replaceLine` and `removeLine` persist before publishing a changed
+basket. Disable editor controls while activity is saving or sending; competing
+mutations return false rather than overwrite an in-flight edit. A stale version
+or write failure retains the last committed view and requires refresh.
+Unavailable/locked sessions, catalog-version mismatch and bound pending commands
+prevent edits. Unavailable old selections can still be removed from an otherwise
+editable basket without requiring every remaining old selection to be sellable.
+
+New-line fulfillment defaults to DineIn. `setNewFulfillment('Takeaway')` changes
+only subsequently added lines; `replaceLine` can explicitly change fulfillment
+on a selected unsubmitted line. Original comments/options and the session master
+version survive reload. No draft-save button or separate business command is
+needed; successful edit promises mean the local transaction committed.
+
+`submit`, GET-only `recover` and explicit `retry` delegate to the submission
+coordinator and preserve its durable/pending distinction. Pending baskets remain
+frozen after reload, and recovery remains available even when the current table
+is locked. After command processing, the controller requires refresh before
+more edits; the UI must retain/present the outcome and refresh sent-order data.
+Cancelling obsolete UI work never deletes staged commands or changes a real
+Branch outcome. No menu/basket component or mutation control is wired into App
+yet; this slice supplies its persistent state/lifecycle controller.
+
 ## Verification and remaining work
 
 An authenticated host may opt into the command-inspection drawer with
