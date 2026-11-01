@@ -244,6 +244,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    get employeeId() { return identity.employeeId },
     snapshot(command: PreparedCommand): CommandSnapshot {
       const saved = prepared.get(command)
       if (!saved) throw new Error('Command belongs to another ordering session.')

@@ -168,6 +168,44 @@ This store does not grant permission to submit to a closed/payment-locked sessio
 or implement employee takeover. No automatic expiry or deletion is introduced.
 No basket editor or production submission control is activated in this slice.
 
+## Basket submission coordinator
+
+`createBasketSubmission(orderingClient, indexedDbFactory?)` in
+`src/ordering/basketSubmission.ts` composes baskets, journal and recovery against
+the same browser database. It derives owner scope from the authenticated client's
+captured identity. Construction and `load(tableSessionId)` do not contact Branch.
+
+- `submit(tableSessionId, savedBasket, signal?)` checks the current Branch session
+  is Ordering, the frozen menu version matches, and selected items/options remain
+  available with valid group/repetition constraints. These are advisory checks,
+  not acceptance. Stage the immutable request before any POST, then query before
+  sending. Existing bound baskets return their pending ID without minting another.
+- `recover(tableSessionId, boundBasket, signal?)` performs GET status only and
+  applies a correlated durable outcome locally. Do this before deciding to resend:
+  an already accepted command can be recovered even when its table is now locked.
+- `retry(tableSessionId, boundBasket, signal?)` queries first. An unresolved pending
+  command can resend only after fresh session/menu checks and another final status
+  lookup. It retains its exact original payload, request ID and employee. A local
+  resolved marker with no current Branch result never permits resend.
+- Results distinguish local `blocked`, unresolved `pending`, and Branch `durable`
+  outcomes. Transport authentication/validation failures do not become durable
+  rejections. A durable result with `localApplied: false` needs further local
+  reconciliation; do not create another order ID. Accepted cleanup and rejected
+  basket retention use the transactional store above.
+
+Concurrent calls in one coordinator return busy; cross-tab staging relies on
+basket ID/revision checks. Cancellation or storage failure cannot discard a
+staged request. Local preflight failures retain the existing basket/command and
+do not introduce automatic retry. No prices/totals are calculated or sent.
+Group selection counts follow Branch's sum of option quantities, not the number
+of distinct option rows; quantities must fit the v1 integer wire fields.
+
+This coordinator is not wired to App or its inspection drawer. The future editor
+must present the outcomes, refresh authoritative sent-order data after acceptance,
+and implement the confirmed menu/Sub Item/Topping interface. Branch remains final
+authority when availability/session state changes after a preflight read. Employee
+permission/revocation checks remain at Branch; local identity metadata grants none.
+
 ## Verification and remaining work
 
 An authenticated host may opt into the command-inspection drawer with
