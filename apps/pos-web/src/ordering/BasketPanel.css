@@ -1,0 +1,37 @@
+.basket-panel { background: white; border: 1px solid #d8e3ed; border-radius: 12px; color: #17364c; display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }
+.basket-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; background: #edf7fa; }
+.basket-heading h2 { font-size: 24px; }
+.basket-panel button { padding: 8px 12px; border: 1px solid #b8d4df; border-radius: 7px; background: #f5fafc; color: #174e63; }
+.basket-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.basket-panel > p { margin: 10px 20px; }
+.basket-fulfillment { display: flex; gap: 24px; padding: 12px 20px; border: 0; border-bottom: 1px solid #d8e3ed; }
+.basket-fulfillment legend { padding-top: 10px; font-size: 13px; }
+.basket-fulfillment label { display: flex; gap: 6px; align-items: center; }
+.basket-lines { overflow-y: auto; flex: 1; min-height: 0; padding: 12px 20px; }
+.basket-lines h3 { font-size: 15px; margin: 8px 0; color: #00758d; }
+.basket-line { border: 1px solid #d8e3ed; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+.basket-line-title { display: flex; justify-content: space-between; gap: 12px; }
+.basket-line-title span { font-size: 12px; background: #eaf5f8; padding: 3px 8px; border-radius: 5px; }
+.basket-unit,.basket-option,.basket-saved-comment { color: #586b7e; font-size: 13px; margin-top: 5px; overflow-wrap: anywhere; }
+.basket-line-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.basket-quantity { display: flex; gap: 10px; align-items: center; }
+.basket-quantity output { min-width: 20px; text-align: center; }
+.basket-line-actions label { font-size: 13px; }
+.basket-line select { padding: 6px; border: 1px solid #b8d4df; border-radius: 5px; margin-left: 8px; }
+.basket-panel .basket-delete { color: #a12a3d; border-color: #e7b8c0; }
+.basket-comment { margin-top: 12px; font-size: 13px; }
+.basket-comment summary { cursor: pointer; color: #00758d; }
+.basket-comment form { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.basket-comment input { display: block; width: 100%; border: 1px solid #b8d4df; border-radius: 5px; padding: 7px; }
+.basket-comment label { flex: 1; min-width: 160px; }
+.basket-empty { padding: 24px 0; text-align: center; color: #586b7e; }
+.basket-footer { padding: 14px 20px; border-top: 1px solid #d8e3ed; display: flex; flex-direction: column; gap: 8px; background: #f5fafc; }
+.basket-footer > p { font-size: 13px; }
+.basket-panel .basket-submit { background: #007d93; color: white; font-weight: bold; padding: 14px; }
+.basket-notice { padding: 10px 12px; border-radius: 6px; background: #fff2ce; color: #705011; font-size: 13px; overflow-wrap: anywhere; }
+.basket-error { padding: 12px; background: #fff1f3; color: #912437; }
+.basket-result { margin: 10px 20px; padding: 12px; background: #fff2ce; font-size: 13px; overflow-wrap: anywhere; }
+.basket-result.accepted { background: #e4f4ee; }
+.basket-result.rejected { background: #fff1f3; color: #912437; }
+.basket-result:focus-visible,.basket-lines:focus-visible { outline: 3px solid #007d93; outline-offset: -3px; }
+.basket-preview { max-width: 720px; height: calc(100svh - 100px); padding: 16px; margin: auto; }
