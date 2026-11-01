@@ -10,6 +10,67 @@ import type { SessionDetail } from '../api/orderingContracts.ts'
 import { strings as s } from './strings.ts'
 
 describe('PC POS read-only sent orders', () => {
+  it('offers only the five confirmed pages without inventing operational data or reads', async () => {
+    const user = userEvent.setup(), base = createPreviewReadClient()
+    const activeTables = vi.fn(base.activeTables), sessionDetail = vi.fn(base.sessionDetail)
+    render(<App client={{ ...base, activeTables, sessionDetail }} />)
+    const navigation = within(screen.getByRole('navigation', { name: 'เมนูหลัก' }))
+    expect(navigation.getAllByRole('button').map(button => button.textContent?.slice(1))).toEqual([
+      'หน้าหลัก', 'โต๊ะ', 'ประวัติธุรกรรม', 'ร้านและกะ', 'สถานะระบบ',
+    ])
+    await screen.findByRole('button', { name: /A04/ })
+    for (const name of ['หน้าหลัก', 'ประวัติธุรกรรม', 'ร้านและกะ', 'สถานะระบบ']) {
+      await user.click(navigation.getByRole('button', { name }))
+      expect(screen.getByRole('main', { name })).toBe(document.activeElement)
+      expect(screen.getByRole('status').textContent).toContain('ยังไม่พร้อมใช้งาน')
+      expect(navigation.getByRole('button', { name }).getAttribute('aria-current')).toBe('page')
+      expect(screen.queryByRole('button', { name: /A04/ })).toBeNull()
+    }
+    expect(activeTables).toHaveBeenCalledTimes(1)
+    expect(sessionDetail).not.toHaveBeenCalled()
+  })
+
+  it('preserves the selected session and Branch totals across keyboard navigation without rereading', async () => {
+    const user = userEvent.setup(), base = createPreviewReadClient()
+    const sessionDetail = vi.fn(base.sessionDetail)
+    render(<App client={{ ...base, sessionDetail }} />)
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    await screen.findByTestId('net-total')
+    screen.getByRole('button', { name: 'หน้าหลัก' }).focus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByTestId('net-total')).toBeNull()
+    screen.getByRole('button', { name: 'โต๊ะ' }).focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('button', { name: /A04/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('net-total').textContent).toBe('530.00 บาท')
+    expect(sessionDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('cannot restore another authenticated client session after navigation', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<App client={createPreviewReadClient()} />)
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    await screen.findByTestId('net-total')
+    await user.click(screen.getByRole('button', { name: 'ประวัติธุรกรรม' }))
+    rerender(<App client={{ activeTables: async () => new Promise(() => {}), sessionDetail: async () => ({ kind: 'notFound' }) }} />)
+    await user.click(screen.getByRole('button', { name: 'โต๊ะ' }))
+    expect(screen.queryByTestId('net-total')).toBeNull()
+    expect(screen.queryByText('ข้าวผัดกุ้ง')).toBeNull()
+    expect(screen.queryByRole('button', { name: /A04/ })).toBeNull()
+  })
+
+  it('screen lock removes navigation and selected data even from an unavailable page', async () => {
+    const user = userEvent.setup()
+    render(<App client={createPreviewReadClient()} />)
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    await screen.findByTestId('net-total')
+    await user.click(screen.getByRole('button', { name: 'ร้านและกะ' }))
+    await user.click(screen.getByRole('button', { name: s.lock }))
+    expect(screen.getByRole('heading', { name: s.signInTitle })).toBe(document.activeElement)
+    expect(screen.queryByRole('navigation')).toBeNull()
+    expect(screen.queryByTestId('net-total')).toBeNull()
+  })
+
   it('requires an authenticated client before rendering tables or financial data', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: s.signInTitle })).toBeTruthy()

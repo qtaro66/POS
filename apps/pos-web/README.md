@@ -272,6 +272,15 @@ and refresh authoritative sent orders after acceptance.
 
 ## Verification and remaining work
 
+The table workspace now uses a shared navy/teal shell with the five confirmed
+navigation pages. Tables retain the existing read-only workspace. Home, History,
+Store and Shifts, and System Status explicitly report that their adapters are
+not connected; they do not show sample operational data or expose commands.
+Navigation preserves selected session/read state without extra API reads or
+basket/journal changes. Returning uses the displayed read timestamp until the
+operator explicitly refreshes. Screen lock and authenticated-client replacement
+continue to remove prior data. See architecture note 0178 for scope and limits.
+
 An authenticated host may opt into the command-inspection drawer with
 `<App client={orderingClient} journal={createCommandJournal()} />`. The typed
 props require a full ordering client when supplying a journal; the recovery
