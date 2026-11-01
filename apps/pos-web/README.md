@@ -95,7 +95,7 @@ preview totals are not payment balances or receipts.
 ## Durable command recovery adapter
 
 `createCommandJournal()` in `src/ordering/commandJournal.ts` uses a separate
-IndexedDB database, `pos-pc-ordering-journal` version 1. It stores original
+IndexedDB database, `pos-pc-ordering-journal` version 2. It stores original
 OpenTable/SubmitOrder payloads, IDs, UTC creation times, origin/branch/device/
 employee identity and a pending/resolved marker. It never stores authentication
 tokens or receipts. This local format is independent of Branch SQLite schemas.
@@ -121,14 +121,52 @@ Wrap an authenticated ordering client with
   A failed local resolve write returns the real durable Branch result with
   `recoveryRecorded: false`; keep the entry and reconcile rather than resubmit.
 
+Schema 2 preserves schema-1 command entries and adds the basket store below.
+Standalone journal finalization refuses commands still linked to a basket.
+
 The canonical snapshot codec rejects unknown fields, malformed/context-mismatched
 or oversized payloads and derives paths from the action. It does not authenticate
 browser storage against a malicious same-origin script. IndexedDB is unencrypted,
 can be evicted or cleared, and is not a Branch backup. There is no automatic
 replay, expiry or background resend. The future UI must prevent a fresh order ID
 for an unresolved basket and coordinate applying receipts with local basket
-cleanup; that UI, basket persistence and session provisioning are not implemented
-here. This adapter is not connected to App's read-only entrypoint.
+cleanup; visible basket coordination and session provisioning are not implemented
+here. The inspection panel exposes only list/status methods.
+
+## Persistent basket store
+
+`createBasketStore()` in `src/ordering/basketStore.ts` stores credential-free,
+unpriced lines in the same database as the command journal. Baskets are scoped
+to origin, branch, device, employee and table session, with a frozen
+`sessionMasterDataVersion`, a unique basket ID and a local revision. Lines retain fulfillment,
+options and comments. Empty editable baskets are allowed; line JSON is limited
+to 64 KiB and the existing command-body limit still applies separately.
+
+- `save(input, null)` creates a basket; `save(input, savedBasket)` and
+  `remove(scope, savedBasket)` require the last read basket ID and revision. Stale tab writes fail
+  rather than overwrite another edit, including after deletion/recreation at the
+  same scope. A bound basket cannot be edited/deleted.
+- `load(scope)` and `list(owner)` restore that owner's baskets after reload.
+  Supplying metadata is not authentication; the future host must use its actual
+  authenticated identity and enforce employee/session rules.
+- Prepare a SubmitOrder snapshot with the ordering client, then
+  `stage(scope, savedBasket, snapshot)` atomically links an exact matching basket to
+  its original command journal entry. This commits before any network access.
+  Existing request IDs, mismatched lines or identities abort the entire operation.
+- After an explicit send/retry action, use `createCommandRecovery(...).retry(id)`
+  for the staged command. It queries first and retains the original bytes/actor.
+  Calling the low-level client or creating another request ID bypasses this flow.
+- Only after a durable correlated response and resolved journal marker,
+  `apply(scope, boundBasket, response)` atomically removes both accepted basket
+  and command. A rejection retains original lines/version for review, unbinds
+  the basket and removes the resolved command in the same transaction. Uncertain
+  or mismatched results cannot clear it. There is no automatic resubmission.
+
+The host must check current session state, frozen menu, availability and employee
+permissions before staging/review; Branch remains authoritative at commit.
+This store does not grant permission to submit to a closed/payment-locked session
+or implement employee takeover. No automatic expiry or deletion is introduced.
+No basket editor or production submission control is activated in this slice.
 
 ## Verification and remaining work
 
