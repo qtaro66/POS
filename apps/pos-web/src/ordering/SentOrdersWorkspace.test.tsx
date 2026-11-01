@@ -10,6 +10,79 @@ import type { SessionDetail } from '../api/orderingContracts.ts'
 import { strings as s } from './strings.ts'
 
 describe('PC POS read-only sent orders', () => {
+  it('opens a session workspace and returns without losing selection, changing amounts or rereading', async () => {
+    const user = userEvent.setup(), base = createPreviewReadClient()
+    const sessionDetail = vi.fn(base.sessionDetail)
+    render(<App client={{ ...base, sessionDetail }} />)
+    expect(screen.queryByRole('button', { name: s.openTableWorkspace })).toBeNull()
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    const open = await screen.findByRole('button', { name: s.openTableWorkspace })
+    open.focus(); await user.keyboard('{Enter}')
+    const title = screen.getByRole('heading', { name: s.tableWorkspace })
+    expect(document.activeElement).toBe(title)
+    expect(screen.queryByRole('button', { name: /A04/ })).toBeNull()
+    expect(screen.getByRole('heading', { name: s.menu })).toBeTruthy()
+    expect(screen.getByText(s.menuUnavailable)).toBeTruthy()
+    expect(screen.getByTestId('net-total').textContent).toBe('530.00 บาท')
+    const disclosure = screen.getByText(s.breakdown)
+    await user.click(disclosure)
+    expect(disclosure.parentElement?.hasAttribute('open')).toBe(true)
+    expect(screen.getByTestId('net-total').textContent).toBe('530.00 บาท')
+    await user.click(disclosure)
+    expect(screen.queryByRole('button', { name: /ส่งออเดอร์|ลงตะกร้า|รับชำระ/ })).toBeNull()
+    await user.click(screen.getByRole('button', { name: s.backToTables }))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: s.sent }))
+    expect(screen.getByRole('button', { name: /A04/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('net-total').textContent).toBe('530.00 บาท')
+    expect(sessionDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains workspace mode across main navigation but removes it on screen lock', async () => {
+    const user = userEvent.setup()
+    render(<App client={createPreviewReadClient()} />)
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    await user.click(await screen.findByRole('button', { name: s.openTableWorkspace }))
+    await user.click(screen.getByRole('button', { name: 'หน้าหลัก' }))
+    expect(screen.queryByTestId('net-total')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'โต๊ะ' }))
+    expect(screen.getByRole('heading', { name: s.tableWorkspace })).toBeTruthy()
+    expect(screen.getByTestId('net-total').textContent).toBe('530.00 บาท')
+    await user.click(screen.getByRole('button', { name: s.lock }))
+    expect(screen.queryByRole('button', { name: s.backToTables })).toBeNull()
+    expect(screen.queryByTestId('net-total')).toBeNull()
+  })
+
+  it('does not reuse workspace mode for a replacement client even when session IDs match', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<App client={createPreviewReadClient()} />)
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    await user.click(await screen.findByRole('button', { name: s.openTableWorkspace }))
+    rerender(<App client={createPreviewReadClient()} />)
+    expect(screen.queryByRole('heading', { name: s.tableWorkspace })).toBeNull()
+    expect(screen.queryByTestId('net-total')).toBeNull()
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    expect(await screen.findByRole('button', { name: s.openTableWorkspace })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: s.backToTables })).toBeNull()
+  })
+
+  it('refreshes within the workspace without displaying stale financial data on failure', async () => {
+    const user = userEvent.setup(), base = createPreviewReadClient()
+    let fail = false
+    let finish!: (value: QueryResult<SessionDetail>) => void
+    const waiting = new Promise<QueryResult<SessionDetail>>(resolve => { finish = resolve })
+    render(<App client={{ ...base, sessionDetail: async id => fail ? waiting : base.sessionDetail(id) }} />)
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    await user.click(await screen.findByRole('button', { name: s.openTableWorkspace }))
+    fail = true
+    await user.click(screen.getByRole('button', { name: s.refresh }))
+    expect(screen.queryByTestId('net-total')).toBeNull()
+    expect(screen.getByRole('button', { name: s.backToTables })).toBeTruthy()
+    await act(async () => { finish({ kind: 'unavailable', reason: 'network' }) })
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', s.detailError)
+    expect(screen.queryByTestId('net-total')).toBeNull()
+    expect(screen.queryByRole('button', { name: s.openTableWorkspace })).toBeNull()
+  })
+
   it('offers only the five confirmed pages without inventing operational data or reads', async () => {
     const user = userEvent.setup(), base = createPreviewReadClient()
     const activeTables = vi.fn(base.activeTables), sessionDetail = vi.fn(base.sessionDetail)

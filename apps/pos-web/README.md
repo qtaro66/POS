@@ -272,6 +272,14 @@ and refresh authoritative sent orders after acceptance.
 
 ## Verification and remaining work
 
+The table overview now offers Open Table Workspace after a successful session
+read. This switches to a selected-session layout with accepted orders on the left
+and an explicitly unavailable menu/basket area on the right. Back returns to the
+overview without losing table selection or issuing extra reads. Mode is scoped
+to the authenticated read controller and session; matching IDs from a replacement
+client cannot inherit it. Main navigation retains mode; screen lock removes it.
+This does not yet compose Basket/Sent or enable order entry. See note 0179.
+
 The table workspace now uses a shared navy/teal shell with the five confirmed
 navigation pages. Tables retain the existing read-only workspace. Home, History,
 Store and Shifts, and System Status explicitly report that their adapters are
