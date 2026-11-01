@@ -239,6 +239,37 @@ Cancelling obsolete UI work never deletes staged commands or changes a real
 Branch outcome. No menu/basket component or mutation control is wired into App
 yet; this slice supplies its persistent state/lifecycle controller.
 
+## Basket panel component
+
+`BasketPanel` in `src/ordering/BasketPanel.tsx` renders that controller as the
+editable basket pane. It groups dine-in/takeaway lines, shows frozen menu names
+and individual unit/option prices, and persists quantity, per-line fulfillment,
+comment and removal actions. Prices are withheld when the menu is unavailable
+or its version does not match the saved basket; item/option codes remain as
+fallbacks. No client bill total is calculated. The confirmed amount belongs to
+the accepted-order view.
+
+The panel disables mutations during I/O, locks and unresolved commands. Submission
+shows durable accepted/rejected outcomes separately from pending transport results.
+Pending rows expose GET recovery and an explicitly labeled same-request retry;
+there is no replacement-ID or automatic resend action. Results receive focus;
+quantity/comment controls retain focus after successful local saves. Opening a
+comment form does not commit it until `ใช้หมายเหตุ` is pressed; this is a line edit,
+not a separate draft-save command.
+
+Run the development server with `?preview=basket` to inspect a clearly marked
+synthetic panel. It uses an isolated in-memory IndexedDB implementation and
+injected HTTP; no real browser storage, Branch or hardware is contacted. The
+fixture module and its fake-indexeddb code are excluded from production assets.
+Tests also cover version mismatch, locked rows, focus, rejection, uncertain send,
+GET recovery, explicit retry and controller replacement.
+
+The full menu/category/Sub Item/Topping selector, combined Basket/Sent tabs and
+production App/session wiring remain follow-up work. Existing production App
+behavior is unchanged; the standalone component is not enabled by a query
+parameter in production. Host integration must provide an authenticated controller
+and refresh authoritative sent orders after acceptance.
+
 ## Verification and remaining work
 
 An authenticated host may opt into the command-inspection drawer with
