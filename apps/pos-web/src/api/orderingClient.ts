@@ -45,7 +45,7 @@ const statuses = new Set(['Ordering', 'PaymentPending', 'PaymentInProgress', 'Pa
 const activeStatuses = new Set(['Ordering', 'PaymentPending', 'PaymentInProgress', 'PartiallyPaid'])
 function requireValid(condition: unknown): asserts condition { if (!condition) throw new ProtocolFailure('Invalid Branch ordering response.') }
 
-function orderLines(lines: readonly OrderLine[]) {
+export function snapshotOrderLines(lines: readonly OrderLine[]) {
   if (!Array.isArray(lines) || lines.length === 0) throw new Error('An order requires lines.')
   return lines.map((line: OrderLine) => {
     if (!line || !id(line.sellableItemId) || !integer(line.quantity) || !['DineIn', 'Takeaway'].includes(line.fulfillmentType) || line.comment != null && typeof line.comment !== 'string' || line.options != null && !Array.isArray(line.options)) throw new Error('Invalid order line.')
@@ -69,7 +69,7 @@ export function validateCommandSnapshot(value: unknown): CommandSnapshot {
   if (typeof clientCreatedAt !== 'string' || new Date(clientCreatedAt).toISOString() !== clientCreatedAt) throw new Error('Invalid command timestamp.')
   const fields = value.action === 'OpenTable'
     ? (id(payload.tableId) ? { tableId: payload.tableId } : null)
-    : { lines: orderLines(payload.lines as OrderLine[]) }
+    : { lines: snapshotOrderLines(payload.lines as OrderLine[]) }
   if (!fields || value.body !== JSON.stringify({ schemaVersion: 1, context: { requestId, branchId, deviceId, employeeId, tableSessionId, clientCreatedAt }, ...fields })) throw new Error('Invalid command payload.')
   const result = { formatVersion: 1 as const, serviceOrigin: value.serviceOrigin, branchId: branchId as string, deviceId: deviceId as string, employeeId: employeeId as string, requestId: requestId as string, tableSessionId: tableSessionId as string, action: value.action as PreparedCommand['action'], body: value.body }
   if (Object.keys(value).length !== Object.keys(result).length || Object.keys(value).some(key => !(key in result))) throw new Error('Invalid command snapshot fields.')
@@ -94,6 +94,11 @@ function commandResponse(body: unknown, requestId: string, expected: 'BranchAcce
       : text(result.errorCode))
   }
   return body as unknown as CommandResponse
+}
+/** Validate a durable receipt before applying it to local basket state. */
+export function validateCommandReceipt(body: unknown, command: CommandSnapshot): CommandResponse {
+  requireValid(record(body) && record(body.result) && (body.result.status === 'BranchAccepted' || body.result.status === 'Rejected'))
+  return commandResponse(body, command.requestId, body.result.status, command.action === 'SubmitOrder' ? command.tableSessionId : undefined)
 }
 function tables(body: unknown): ActiveTables {
   requireValid(record(body) && body.schemaVersion === 1 && body.includesAvailableTables === false && Array.isArray(body.sessions))
@@ -259,7 +264,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       return prepare('OpenTable', proposedSessionId, { tableId })
     },
     prepareSubmitOrder(tableSessionId: string, lines: readonly OrderLine[]) {
-      return prepare('SubmitOrder', tableSessionId, { lines: orderLines(lines) })
+      return prepare('SubmitOrder', tableSessionId, { lines: snapshotOrderLines(lines) })
     },
     async execute(command: PreparedCommand, signal?: AbortSignal): Promise<CommandResult> {
       const saved = prepared.get(command)
