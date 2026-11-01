@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "collectionId": "01a0b8f9-9535-7bb2-a8fd-035ceb45bc93",
+  "source": "User-supplied generated image collection; originals remain external to the repository.",
+  "precedence": "Current confirmed requirements override obsolete labels and illustrative values in image revisions.",
+  "references": [
+    {
+      "role": "order-entry-with-sub-item-column-and-topping-popover",
+      "fileName": "exec-e52c9382-4fab-450d-8670-c656b9dc74db.png",
+      "sha256": "13b69f8fe4c2d02a6ac8660270ff812cbeb4f3fbb8214b8fc3e0f0bd866f461d"
+    },
+    {
+      "role": "order-entry-without-sub-item-and-direct-topping-popover",
+      "fileName": "exec-cf2a73b2-02f7-407f-8f49-03c060abbd9c.png",
+      "sha256": "6af31a8b412d1b8120d341c94cbb8a6efd86936fbb1c14038ccb97d1954138a5"
+    },
+    {
+      "role": "mixed-dine-in-takeaway-basket",
+      "fileName": "exec-b32b78f3-a6f6-43bf-80dd-85e08646b2c5.png",
+      "sha256": "6c4050d61c0c7397d3b4cc1963851a723431575bce0a9779d749eeb2a2b9f412"
+    },
+    {
+      "role": "sent-orders-with-batches-and-mixed-fulfillment",
+      "fileName": "exec-860ce91a-9341-4ce8-9173-a2bb47e09947.png",
+      "sha256": "db87942567ca1ea93ea106fe4c423b3715b713a1ef6c16118b1ea80b8e8be1b0"
+    }
+  ]
+}
