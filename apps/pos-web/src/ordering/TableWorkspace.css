@@ -1,0 +1,13 @@
+.workspace-back { flex-shrink: 0; align-self: flex-start; background: white; border: 1px solid #a8cad7; border-radius: 8px; color: #164e63; padding: 8px 18px; margin-bottom: 14px; }
+.workspace-open { background: #007d93; color: white; border: 0; border-radius: 8px; padding: 8px 16px; }
+.session-ordering-panels { display: grid; grid-template-columns: minmax(330px, .9fr) minmax(0, 1.1fr); gap: 20px; flex: 1; min-height: 0; }
+.menu-unavailable { padding: 24px; overflow-y: auto; }
+.menu-unavailable h2 { font-size: 22px; margin-bottom: 20px; }
+.menu-unavailable p { margin: 12px 0; color: #586e84; }
+.page-header h2:focus-visible { outline: 3px solid #e95e13; outline-offset: 3px; }
+.session-ordering-panels .bill-summary { max-height: 45%; overflow-y: auto; }
+.workspace-breakdown summary { cursor: pointer; min-height: 32px; font-size: 13px; color: #23566d; }
+.workspace-breakdown summary:focus-visible { outline: 3px solid #e95e13; }
+.workspace-breakdown dl { margin-top: 10px; }
+@media (max-width: 1000px) { .session-ordering-panels { gap: 12px; } }
+@media (max-width: 800px) { .session-ordering-panels { grid-template-columns: 1fr; } .menu-unavailable { min-height: 160px; margin-top: 12px; } }
