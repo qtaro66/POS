@@ -35,7 +35,7 @@ export function BasketPanel({ controller }: { controller: Controller }) {
     <fieldset className="basket-fulfillment" disabled={!editable}><legend>{s.next}</legend>
       {(['DineIn', 'Takeaway'] as const).map(type => <label key={type}><input type="radio" name={`${headingId}-fulfillment`} checked={state.newFulfillment === type} onChange={() => { controller.setNewFulfillment(type) }} />{type === 'DineIn' ? s.dineIn : s.takeaway}</label>)}</fieldset>
     {state.phase !== 'ready' && <p role="status">{s.loading}</p>}
-    {state.issue && <p className="basket-notice" role="status">{editorIssueLabels[state.issue]}</p>}
+    {state.issue && !(state.basket?.pendingRequestId && state.issue === 'refreshRequired') && <p className="basket-notice" role="status">{editorIssueLabels[state.issue]}</p>}
     {state.editError && <p className="basket-error" role="alert">{s.editError}</p>}
     {state.activity !== 'idle' && <p role="status">{s[state.activity]}</p>}
     {status && <div ref={result} className={`basket-result ${outcome?.kind === 'durable' ? outcome.response.result.status === 'BranchAccepted' ? 'accepted' : 'rejected' : ''}`} tabIndex={-1} role="status"><strong>{status}</strong>
@@ -71,9 +71,9 @@ export function BasketPanel({ controller }: { controller: Controller }) {
           })}</section>
       })}
     </div>
-    <footer className="basket-footer"><p>{s.confirmedTotals}</p>
+    <footer className="basket-footer">{!state.basket?.pendingRequestId && <p>{s.confirmedTotals}</p>}
       {state.basket?.pendingRequestId && <><p className="basket-notice">{(!outcome || outcome.kind === 'blocked') && <>{s.pending}<br /></>}Request ID: {state.basket.pendingRequestId}</p>
         <button disabled={busy} onClick={() => { void controller.recover() }}>{s.check}</button><button disabled={busy} onClick={() => { void controller.retry() }}>{s.retry}</button></>}
-      <button className="basket-submit" disabled={!editable || !lines.length} onClick={() => { void controller.submit() }}>ส่งออเดอร์ {lines.length} รายการ</button></footer>
+      {!state.basket?.pendingRequestId && <button className="basket-submit" disabled={!editable || !lines.length} onClick={() => { void controller.submit() }}>ส่งออเดอร์ {lines.length} รายการ</button>}</footer>
   </section>
 }

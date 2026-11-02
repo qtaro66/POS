@@ -1,8 +1,8 @@
 # PC POS web client
 
 React/TypeScript/Vite client for the branch cashier PC. It now includes a
-protected read-only active-table and sent-order workspace. Production
-login/pairing and order-entry integration are not wired up yet.
+protected active-table workspace with read-only defaults and opt-in persistent
+order entry. Production login/pairing is not wired up yet.
 
 ## Read-only workspace
 
@@ -32,9 +32,10 @@ credentials. A production authentication host must verify PIN and supply a fresh
 authenticated client for re-entry; this slice does not implement that PIN flow,
 auto-lock policy, or lock diagnostics. No transaction/payment state is changed.
 
-The screen exposes no order, price, cancellation, payment or printer mutations.
-It is not a complete floor plan and has no available-table inventory, basket,
-menu entry, shift controls, history or device commissioning UI yet.
+Without the explicit `ordering` prop, the screen exposes no order, price,
+cancellation, payment or printer mutations. The optional order-entry workflow is
+described below. Available-table inventory, shift commands, history and device
+commissioning screens remain unconnected.
 
 For local visual review only, run the dev server and open
 `http://127.0.0.1:5173/?preview=sent-orders` (adjust the port if needed). The preview
@@ -264,21 +265,66 @@ fixture module and its fake-indexeddb code are excluded from production assets.
 Tests also cover version mismatch, locked rows, focus, rejection, uncertain send,
 GET recovery, explicit retry and controller replacement.
 
-The full menu/category/Sub Item/Topping selector, combined Basket/Sent tabs and
-production App/session wiring remain follow-up work. Existing production App
-behavior is unchanged; the standalone component is not enabled by a query
-parameter in production. Host integration must provide an authenticated controller
-and refresh authoritative sent orders after acceptance.
+The standalone component remains usable independently. The integrated selector
+and Basket/Sent workspace below now compose it without changing its persistent
+editing or recovery rules. Category metadata and production authentication/session
+provisioning remain follow-up work. No query parameter enables production writes.
+
+## Integrated ordering workspace
+
+An authenticated host explicitly opts in with
+`<App client={orderingClient} ordering={{ factory: indexedDB }} />`. The typed
+props require a full ordering client and an explicit IndexedDB factory; the
+read-only client configuration remains supported. The command-inspection journal
+may be supplied as well. Create a stable client and replace it on employee/device
+identity changes. No production credentials or authentication bootstrap are added.
+
+Open a selected table's item workspace to use Basket/Sent tabs on the left and
+the frozen menu on the right. Tabs retain their mounted basket controller, so
+switching does not refresh away outcomes or cancel submission. Leaving the view
+cancels its editor presentation; the original durable draft/pending request is
+reloaded on return from the same owner-partitioned store. A replacement client
+cannot inherit selection UI or read another employee's basket.
+
+SubItem groups occupy a separate column. A single-choice SubItem advances to a
+Topping-only popover; multiple/optional groups have an explicit advance control.
+Menus without SubItems open that popover directly, even with no Topping. Group
+minimum/maximum, repeated-option quantity, availability and Sold Out are checked
+before a persisted add and again by the existing submission preflight. Escape
+closes selection and restores focus. No photos, search or vertical category rail
+are added. Only All is shown: the v1 DTO has no category/display-code metadata;
+opaque item IDs are not invented menu codes. Per-unit amounts remain separate;
+there is no client-calculated basket quote.
+Starting a menu selection from Sent switches to Basket before confirmation so
+the next-line dine-in/takeaway choice is visible.
+
+Confirmed acceptance is captured in an owner-scoped host message before refreshing
+authoritative Sent data. Local-write warnings remain distinct from Branch
+uncertainty, and the basket editor is not auto-refreshed to erase its result.
+Rejected/pending commands do not trigger acceptance refresh. GET recovery and
+retry remain explicit, preserving the original serialized request and ID.
+The Sent tab is read-only; no receipt/payment/printing controls are introduced.
+
+Use `?preview=ordering` only in the Vite DEV server for the combined workflow.
+Its simulated Branch and fake IndexedDB are isolated from real network/storage.
+The fixture's simplified response amounts are test data, not a production billing
+implementation. Fixture and emulator modules are absent from production assets.
+Append `&scenario=unknown`, `&scenario=lost-ack`, or `&scenario=rejected` to exercise
+synthetic failure states. These parameters apply only to the DEV fixture; they
+cannot enable or alter production mutations. Preview browser reload creates a
+new ephemeral fixture and is not production persistence evidence.
+See architecture note 0180 for verification and remaining dependencies.
 
 ## Verification and remaining work
 
 The table overview now offers Open Table Workspace after a successful session
 read. This switches to a selected-session layout with accepted orders on the left
-and an explicitly unavailable menu/basket area on the right. Back returns to the
+and, without ordering opt-in, an unavailable menu/basket area on the right. Back returns to the
 overview without losing table selection or issuing extra reads. Mode is scoped
 to the authenticated read controller and session; matching IDs from a replacement
 client cannot inherit it. Main navigation retains mode; screen lock removes it.
-This does not yet compose Basket/Sent or enable order entry. See note 0179.
+The opt-in path now composes Basket/Sent as described above. See note 0179 for
+the underlying read-only mode behavior.
 
 The table workspace now uses a shared navy/teal shell with the five confirmed
 navigation pages. Tables retain the existing read-only workspace. Home, History,
@@ -325,6 +371,6 @@ newer is the repository baseline.
 
 Types are currently handwritten mirrors of the v1 DTOs, with runtime shape and
 identity validation. OpenAPI-generated client tooling, real Branch integration,
-credential UI/lifecycle, order-entry screens, and visible recovery/basket
-coordination remain follow-up work. The workspace uses the supplied client's read methods;
-this does not activate backend features or provide a production session provider.
+credential UI/lifecycle, category/display-code metadata, basket quote and real
+deployment remain follow-up work. Opt-in entry uses the supplied authenticated
+client; it does not activate backend features or provide a production session provider.

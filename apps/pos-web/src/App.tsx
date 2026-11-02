@@ -24,8 +24,9 @@ function SignInRequired() {
 }
 
 type AppProps = { branchLabel?: string; preview?: boolean } & (
-  { client?: OrderingReadClient; journal?: never } |
-  { client: ReturnType<typeof createOrderingClient>; journal: CommandJournal }
+  { client?: OrderingReadClient; journal?: never; ordering?: never } |
+  { client: ReturnType<typeof createOrderingClient>; journal: CommandJournal; ordering?: never } |
+  { client: ReturnType<typeof createOrderingClient>; journal?: CommandJournal; ordering: { factory: IDBFactory } }
 )
 
 function App(props: AppProps) {
@@ -38,7 +39,8 @@ function App(props: AppProps) {
   const [locks] = useState(createScreenLocks)
   const locked = useSyncExternalStore(locks.subscribe, () => !client || locks.isLocked(client), () => true)
   if (!client || locked) return <SignInRequired />
-  return <SentOrdersWorkspace client={client} branchLabel={branchLabel} preview={preview} recovery={recovery} onLock={() => { locks.lock(client) }} />
+  return <SentOrdersWorkspace client={client} branchLabel={branchLabel} preview={preview} recovery={recovery}
+    ordering={props.ordering ? { client: props.client, factory: props.ordering.factory } : undefined} onLock={() => { locks.lock(client) }} />
 }
 
 export default App

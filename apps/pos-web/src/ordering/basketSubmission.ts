@@ -11,7 +11,8 @@ export type BasketSubmissionResult =
   | { readonly kind: 'pending'; readonly requestId: string; readonly result?: CommandQueryResult | CommandResult }
   | { readonly kind: 'durable'; readonly requestId: string; readonly response: CommandResponse; readonly localApplied: boolean }
 
-const available = (item: MenuItem) => item.unitPrice !== null && item.availability.existsInActivePackage && item.availability.centralActive && item.availability.branchEnabled && item.availability.hasCurrentPrice && !item.availability.soldOut
+export const isMenuItemAvailable = (item: MenuItem) => item.unitPrice !== null && item.availability.existsInActivePackage && item.availability.centralActive && item.availability.branchEnabled && item.availability.hasCurrentPrice && !item.availability.soldOut
+const available = isMenuItemAvailable
 
 /** Advisory checks mirror CatalogSelectionValidator; Branch still decides at commit. */
 export function basketSelectionProblem(basket: Pick<BasketRecord, 'lines'>, menu: SessionMenu): BlockReason | undefined {
