@@ -65,6 +65,15 @@ export function createOrderingPreview(options: { factory?: IDBFactory; employeeI
         return receipt ? reply(receipt) : reply({ result: { schemaVersion: 1, requestId, status: 'NoDurableResult', tableSessionId: null, tableSessionStatus: null, tableVersion: null, branchSequence: null, serverReceivedAt: null, errorCode: null }, validationDetails: null }, 404)
       }
       if (state.failReads) return reply(null, 503)
+      if (url.includes('/print-attention')) {
+        const next = url.includes('?cursor=')
+        return reply({ schemaVersion: 1, observedAt: '2026-11-01T09:30:00Z', totalCount: 2, nextCursor: next ? null : 'DEMO-NEXT', items: [{
+          printJobId: next ? 'DEMO-PRINT-2' : 'DEMO-PRINT-1', requestId: 'DEMO-REQUEST-PRINT', tableSessionId: scope.tableSessionId,
+          snapshotId: 'DEMO-PRINT-SNAPSHOT', purpose: next ? 'BillPreview' : 'KitchenOrder', targetStation: next ? 'Cashier' : 'DEMO-KITCHEN',
+          status: next ? 'Failed' : 'Unknown', createdAt: '2026-11-01T09:00:00Z', assignedPrinterId: 'DEMO-PRINTER', nextRetryAt: null,
+          attentionReason: next ? 'SendFailed' : 'SendOutcomeUnknown', latestAttemptStatus: next ? 'Failed' : 'Unknown', latestAttemptFinishedAt: '2026-11-01T09:01:00Z',
+        }] })
+      }
       if (url.endsWith('/employee-data-sync-status')) return reply({ schemaVersion: 1, lastSynchronizedAt: '2026-11-01T08:45:00Z' })
       if (url.endsWith('/cloud-data-sent-status')) return reply({ schemaVersion: 1, lastSentAt: '2026-11-01T09:00:00Z' })
       if (url.endsWith('/menu')) return reply(state.menu)

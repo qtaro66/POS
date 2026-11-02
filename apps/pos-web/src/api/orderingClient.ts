@@ -1,4 +1,5 @@
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
+import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
 
 export interface OrderingSession {
   readonly serviceOrigin: string
@@ -238,7 +239,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
     if (!record(body) || body.schemaVersion !== 1 || !(field in body)) return { kind: 'unavailable', reason: 'protocol' }
     const value = body[field]
     // DateTimeOffset emits up to seven fractional digits. Require an explicit UTC offset.
-    if (value !== null && (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 19) !== value.slice(0, 19))) return { kind: 'unavailable', reason: 'protocol' }
+    if (value !== null && !isUtcTimestamp(value)) return { kind: 'unavailable', reason: 'protocol' }
     return { kind: 'ok', value: value as string | null }
   }
 
@@ -255,6 +256,13 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async printAttention(cursor?: string, signal?: AbortSignal): Promise<QueryResult<PrintAttentionPage>> {
+      if (cursor !== undefined && !isPrintAttentionCursor(cursor)) throw new Error('Invalid print attention cursor.')
+      const result = await request(`/print-attention${cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`}`, 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parsePrintAttentionPage(result.body) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
     dataSyncStatus: (signal?: AbortSignal) => freshness('/employee-data-sync-status', 'lastSynchronizedAt', signal),
     dataSentStatus: (signal?: AbortSignal) => freshness('/cloud-data-sent-status', 'lastSentAt', signal),
     get employeeId() { return identity.employeeId },

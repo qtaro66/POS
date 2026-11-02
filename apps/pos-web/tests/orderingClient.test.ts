@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createOrderingClient } from '../src/api/orderingClient.ts'
+import { parsePrintAttentionPage } from '../src/api/printAttentionContracts.ts'
+
+const attentionItem = { printJobId: 'PRINT-1', requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', snapshotId: 'SNAPSHOT-1',
+  purpose: 'KitchenOrder', targetStation: 'KITCHEN-1', status: 'Unknown', createdAt: '2026-11-02T03:00:00Z', assignedPrinterId: null,
+  nextRetryAt: null, attentionReason: 'SendOutcomeUnknown', latestAttemptStatus: 'Unknown', latestAttemptFinishedAt: null }
+const attentionPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', totalCount: 2, items: [attentionItem], nextCursor: 'NEXT-CURSOR' }
 
 const session = {
   serviceOrigin: 'https://branch.example.test', branchId: 'BRANCH-01', deviceId: 'DEVICE-01', employeeId: 'EMP-01',
@@ -8,6 +14,50 @@ const session = {
 }
 const line = { sellableItemId: 'ITEM-01', quantity: 1, fulfillmentType: 'DineIn' as const, comment: null, options: [] }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+test('print attention uses bounded authenticated ordering GET routes, validates cursors before I/O and projects public fields', async () => {
+  const urls: string[] = []
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    urls.push(url)
+    assert.equal(init.method, 'GET'); assert.equal(init.body, undefined)
+    assert.equal(init.redirect, 'error'); assert.equal(init.cache, 'no-store'); assert.equal(init.credentials, 'omit')
+    const headers = new Headers(init.headers)
+    assert.equal(headers.get('Authorization'), `Device ${session.deviceCredential}`)
+    assert.equal(headers.get('X-POS-Employee-Session'), session.employeeSessionToken)
+    return json({ ...attentionPage, rawError: 'PRIVATE', items: [{ ...attentionItem, lastError: 'PRIVATE', latestErrorCode: 'PRIVATE' }] })
+  } })
+  assert.deepEqual(await client.printAttention(), { kind: 'ok', value: attentionPage })
+  await client.printAttention('NEXT-CURSOR')
+  assert.deepEqual(urls, [`${session.serviceOrigin}/api/v1/ordering/print-attention`, `${session.serviceOrigin}/api/v1/ordering/print-attention?cursor=NEXT-CURSOR`])
+  for (const cursor of ['', 'a+b', '../escape', 'x'.repeat(1025)]) await assert.rejects(client.printAttention(cursor))
+  assert.equal(urls.length, 2)
+})
+
+test('print attention rejects malformed, overlarge, duplicate or inconsistent public pages', () => {
+  for (const body of [null, [], { ...attentionPage, schemaVersion: 2 }, { ...attentionPage, totalCount: -1 },
+    { ...attentionPage, totalCount: Number.MAX_SAFE_INTEGER + 1 }, { ...attentionPage, observedAt: '2026-02-30T04:00:00Z' },
+    { ...attentionPage, nextCursor: '' }, { ...attentionPage, items: [] }, { ...attentionPage, items: Array(51).fill(attentionItem) },
+    { ...attentionPage, items: [attentionItem, attentionItem] }, { ...attentionPage, totalCount: 0 }]) assert.throws(() => parsePrintAttentionPage(body))
+  for (const patch of [{ status: 'Completed' }, { status: 'constructor' }, { attentionReason: 'RawPrinterError' }, { targetStation: '' },
+    { assignedPrinterId: ' ' }, { latestAttemptStatus: 'Completed' }, { createdAt: '2026-11-02T03:00:00+07:00' },
+    { latestAttemptFinishedAt: 'private' }, { nextRetryAt: 0 }, { purpose: '1' }, { printJobId: 'bad\nID' }]) {
+    assert.throws(() => parsePrintAttentionPage({ ...attentionPage, items: [{ ...attentionItem, ...patch }] }))
+  }
+  assert.deepEqual(parsePrintAttentionPage({ ...attentionPage, totalCount: 0, items: [], nextCursor: null }).items, [])
+})
+
+test('print attention maps disabled, unauthorized, failing and malformed responses to unavailable', async () => {
+  for (const status of [401, 403, 404, 503]) {
+    const client = createOrderingClient(session, { fetch: async () => json({ error: 'PRIVATE' }, status) })
+    assert.deepEqual(await client.printAttention(), { kind: 'unavailable', reason: 'http', httpStatus: status })
+  }
+  const invalid = createOrderingClient(session, { fetch: async () => json({ schemaVersion: 1 }) })
+  assert.deepEqual(await invalid.printAttention(), { kind: 'unavailable', reason: 'protocol' })
+  const oversize = createOrderingClient(session, { maxResponseBytes: 16, fetch: async () => json(attentionPage) })
+  assert.deepEqual(await oversize.printAttention(), { kind: 'unavailable', reason: 'protocol' })
+  const canceled = new AbortController(); canceled.abort()
+  assert.deepEqual(await invalid.printAttention(undefined, canceled.signal), { kind: 'unavailable', reason: 'aborted' })
+})
 
 for (const [method, path, field] of [
   ['dataSyncStatus', 'employee-data-sync-status', 'lastSynchronizedAt'],
