@@ -7,6 +7,8 @@ import { CommandRecoveryPanel } from './CommandRecoveryPanel.tsx'
 import type { RecoveryReadPort } from './recoveryController.ts'
 import { PcPosShell } from '../shell/PcPosShell.tsx'
 import './TableWorkspace.css'
+import { OrderEntryWorkspace, type OrderingEntryPort } from './OrderEntryWorkspace.tsx'
+import type { BasketSubmissionResult } from './basketSubmission.ts'
 
 const money = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 const clock = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' })
@@ -57,8 +59,8 @@ function Totals({ detail, compact = false }: { detail: SessionDetail; compact?: 
   </section>
 }
 
-export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, recovery }: {
-  client: OrderingReadClient; branchLabel: string; preview: boolean; onLock: () => void; recovery?: RecoveryReadPort
+export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, recovery, ordering }: {
+  client: OrderingReadClient; branchLabel: string; preview: boolean; onLock: () => void; recovery?: RecoveryReadPort; ordering?: OrderingEntryPort
 }) {
   const controller = useMemo(() => createOrderingReadController(client), [client])
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
@@ -67,14 +69,32 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   const [entry, setEntry] = useState<{ owner: typeof controller; sessionId: string } | null>(null)
   const inSession = entry?.owner === controller && entry.sessionId === state.selectedSessionId
   const heading = useRef<HTMLHeadingElement>(null), moveFocus = useRef(false)
+  const [receipt, setReceipt] = useState<{ owner: OrderingReadClient; outcome: Extract<BasketSubmissionResult, { kind: 'durable' }> } | null>(null)
   useEffect(() => {
     if (moveFocus.current) { heading.current?.focus(); moveFocus.current = false }
   }, [inSession])
+  const sentPanel = <section key="detail" id="sent-order-panel" className="detail-panel panel" aria-label={s.sent} aria-busy={state.detailPhase === 'loading'}>
+    {state.detailPhase === 'idle' && <p className="empty-state">{s.chooseTable}</p>}
+    {state.detailPhase === 'loading' && <p className="empty-state" role="status">{s.loadingDetail}</p>}
+    {state.detailPhase === 'notFound' && <p className="empty-state" role="status">{s.notFound}</p>}
+    {state.detailPhase === 'unavailable' && <p className="error-state" role="alert">{s.detailError}</p>}
+    {detail && <><header className="session-heading"><div><h2>โต๊ะ: {detail.session.tableId}</h2><span className="badge">{sessionLabels[detail.session.status]}</span></div>
+      <p>{s.readAt} <time dateTime={detail.asOf}>{time(detail.asOf)}</time></p>
+      {!inSession && <button className="workspace-open" onClick={() => { moveFocus.current = true; setEntry({ owner: controller, sessionId: detail.session.tableSessionId }) }}>{s.openTableWorkspace}</button>}</header>
+      {detail.hasOpenCancellationRequest && <p className="cancellation-notice" role="status">{s.cancellationPending}</p>}
+      <div className="batch-list" role="region" aria-label={s.batches} tabIndex={0}>{detail.batches.length === 0 ? <p className="empty-state">{s.noOrders}</p> : detail.batches.map((batch, index) => <Batch key={batch.orderBatchId} batch={batch} index={index} />)}</div>
+      <Totals detail={detail} compact={inSession} /></>}
+  </section>
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}>
-        <header className="page-header"><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
+        <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         {inSession && <button className="workspace-back" onClick={() => { moveFocus.current = true; setEntry(null) }}>{s.backToTables}</button>}
-        <div className={inSession ? 'session-ordering-panels' : 'ordering-panels'}>
+        {receipt?.owner === client && <div className="workspace-receipt" role="status"><strong>สาขารับออร์เดอร์แล้ว</strong> · Request ID: {receipt.outcome.requestId}
+          {!receipt.outcome.localApplied && <p>ข้อมูลในเครื่องยังปรับปรุงไม่ครบ กรุณาตรวจผลคำขอเดิม ห้ามสร้างออร์เดอร์ใหม่แทน</p>}
+          <button aria-label="ปิดข้อความรับออร์เดอร์" onClick={() => setReceipt(null)}>×</button></div>}
+        {inSession && ordering ? <OrderEntryWorkspace port={ordering} sessionId={state.selectedSessionId!} sent={sentPanel} onAccepted={outcome => {
+          setReceipt({ owner: client, outcome }); void controller.refresh()
+        }} /> : <div className={inSession ? 'session-ordering-panels' : 'ordering-panels'}>
           {!inSession && <section key="tables" className="table-panel panel" aria-labelledby="table-list-heading"><header><h2 id="table-list-heading">{s.tables}{state.tablesPhase === 'ready' && ` (${state.tables.length})`}</h2><p>{s.partialFloorPlan}</p></header>
             {(state.tablesPhase === 'idle' || state.tablesPhase === 'loading') && <p className="empty-state" role="status">{s.loadingTables}</p>}
             {state.tablesPhase === 'unavailable' && <p className="error-state" role="alert">{s.tablesError}</p>}
@@ -85,22 +105,11 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
                 onClick={() => { void controller.selectSession(table.tableSessionId) }}>
                 <strong>{table.tableId}</strong><span>{sessionLabels[table.status]}</span></button>)}</div>)}
           </section>}
-          <section key="detail" id="sent-order-panel" className="detail-panel panel" aria-label={s.sent} aria-busy={state.detailPhase === 'loading'}>
-            {state.detailPhase === 'idle' && <p className="empty-state">{s.chooseTable}</p>}
-            {state.detailPhase === 'loading' && <p className="empty-state" role="status">{s.loadingDetail}</p>}
-            {state.detailPhase === 'notFound' && <p className="empty-state" role="status">{s.notFound}</p>}
-            {state.detailPhase === 'unavailable' && <p className="error-state" role="alert">{s.detailError}</p>}
-            {detail && <><header className="session-heading"><div><h2>โต๊ะ: {detail.session.tableId}</h2><span className="badge">{sessionLabels[detail.session.status]}</span></div>
-              <p>{s.readAt} <time dateTime={detail.asOf}>{time(detail.asOf)}</time></p>
-              {!inSession && <button className="workspace-open" onClick={() => { moveFocus.current = true; setEntry({ owner: controller, sessionId: detail.session.tableSessionId }) }}>{s.openTableWorkspace}</button>}</header>
-              {detail.hasOpenCancellationRequest && <p className="cancellation-notice" role="status">{s.cancellationPending}</p>}
-              <div className="batch-list" role="region" aria-label={s.batches} tabIndex={0}>{detail.batches.length === 0 ? <p className="empty-state">{s.noOrders}</p> : detail.batches.map((batch, index) => <Batch key={batch.orderBatchId} batch={batch} index={index} />)}</div>
-              <Totals detail={detail} compact={inSession} /></>}
-          </section>
+          {sentPanel}
           {inSession && <section key="menu" className="menu-unavailable panel" aria-labelledby="menu-placeholder-heading">
             <h2 id="menu-placeholder-heading">{s.menu}</h2><p role="status">{s.menuUnavailable}</p>
             <p>{s.entryReadOnly}</p>
           </section>}
-        </div>
+        </div>}
   </PcPosShell>
 }
