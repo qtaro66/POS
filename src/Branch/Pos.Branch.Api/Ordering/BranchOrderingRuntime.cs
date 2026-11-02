@@ -13,13 +13,14 @@ public sealed class BranchOrderingOptions
     public string DatabasePath { get; init; } = string.Empty;
 }
 
-public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time, IBranchCloudOutboxStatusQuery? outboxStatusQuery = null)
+public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time, IBranchCloudOutboxStatusQuery? outboxStatusQuery = null, IBranchCloudReplayStatusQuery? replayStatusQuery = null)
 {
     public TimeProvider Time { get; } = time;
     public TableSessionCommandService Commands { get; } = new(new SqliteTableSessionCommandStore(databasePath), new Clock(time));
     public IBranchCommandStatusQuery Status { get; } = new SqliteBranchCommandStatusQuery(databasePath);
     public IBranchOrderingQuery Queries { get; } = new SqliteBranchOrderingQuery(databasePath);
     public IBranchCloudOutboxStatusQuery CloudOutboxStatus { get; } = outboxStatusQuery ?? new SqliteBranchCloudOutboxStatusQuery(databasePath);
+    public IBranchCloudReplayStatusQuery CloudReplayStatus { get; } = replayStatusQuery ?? new SqliteBranchCloudReplayStatusQuery(databasePath);
 
     private sealed class Clock(TimeProvider provider) : IBranchClock
     {

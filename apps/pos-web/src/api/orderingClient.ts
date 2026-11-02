@@ -1,6 +1,7 @@
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
 import { isOutboxSequence, parseCloudOutboxPage, type CloudOutboxPage } from './cloudOutboxContracts.ts'
+import { parseCloudReplayPage, type CloudReplayPage } from './cloudReplayContracts.ts'
 
 export interface OrderingSession {
   readonly serviceOrigin: string
@@ -257,6 +258,13 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async cloudReplayStatus(after?: string, signal?: AbortSignal): Promise<QueryResult<CloudReplayPage>> {
+      if (after !== undefined && !isOutboxSequence(after)) throw new Error('Invalid replay sequence.')
+      const result = await request(`/cloud-replay-status${after === undefined ? '' : `?afterSequence=${after}`}`, 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCloudReplayPage(result.body, after) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
     async cloudOutboxStatus(after?: string, signal?: AbortSignal): Promise<QueryResult<CloudOutboxPage>> {
       if (after !== undefined && !isOutboxSequence(after)) throw new Error('Invalid outbox sequence.')
       const result = await request(`/cloud-outbox-status${after === undefined ? '' : `?afterSequence=${after}`}`, 'GET', undefined, signal)

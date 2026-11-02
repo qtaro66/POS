@@ -20,6 +20,10 @@ public static class BranchOrderingEndpoints
         ArgumentNullException.ThrowIfNull(configuration);
         if (!configuration.GetSection(BranchOrderingOptions.SectionName).GetValue<bool>("Enabled")) { return endpoints; }
         var group = endpoints.MapGroup(Prefix).RequireAuthorization(BranchPosAuthorizationDefaults.CompleteIdentityPolicyName);
+        group.MapGet("/cloud-replay-status", BranchCloudReplayStatusHttpHandler.HandleAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0))
+            .Produces<BranchCloudReplayStatusResponse>().Produces<BranchCloudReplayStatusError>(400).Produces<BranchCloudReplayStatusError>(503)
+            .WithName("GetBranchCloudReplayStatus");
         group.MapGet("/cloud-outbox-status", BranchCloudOutboxStatusHttpHandler.HandleAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0))
             .Produces<BranchCloudOutboxStatusResponse>().Produces<BranchCloudOutboxStatusError>(400).Produces<BranchCloudOutboxStatusError>(503)

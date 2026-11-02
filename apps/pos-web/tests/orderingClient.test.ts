@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createOrderingClient } from '../src/api/orderingClient.ts'
 import { parsePrintAttentionPage } from '../src/api/printAttentionContracts.ts'
 import { parseCloudOutboxPage } from '../src/api/cloudOutboxContracts.ts'
+import { parseCloudReplayPage } from '../src/api/cloudReplayContracts.ts'
 
 const attentionItem = { printJobId: 'PRINT-1', requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', snapshotId: 'SNAPSHOT-1',
   purpose: 'KitchenOrder', targetStation: 'KITCHEN-1', status: 'Unknown', createdAt: '2026-11-02T03:00:00Z', assignedPrinterId: null,
@@ -11,6 +12,10 @@ const attentionPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', to
 const cloudItem = { outboxId: 'EVENT-1', branchSequence: '9007199254740993', requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', action: 'SubmitOrder',
   processingStatus: 'Failed', createdAt: '2026-11-02T03:00:00Z', retryCount: 2, nextRetryAt: null, leaseExpiresAt: null, lastFailedAt: null, expectedBranchSequence: '9007199254740992' }
 const cloudPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', summary: { unacknowledgedCount: 1, pendingCount: 0, processingCount: 0, failedCount: 1, otherCount: 0 }, items: [cloudItem], nextAfterSequence: null }
+const replayItem = { recoveryId: 'RECOVERY-1', outboxId: 'EVENT-1', expectedBranchSequence: '9007199254740993', receivedBranchSequence: '9223372036854775807',
+  requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', action: 'SubmitOrder', requestedAt: '2026-11-02T03:00:00Z', hasLease: false,
+  retryCount: 2, nextRetryAt: null, leaseExpiresAt: null, lastFailedAt: null, lastExpectedBranchSequence: '9007199254740992' }
+const replayPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', summary: { pendingCount: 1, leasedCount: 0, unleasedCount: 1, withRetriesCount: 1 }, items: [replayItem], nextAfterSequence: null }
 
 const session = {
   serviceOrigin: 'https://branch.example.test', branchId: 'BRANCH-01', deviceId: 'DEVICE-01', employeeId: 'EMP-01',
@@ -18,6 +23,52 @@ const session = {
 }
 const line = { sellableItemId: 'ITEM-01', quantity: 1, fulfillmentType: 'DineIn' as const, comment: null, options: [] }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+test('replay status keeps exact sequences, authenticated read-only routes and public-field projection', async () => {
+  let calls = 0
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    calls++
+    assert.equal(url, `${session.serviceOrigin}/api/v1/ordering/cloud-replay-status?afterSequence=9007199254740992`)
+    assert.equal(init.method, 'GET'); assert.equal(init.body, undefined); assert.equal(init.redirect, 'error'); assert.equal(init.cache, 'no-store'); assert.equal(init.credentials, 'omit')
+    const headers = new Headers(init.headers)
+    assert.equal(headers.get('Authorization'), `Device ${session.deviceCredential}`); assert.equal(headers.get('X-POS-Employee-Session'), session.employeeSessionToken)
+    return json({ ...replayPage, rawError: 'PRIVATE', summary: { ...replayPage.summary, secret: 'PRIVATE' }, items: [{ ...replayItem, leaseOwner: 'PRIVATE', errorCode: 'PRIVATE' }] })
+  } })
+  assert.deepEqual(await client.cloudReplayStatus('9007199254740992'), { kind: 'ok', value: replayPage })
+  for (const invalid of ['', '0', '01', '-1', '1.0', '١', '9223372036854775808']) await assert.rejects(client.cloudReplayStatus(invalid))
+  assert.equal(calls, 1)
+})
+
+test('replay status validates overlapping counts, sequence ranges, lease fields and keyset pages', () => {
+  for (const body of [null, [], { ...replayPage, schemaVersion: 2 }, { ...replayPage, summary: null },
+    { ...replayPage, summary: { ...replayPage.summary, pendingCount: 2 } }, { ...replayPage, summary: { ...replayPage.summary, withRetriesCount: 2 } },
+    { ...replayPage, nextAfterSequence: '1' }, { ...replayPage, items: Array(51).fill(replayItem) },
+    { ...replayPage, items: [replayItem, replayItem] }, { ...replayPage, observedAt: '2026-02-30T04:00:00Z' }]) assert.throws(() => parseCloudReplayPage(body))
+  for (const patch of [{ expectedBranchSequence: Number('9007199254740993') }, { receivedBranchSequence: replayItem.expectedBranchSequence },
+    { receivedBranchSequence: '9223372036854775808' }, { retryCount: -1 }, { hasLease: true }, { hasLease: 'false' },
+    { lastExpectedBranchSequence: replayItem.expectedBranchSequence }, { lastFailedAt: 'PRIVATE' }, { action: '' }, { recoveryId: 'bad\nID' }]) {
+    assert.throws(() => parseCloudReplayPage({ ...replayPage, items: [{ ...replayItem, ...patch }] }))
+  }
+  assert.throws(() => parseCloudReplayPage(replayPage, replayItem.expectedBranchSequence))
+  assert.throws(() => parseCloudReplayPage({ ...replayPage, items: [{ ...replayItem, hasLease: true, leaseExpiresAt: '2026-11-02T01:00:00Z' }] }))
+  assert.throws(() => parseCloudReplayPage({ ...replayPage, summary: { ...replayPage.summary, withRetriesCount: 0 } }))
+  assert.equal(parseCloudReplayPage({ ...replayPage, summary: { ...replayPage.summary, leasedCount: 1, unleasedCount: 0 }, items: [{ ...replayItem, hasLease: true, leaseExpiresAt: '2026-11-02T01:00:00Z' }] }).items[0].hasLease, true)
+  const next = { ...replayItem, recoveryId: 'RECOVERY-2', expectedBranchSequence: '9007199254740994' }
+  assert.throws(() => parseCloudReplayPage({ ...replayPage, summary: { pendingCount: 2, leasedCount: 0, unleasedCount: 2, withRetriesCount: 2 }, items: [next, replayItem] }))
+})
+
+test('replay read failures and cancellation never become an empty successful queue', async () => {
+  for (const status of [401, 403, 404, 503]) {
+    const client = createOrderingClient(session, { fetch: async () => json({ error: 'PRIVATE' }, status) })
+    assert.deepEqual(await client.cloudReplayStatus(), { kind: 'unavailable', reason: 'http', httpStatus: status })
+  }
+  const malformed = createOrderingClient(session, { fetch: async () => json({ schemaVersion: 1 }) })
+  assert.deepEqual(await malformed.cloudReplayStatus(), { kind: 'unavailable', reason: 'protocol' })
+  const oversize = createOrderingClient(session, { maxResponseBytes: 8, fetch: async () => json(replayPage) })
+  assert.deepEqual(await oversize.cloudReplayStatus(), { kind: 'unavailable', reason: 'protocol' })
+  const abort = new AbortController(); abort.abort()
+  assert.deepEqual(await malformed.cloudReplayStatus(undefined, abort.signal), { kind: 'unavailable', reason: 'aborted' })
+})
 
 test('cloud outbox preserves exact int64 strings and uses authenticated same-origin read-only GET', async () => {
   let calls = 0

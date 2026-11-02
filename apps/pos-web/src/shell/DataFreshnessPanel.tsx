@@ -4,6 +4,8 @@ import { PrintAttentionPanel } from './PrintAttentionPanel.tsx'
 import type { PrintAttentionPort } from './printAttention.ts'
 import { CloudOutboxPanel } from './CloudOutboxPanel.tsx'
 import type { CloudOutboxPort } from './cloudOutboxStatus.ts'
+import { CloudReplayPanel } from './CloudReplayPanel.tsx'
+import type { CloudReplayPort } from './cloudReplayStatus.ts'
 
 const clock = new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Bangkok' })
 export function FreshnessValue({ reading }: { reading: FreshnessReading }) {
@@ -18,7 +20,7 @@ export function DataFreshnessSidebar({ state }: { state: FreshnessState }) {
   </section>
 }
 
-export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort }) {
+export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort }) {
   const loading = state.synced.phase === 'loading' || state.sent.phase === 'loading'
   return <section className="system-status panel" aria-labelledby="system-status-title">
     <header><div><p className="eyebrow">PC POS / สถานะระบบ</p><h2 id="system-status-title">สถานะระบบ</h2></div>
@@ -32,5 +34,6 @@ export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort }: 
     <p>หน้านี้อ่านอย่างเดียว ไม่มีคำสั่ง Retry, Reprint หรือทดสอบอุปกรณ์</p>
     {printPort && <PrintAttentionPanel port={printPort} />}
     {outboxPort && <CloudOutboxPanel port={outboxPort} />}
+    {replayPort && <CloudReplayPanel port={replayPort} />}
   </section>
 }
