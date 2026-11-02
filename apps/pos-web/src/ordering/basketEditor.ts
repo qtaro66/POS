@@ -1,6 +1,6 @@
 import { snapshotOrderLines, type createOrderingClient } from '../api/orderingClient.ts'
 import type { FulfillmentType, OrderLine, SessionDetail, SessionMenu } from '../api/orderingContracts.ts'
-import { createBasketStore, type BasketRecord } from './basketStore.ts'
+import { createBasketStore, type BasketRecord, type BasketVersion } from './basketStore.ts'
 import { basketSelectionProblem, createBasketSubmission, type BasketSubmissionResult } from './basketSubmission.ts'
 
 type Client = ReturnType<typeof createOrderingClient>
@@ -93,7 +93,8 @@ export function createBasketEditor(client: Client, tableSessionId: string, facto
       const line = { ...input, fulfillmentType: state.newFulfillment }
       return persist([...(state.basket?.lines ?? []), line], line)
     },
-    replaceLine(index: number, line: OrderLine) {
+    replaceLine(index: number, line: OrderLine, expected?: BasketVersion) {
+      if (expected && (!state.basket || expected.basketId !== state.basket.basketId || expected.revision !== state.basket.revision)) return Promise.resolve(false)
       if (!Number.isSafeInteger(index) || index < 0 || index >= (state.basket?.lines.length ?? 0)) return Promise.resolve(false)
       return persist(state.basket!.lines.map((saved, position) => position === index ? line : saved), line)
     },

@@ -66,10 +66,12 @@ fixtures, not production pricing logic. No hardware tests are performed.
 
 Real authentication/session bootstrap, Branch end-to-end deployment, complete
 floor plan, categories/display codes, an authoritative unsent basket quote,
-advanced editing of saved options, operational status host data, and production
+operational status host data, and production
 device trials remain outside this slice. Missing metadata must be added through
 explicit contracts rather than guessed from names or IDs. Pending requests must
 not expire as drafts or acquire replacement IDs.
+Draft option editing is addressed by architecture note 0181; it does not alter
+the accepted-order, financial, metadata or deployment limits above.
 
 ## Merge gate
 

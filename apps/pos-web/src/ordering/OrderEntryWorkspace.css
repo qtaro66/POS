@@ -60,4 +60,8 @@
 .topping-popover:focus-visible { outline: 3px solid #e95e13; outline-offset: -3px; }
 .menu-selector button.add-to-basket { background: #007d93; color: white; width: 100%; font-weight: bold; }
 .menu-empty { padding: 20px; color: #586e84; }
+.option-edit-notice { flex-shrink: 0; margin: 8px 14px; padding: 10px; border: 1px solid #d7c888; border-radius: 6px; background: #fff6d7; font-size: 12px; }
+.option-edit-notice p { margin: 6px 0; }
+.basket-panel .basket-edit-options { margin-top: 10px; }
+.order-entry-left:focus-visible { outline: 3px solid #e95e13; outline-offset: -3px; }
 @media (max-width: 800px) { .order-entry-workspace { grid-template-columns: 1fr; } .order-entry-left { min-height: 560px; } .menu-selector { min-height: 480px; margin-top: 12px; } }

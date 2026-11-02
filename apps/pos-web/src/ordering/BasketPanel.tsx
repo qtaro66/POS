@@ -5,6 +5,10 @@ import { basketPanelStrings as s, editorIssueLabels, submissionBlockLabels } fro
 import './BasketPanel.css'
 
 type Controller = ReturnType<typeof createBasketEditor>
+export interface DraftLineEdit {
+  readonly basketId: string; readonly revision: number; readonly sessionMasterDataVersion: string
+  readonly lineIndex: number; readonly line: OrderLine
+}
 const money = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 function Comment({ line, revision, disabled, apply }: { line: OrderLine; revision: number; disabled: boolean; apply: (line: OrderLine, target?: HTMLElement) => Promise<boolean> }) {
   const button = useRef<HTMLButtonElement>(null)
@@ -17,7 +21,9 @@ function Comment({ line, revision, disabled, apply }: { line: OrderLine; revisio
     <button ref={button} type="submit" disabled={disabled}>{s.applyComment}</button></form></details>
 }
 
-export function BasketPanel({ controller }: { controller: Controller }) {
+export function BasketPanel({ controller, onEditLine, editing = false }: {
+  controller: Controller; onEditLine?: (edit: DraftLineEdit, trigger: HTMLButtonElement) => void; editing?: boolean
+}) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   const headingId = useId(), result = useRef<HTMLDivElement>(null)
   useEffect(() => { void controller.refresh(); return controller.cancel }, [controller])
@@ -66,6 +72,9 @@ export function BasketPanel({ controller }: { controller: Controller }) {
                 <output aria-label={`จำนวน ${name}`}>{line.quantity}</output><button aria-label={`เพิ่มจำนวน ${name}`} disabled={!editable || line.quantity >= 2_147_483_647} onClick={event => { void replace({ ...line, quantity: line.quantity + 1 }, event.currentTarget) }}>+</button></div>
                 <label>รับสินค้า<select aria-label={`รับสินค้า ${name}`} disabled={!editable} value={line.fulfillmentType} onChange={event => { void replace({ ...line, fulfillmentType: event.target.value as OrderLine['fulfillmentType'] }) }}><option value="DineIn">{s.dineIn}</option><option value="Takeaway">{s.takeaway}</option></select></label>
                 <button className="basket-delete" disabled={!editable} aria-label={`${s.remove} ${name}`} onClick={() => { void controller.removeLine(index) }}>{s.remove}</button></div>
+              {onEditLine && <button className="basket-edit-options" disabled={!editable || !item} aria-label={`แก้ตัวเลือก ${name}`} onClick={event => {
+                onEditLine({ basketId: state.basket!.basketId, revision: state.basket!.revision, sessionMasterDataVersion: state.basket!.sessionMasterDataVersion, lineIndex: index, line }, event.currentTarget)
+              }}>แก้ตัวเลือก</button>}
               <Comment revision={state.basket!.revision} line={line} disabled={!editable} apply={replace} />
             </article>
           })}</section>
@@ -74,6 +83,7 @@ export function BasketPanel({ controller }: { controller: Controller }) {
     <footer className="basket-footer">{!state.basket?.pendingRequestId && <p>{s.confirmedTotals}</p>}
       {state.basket?.pendingRequestId && <><p className="basket-notice">{(!outcome || outcome.kind === 'blocked') && <>{s.pending}<br /></>}Request ID: {state.basket.pendingRequestId}</p>
         <button disabled={busy} onClick={() => { void controller.recover() }}>{s.check}</button><button disabled={busy} onClick={() => { void controller.retry() }}>{s.retry}</button></>}
-      {!state.basket?.pendingRequestId && <button className="basket-submit" disabled={!editable || !lines.length} onClick={() => { void controller.submit() }}>ส่งออเดอร์ {lines.length} รายการ</button>}</footer>
+      {editing && <p role="status">กรุณายืนยันหรือยกเลิกการแก้ตัวเลือกก่อนส่งออเดอร์</p>}
+      {!state.basket?.pendingRequestId && <button className="basket-submit" disabled={!editable || !lines.length || editing} onClick={() => { void controller.submit() }}>ส่งออเดอร์ {lines.length} รายการ</button>}</footer>
   </section>
 }

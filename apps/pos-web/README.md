@@ -298,6 +298,17 @@ there is no client-calculated basket quote.
 Starting a menu selection from Sent switches to Basket before confirmation so
 the next-line dine-in/takeaway choice is visible.
 
+Existing draft rows also expose Edit Options in the integrated workspace. This
+prefills their SubItem/Topping choices and replaces the same row after explicit
+confirmation, preserving quantity, comment and fulfillment. Cancel/Escape only
+discard speculative option changes. The basket cannot submit while an option
+edit is open. Other committed row edits, index shifts or a menu refresh invalidate
+that snapshot; cancel and reopen it instead of overwriting newer data. The editor
+also checks the captured basket ID/revision before its existing IndexedDB CAS.
+Unavailable selected options may be explicitly removed/reduced, but cannot be
+increased or newly selected; a required group still needs a valid replacement.
+Accepted and pending rows are not editable. See architecture note 0181.
+
 Confirmed acceptance is captured in an owner-scoped host message before refreshing
 authoritative Sent data. Local-write warnings remain distinct from Branch
 uncertainty, and the basket editor is not auto-refreshed to erase its result.
