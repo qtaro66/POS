@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Pos.Application.Synchronization;
 using Pos.Application.TableSessions;
 using Pos.Application.Time;
 using Pos.Branch.Infrastructure.Sqlite;
@@ -12,12 +13,13 @@ public sealed class BranchOrderingOptions
     public string DatabasePath { get; init; } = string.Empty;
 }
 
-public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time)
+public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time, IBranchCloudOutboxStatusQuery? outboxStatusQuery = null)
 {
     public TimeProvider Time { get; } = time;
     public TableSessionCommandService Commands { get; } = new(new SqliteTableSessionCommandStore(databasePath), new Clock(time));
     public IBranchCommandStatusQuery Status { get; } = new SqliteBranchCommandStatusQuery(databasePath);
     public IBranchOrderingQuery Queries { get; } = new SqliteBranchOrderingQuery(databasePath);
+    public IBranchCloudOutboxStatusQuery CloudOutboxStatus { get; } = outboxStatusQuery ?? new SqliteBranchCloudOutboxStatusQuery(databasePath);
 
     private sealed class Clock(TimeProvider provider) : IBranchClock
     {

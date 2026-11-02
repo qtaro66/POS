@@ -65,6 +65,16 @@ export function createOrderingPreview(options: { factory?: IDBFactory; employeeI
         return receipt ? reply(receipt) : reply({ result: { schemaVersion: 1, requestId, status: 'NoDurableResult', tableSessionId: null, tableSessionStatus: null, tableVersion: null, branchSequence: null, serverReceivedAt: null, errorCode: null }, validationDetails: null }, 404)
       }
       if (state.failReads) return reply(null, 503)
+      if (url.includes('/cloud-outbox-status')) {
+        const next = url.includes('?afterSequence=')
+        return reply({ schemaVersion: 1, observedAt: '2026-11-01T09:30:00Z',
+          summary: { unacknowledgedCount: 2, pendingCount: 1, processingCount: 0, failedCount: 1, otherCount: 0 }, nextAfterSequence: next ? null : '9007199254740993',
+          items: [{ outboxId: next ? 'DEMO-EVENT-2' : 'DEMO-EVENT-1', branchSequence: next ? '9007199254740994' : '9007199254740993',
+            requestId: 'DEMO-CLOUD-REQUEST', tableSessionId: scope.tableSessionId, action: 'SubmitOrder', processingStatus: next ? 'Pending' : 'Failed',
+            createdAt: '2026-11-01T09:00:00Z', retryCount: next ? 0 : 2, nextRetryAt: next ? null : '2026-11-01T10:00:00Z', leaseExpiresAt: null,
+            lastFailedAt: next ? null : '2026-11-01T09:01:00Z', expectedBranchSequence: next ? null : '9007199254740992' }],
+        })
+      }
       if (url.includes('/print-attention')) {
         const next = url.includes('?cursor=')
         return reply({ schemaVersion: 1, observedAt: '2026-11-01T09:30:00Z', totalCount: 2, nextCursor: next ? null : 'DEMO-NEXT', items: [{

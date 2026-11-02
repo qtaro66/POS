@@ -1,5 +1,6 @@
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
+import { isOutboxSequence, parseCloudOutboxPage, type CloudOutboxPage } from './cloudOutboxContracts.ts'
 
 export interface OrderingSession {
   readonly serviceOrigin: string
@@ -256,6 +257,13 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async cloudOutboxStatus(after?: string, signal?: AbortSignal): Promise<QueryResult<CloudOutboxPage>> {
+      if (after !== undefined && !isOutboxSequence(after)) throw new Error('Invalid outbox sequence.')
+      const result = await request(`/cloud-outbox-status${after === undefined ? '' : `?afterSequence=${after}`}`, 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCloudOutboxPage(result.body, after) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
     async printAttention(cursor?: string, signal?: AbortSignal): Promise<QueryResult<PrintAttentionPage>> {
       if (cursor !== undefined && !isPrintAttentionCursor(cursor)) throw new Error('Invalid print attention cursor.')
       const result = await request(`/print-attention${cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`}`, 'GET', undefined, signal)

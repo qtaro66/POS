@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Pos.Branch.Api.Printing;
 using Pos.Branch.Api.Security;
+using Pos.Branch.Api.Synchronization;
 using Pos.Contracts.Ordering;
 using Pos.Contracts.Printing;
+using Pos.Contracts.Synchronization;
 
 namespace Pos.Branch.Api.Ordering;
 
@@ -18,6 +20,10 @@ public static class BranchOrderingEndpoints
         ArgumentNullException.ThrowIfNull(configuration);
         if (!configuration.GetSection(BranchOrderingOptions.SectionName).GetValue<bool>("Enabled")) { return endpoints; }
         var group = endpoints.MapGroup(Prefix).RequireAuthorization(BranchPosAuthorizationDefaults.CompleteIdentityPolicyName);
+        group.MapGet("/cloud-outbox-status", BranchCloudOutboxStatusHttpHandler.HandleAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0))
+            .Produces<BranchCloudOutboxStatusResponse>().Produces<BranchCloudOutboxStatusError>(400).Produces<BranchCloudOutboxStatusError>(503)
+            .WithName("GetBranchCloudOutboxStatus");
         group.MapPost("/tables/open", BranchOrderingHttpHandlers.OpenAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)

@@ -2,11 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createOrderingClient } from '../src/api/orderingClient.ts'
 import { parsePrintAttentionPage } from '../src/api/printAttentionContracts.ts'
+import { parseCloudOutboxPage } from '../src/api/cloudOutboxContracts.ts'
 
 const attentionItem = { printJobId: 'PRINT-1', requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', snapshotId: 'SNAPSHOT-1',
   purpose: 'KitchenOrder', targetStation: 'KITCHEN-1', status: 'Unknown', createdAt: '2026-11-02T03:00:00Z', assignedPrinterId: null,
   nextRetryAt: null, attentionReason: 'SendOutcomeUnknown', latestAttemptStatus: 'Unknown', latestAttemptFinishedAt: null }
 const attentionPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', totalCount: 2, items: [attentionItem], nextCursor: 'NEXT-CURSOR' }
+const cloudItem = { outboxId: 'EVENT-1', branchSequence: '9007199254740993', requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', action: 'SubmitOrder',
+  processingStatus: 'Failed', createdAt: '2026-11-02T03:00:00Z', retryCount: 2, nextRetryAt: null, leaseExpiresAt: null, lastFailedAt: null, expectedBranchSequence: '9007199254740992' }
+const cloudPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', summary: { unacknowledgedCount: 1, pendingCount: 0, processingCount: 0, failedCount: 1, otherCount: 0 }, items: [cloudItem], nextAfterSequence: null }
 
 const session = {
   serviceOrigin: 'https://branch.example.test', branchId: 'BRANCH-01', deviceId: 'DEVICE-01', employeeId: 'EMP-01',
@@ -14,6 +18,50 @@ const session = {
 }
 const line = { sellableItemId: 'ITEM-01', quantity: 1, fulfillmentType: 'DineIn' as const, comment: null, options: [] }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+test('cloud outbox preserves exact int64 strings and uses authenticated same-origin read-only GET', async () => {
+  let calls = 0
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    calls++
+    assert.equal(url, `${session.serviceOrigin}/api/v1/ordering/cloud-outbox-status?afterSequence=9007199254740992`)
+    assert.equal(init.method, 'GET'); assert.equal(init.body, undefined); assert.equal(init.redirect, 'error'); assert.equal(init.cache, 'no-store'); assert.equal(init.credentials, 'omit')
+    const headers = new Headers(init.headers)
+    assert.equal(headers.get('Authorization'), `Device ${session.deviceCredential}`); assert.equal(headers.get('X-POS-Employee-Session'), session.employeeSessionToken)
+    return json({ ...cloudPage, rawError: 'PRIVATE', summary: { ...cloudPage.summary, secret: 'PRIVATE' }, items: [{ ...cloudItem, lastError: 'PRIVATE', leaseOwner: 'PRIVATE' }] })
+  } })
+  assert.deepEqual(await client.cloudOutboxStatus('9007199254740992'), { kind: 'ok', value: cloudPage })
+  for (const invalid of ['', '0', '01', '-1', '1.0', '١', '9223372036854775808', '../other']) await assert.rejects(client.cloudOutboxStatus(invalid))
+  assert.equal(calls, 1)
+  assert.equal(parseCloudOutboxPage({ ...cloudPage, items: [{ ...cloudItem, branchSequence: '9223372036854775807' }] }).items[0].branchSequence, '9223372036854775807')
+})
+
+test('cloud outbox validates counts, public states, keyset order and continuation boundaries', () => {
+  for (const body of [null, [], { ...cloudPage, schemaVersion: 2 }, { ...cloudPage, summary: null },
+    { ...cloudPage, summary: { ...cloudPage.summary, unacknowledgedCount: 2 } }, { ...cloudPage, summary: { ...cloudPage.summary, failedCount: -1 } },
+    { ...cloudPage, nextAfterSequence: '1' }, { ...cloudPage, items: Array(51).fill(cloudItem) },
+    { ...cloudPage, items: [cloudItem, cloudItem] }, { ...cloudPage, observedAt: '2026-02-30T04:00:00Z' }]) assert.throws(() => parseCloudOutboxPage(body))
+  for (const patch of [{ branchSequence: Number('9007199254740993') }, { branchSequence: '9223372036854775808' }, { processingStatus: 'Completed' }, { retryCount: -1 },
+    { expectedBranchSequence: cloudItem.branchSequence }, { expectedBranchSequence: '0' }, { lastFailedAt: 'PRIVATE' }, { action: '' }, { outboxId: 'bad\nID' }]) {
+    assert.throws(() => parseCloudOutboxPage({ ...cloudPage, items: [{ ...cloudItem, ...patch }] }))
+  }
+  assert.throws(() => parseCloudOutboxPage(cloudPage, cloudItem.branchSequence))
+  const second = { ...cloudItem, outboxId: 'EVENT-2', branchSequence: '9007199254740994' }
+  assert.throws(() => parseCloudOutboxPage({ ...cloudPage, summary: { ...cloudPage.summary, unacknowledgedCount: 2, failedCount: 2 }, items: [second, cloudItem] }))
+  assert.equal(parseCloudOutboxPage({ ...cloudPage, items: [], nextAfterSequence: null }).items.length, 0)
+})
+
+test('cloud outbox failures, cancellation and oversized data never become zero-pending success', async () => {
+  for (const status of [401, 403, 404, 503]) {
+    const client = createOrderingClient(session, { fetch: async () => json({ error: 'PRIVATE' }, status) })
+    assert.deepEqual(await client.cloudOutboxStatus(), { kind: 'unavailable', reason: 'http', httpStatus: status })
+  }
+  const malformed = createOrderingClient(session, { fetch: async () => json({ schemaVersion: 1 }) })
+  assert.deepEqual(await malformed.cloudOutboxStatus(), { kind: 'unavailable', reason: 'protocol' })
+  const oversize = createOrderingClient(session, { maxResponseBytes: 8, fetch: async () => json(cloudPage) })
+  assert.deepEqual(await oversize.cloudOutboxStatus(), { kind: 'unavailable', reason: 'protocol' })
+  const abort = new AbortController(); abort.abort()
+  assert.deepEqual(await malformed.cloudOutboxStatus(undefined, abort.signal), { kind: 'unavailable', reason: 'aborted' })
+})
 
 test('print attention uses bounded authenticated ordering GET routes, validates cursors before I/O and projects public fields', async () => {
   const urls: string[] = []
