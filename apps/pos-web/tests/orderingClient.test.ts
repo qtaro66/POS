@@ -4,6 +4,7 @@ import { createOrderingClient } from '../src/api/orderingClient.ts'
 import { parsePrintAttentionPage } from '../src/api/printAttentionContracts.ts'
 import { parseCloudOutboxPage } from '../src/api/cloudOutboxContracts.ts'
 import { parseCloudReplayPage } from '../src/api/cloudReplayContracts.ts'
+import { parsePrinterInventoryPage } from '../src/api/printerInventoryContracts.ts'
 
 const attentionItem = { printJobId: 'PRINT-1', requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', snapshotId: 'SNAPSHOT-1',
   purpose: 'KitchenOrder', targetStation: 'KITCHEN-1', status: 'Unknown', createdAt: '2026-11-02T03:00:00Z', assignedPrinterId: null,
@@ -16,6 +17,10 @@ const replayItem = { recoveryId: 'RECOVERY-1', outboxId: 'EVENT-1', expectedBran
   requestId: 'REQUEST-1', tableSessionId: 'SESSION-1', action: 'SubmitOrder', requestedAt: '2026-11-02T03:00:00Z', hasLease: false,
   retryCount: 2, nextRetryAt: null, leaseExpiresAt: null, lastFailedAt: null, lastExpectedBranchSequence: '9007199254740992' }
 const replayPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', summary: { pendingCount: 1, leasedCount: 0, unleasedCount: 1, withRetriesCount: 1 }, items: [replayItem], nextAfterSequence: null }
+const printerItem = { printerId: 'PRINTER-01', displayName: 'Example printer', productionStationId: 'CASHIER', host: 'printer.branch.test', port: 9100,
+  protocol: 'RawTcpEscPos', compatibilityProfileId: 'TEST-PROFILE', manufacturer: 'Example', model: 'Thermal Example', productCode: null, firmwareVersion: null,
+  paperWidthMillimeters: 80, statusMode: 'Unsupported', supportsCashDrawer: true, isActive: true, updatedAt: '2026-11-02T03:00:00Z' }
+const printerPage = { schemaVersion: 1, observedAt: '2026-11-02T04:00:00Z', totalCount: 1, activeCount: 1, items: [printerItem], nextAfterPrinterId: null }
 
 const session = {
   serviceOrigin: 'https://branch.example.test', branchId: 'BRANCH-01', deviceId: 'DEVICE-01', employeeId: 'EMP-01',
@@ -23,6 +28,51 @@ const session = {
 }
 const line = { sellableItemId: 'ITEM-01', quantity: 1, fulfillmentType: 'DineIn' as const, comment: null, options: [] }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+test('printer inventory uses authenticated Branch GET, encodes cursors and projects configuration-only public fields', async () => {
+  let calls = 0
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    calls++; assert.equal(url, `${session.serviceOrigin}/api/v1/ordering/printer-inventory?afterPrinterId=PRINTER%2F%2B00`)
+    assert.equal(init.method, 'GET'); assert.equal(init.body, undefined); assert.equal(init.redirect, 'error'); assert.equal(init.cache, 'no-store'); assert.equal(init.credentials, 'omit')
+    const headers = new Headers(init.headers)
+    assert.equal(headers.get('Authorization'), `Device ${session.deviceCredential}`); assert.equal(headers.get('X-POS-Employee-Session'), session.employeeSessionToken)
+    return json({ ...printerPage, items: [{ ...printerItem, printerId: 'PRINTER/+01', drawerPulseCommandHex: 'PRIVATE', statusCommandProfile: 'PRIVATE', deviceStatus: 'Online' }] })
+  } })
+  const result = await client.printerInventory('PRINTER/+00')
+  assert.deepEqual(result, { kind: 'ok', value: { ...printerPage, items: [{ ...printerItem, printerId: 'PRINTER/+01' }] } })
+  for (const cursor of ['', ' PRINTER', 'bad\nID', 'x'.repeat(129)]) await assert.rejects(client.printerInventory(cursor))
+  assert.equal(calls, 1)
+})
+
+test('printer inventory validates counts, endpoints, capabilities and SQLite UTF-8 key ordering', () => {
+  for (const body of [null, [], { ...printerPage, schemaVersion: 2 }, { ...printerPage, activeCount: 2 }, { ...printerPage, activeCount: -1 },
+    { ...printerPage, totalCount: 0 }, { ...printerPage, nextAfterPrinterId: 'WRONG' }, { ...printerPage, items: Array(51).fill(printerItem) },
+    { ...printerPage, items: [printerItem, printerItem] }]) assert.throws(() => parsePrinterInventoryPage(body))
+  for (const patch of [{ port: 0 }, { port: 65536 }, { host: 'tcp://user:PRIVATE@printer.branch.test' }, { host: 'user:PRIVATE' },
+    { protocol: 'Unknown' }, { statusMode: 'Online' }, { isActive: 1 }, { supportsCashDrawer: 'true' }, { paperWidthMillimeters: 0 },
+    { updatedAt: '2026-02-30T04:00:00Z' }, { printerId: 'bad\nID' }, { displayName: '' }]) assert.throws(() => parsePrinterInventoryPage({ ...printerPage, items: [{ ...printerItem, ...patch }] }))
+  for (const host of [null, '192.0.2.10', '2001:db8::10', '[2001:db8::10]', 'fe80::1%3', 'printer.branch.test']) {
+    assert.equal(parsePrinterInventoryPage({ ...printerPage, items: [{ ...printerItem, host }] }).items[0].host, host)
+  }
+  assert.throws(() => parsePrinterInventoryPage(printerPage, printerItem.printerId))
+  const bmp = { ...printerItem, printerId: 'PRINTER-\uE000' }, supplementary = { ...printerItem, printerId: 'PRINTER-\u{10000}' }
+  const unicode = { ...printerPage, totalCount: 2, activeCount: 2, items: [bmp, supplementary] }
+  assert.equal(parsePrinterInventoryPage(unicode).items.length, 2)
+  assert.throws(() => parsePrinterInventoryPage({ ...unicode, items: [supplementary, bmp] }))
+})
+
+test('printer inventory failures or cancellation never imply no configured printers', async () => {
+  for (const status of [401, 403, 404, 503]) {
+    const client = createOrderingClient(session, { fetch: async () => json({ error: 'PRIVATE' }, status) })
+    assert.deepEqual(await client.printerInventory(), { kind: 'unavailable', reason: 'http', httpStatus: status })
+  }
+  const malformed = createOrderingClient(session, { fetch: async () => json({ schemaVersion: 1 }) })
+  assert.deepEqual(await malformed.printerInventory(), { kind: 'unavailable', reason: 'protocol' })
+  const oversize = createOrderingClient(session, { maxResponseBytes: 8, fetch: async () => json(printerPage) })
+  assert.deepEqual(await oversize.printerInventory(), { kind: 'unavailable', reason: 'protocol' })
+  const abort = new AbortController(); abort.abort()
+  assert.deepEqual(await malformed.printerInventory(undefined, abort.signal), { kind: 'unavailable', reason: 'aborted' })
+})
 
 test('replay status keeps exact sequences, authenticated read-only routes and public-field projection', async () => {
   let calls = 0

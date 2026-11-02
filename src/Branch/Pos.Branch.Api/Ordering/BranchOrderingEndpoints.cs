@@ -46,6 +46,10 @@ public static class BranchOrderingEndpoints
             .Produces<BranchSessionDetailResponse>().Produces<BranchOrderingError>(404).WithName("GetBranchOrderingSessionDetail");
         if (configuration.GetSection(PrintStatusQueryOptions.SectionName).GetValue<bool>(nameof(PrintStatusQueryOptions.Enabled)))
         {
+            group.MapGet("/printer-inventory", BranchPrinterInventoryHttpHandler.HandleAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(0))
+                .Produces<BranchPrinterInventoryResponse>().Produces<BranchPrinterInventoryError>(400).Produces<BranchPrinterInventoryError>(503)
+                .WithName("GetBranchPrinterInventory");
             group.MapGet("/print-attention", BranchPrintAttentionHttpHandler.HandleAsync)
                 .WithMetadata(new RequestSizeLimitAttribute(0))
                 .Produces<BranchPrintAttentionResponse>().Produces<BranchPrintAttentionError>(400).Produces<BranchPrintAttentionError>(503)
