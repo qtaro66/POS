@@ -8,6 +8,46 @@ const session = {
 }
 const line = { sellableItemId: 'ITEM-01', quantity: 1, fulfillmentType: 'DineIn' as const, comment: null, options: [] }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+for (const [method, path, field] of [
+  ['dataSyncStatus', 'employee-data-sync-status', 'lastSynchronizedAt'],
+  ['dataSentStatus', 'cloud-data-sent-status', 'lastSentAt'],
+] as const) {
+  test(`${method} uses the authenticated same-origin Branch GET and validates UTC timestamps`, async () => {
+    let payload: unknown = { schemaVersion: 1, [field]: '2026-11-02T03:00:00.1234567+00:00' }
+    const client = createOrderingClient(session, { fetch: async (url, init) => {
+      assert.equal(url, `${session.serviceOrigin}/api/v1/${path}`)
+      assert.equal(init.method, 'GET'); assert.equal(init.body, undefined)
+      assert.equal(init.credentials, 'omit'); assert.equal(init.cache, 'no-store'); assert.equal(init.redirect, 'error')
+      const headers = new Headers(init.headers)
+      assert.equal(headers.get('Authorization'), `Device ${session.deviceCredential}`)
+      assert.equal(headers.get('X-POS-Employee-Session'), session.employeeSessionToken)
+      return json(payload)
+    } })
+    assert.deepEqual(await client[method](), { kind: 'ok', value: '2026-11-02T03:00:00.1234567+00:00' })
+    payload = { schemaVersion: 1, [field]: null }
+    assert.deepEqual(await client[method](), { kind: 'ok', value: null })
+    for (const invalid of [undefined, '', '2026-11-02T03:00:00', '2026-11-02T03:00:00+07:00', '2026-02-30T03:00:00Z', '2026-11-02T24:00:00Z', 42, {}, 'secret stack trace']) {
+      payload = { schemaVersion: 1, [field]: invalid }
+      assert.deepEqual(await client[method](), { kind: 'unavailable', reason: 'protocol' })
+    }
+    for (const invalid of [null, [], { schemaVersion: 2, [field]: null }, { schemaVersion: 1 }]) {
+      payload = invalid
+      assert.deepEqual(await client[method](), { kind: 'unavailable', reason: 'protocol' })
+    }
+  })
+
+  test(`${method} fails closed for disabled/unauthorized endpoints, oversized responses and cancellation`, async () => {
+    for (const status of [401, 403, 404, 503]) {
+      const client = createOrderingClient(session, { fetch: async () => json({ error: 'private diagnostic' }, status) })
+      assert.deepEqual(await client[method](), { kind: 'unavailable', reason: 'http', httpStatus: status })
+    }
+    const client = createOrderingClient(session, { maxResponseBytes: 8, fetch: async () => json({ schemaVersion: 1, [field]: null }) })
+    assert.deepEqual(await client[method](), { kind: 'unavailable', reason: 'protocol' })
+    const abort = new AbortController(); abort.abort()
+    assert.deepEqual(await client[method](abort.signal), { kind: 'unavailable', reason: 'aborted' })
+  })
+}
 function receipt(status = 'BranchAccepted', requestId = 'REQUEST-01', tableSessionId = 'SESSION-01') {
   return {
     result: {

@@ -183,7 +183,6 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   if (![session.branchId, session.deviceId, session.employeeId].every(id) || ![session.deviceCredential, session.employeeSessionToken].every(value => typeof value === 'string' && /^[A-Za-z0-9._-]{1,2048}$/.test(value))) throw new Error('Invalid ordering session.')
   const identity = { branchId: session.branchId, deviceId: session.deviceId, employeeId: session.employeeId }
   const headers = { Accept: 'application/json', Authorization: `Device ${session.deviceCredential}`, 'X-POS-Employee-Session': session.employeeSessionToken }
-  const prefix = `${origin.origin}/api/v1/ordering`
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
   const timeoutMs = options.timeoutMs ?? 10_000, maxBytes = options.maxResponseBytes ?? 2 * 1024 * 1024
   if (!integer(timeoutMs) || timeoutMs > 2_147_483_647 || !integer(maxBytes)) throw new Error('Invalid ordering transport limits.')
@@ -193,7 +192,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   const issuedBodies = new Map<string, string>()
   const scope = Object.freeze({ serviceOrigin: origin.origin, branchId: identity.branchId, deviceId: identity.deviceId })
 
-  async function request(path: string, method: 'GET' | 'POST', body?: string, callerSignal?: AbortSignal): Promise<TransportResult> {
+  async function request(path: string, method: 'GET' | 'POST', body?: string, callerSignal?: AbortSignal, area: 'ordering' | 'branch' = 'ordering'): Promise<TransportResult> {
     const controller = new AbortController()
     let timedOut = false
     const abort = () => controller.abort()
@@ -202,7 +201,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
     const timer = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
     try {
       controller.signal.throwIfAborted()
-      const response = await fetchImpl(prefix + path, { method, headers: { ...headers, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body, credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal })
+      const response = await fetchImpl(`${origin.origin}/api/v1${area === 'ordering' ? '/ordering' : ''}${path}`, { method, headers: { ...headers, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body, credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal })
       if (![200, 404, 409].includes(response.status)) return { status: response.status, body: null }
       requireValid(/^(application\/json|application\/[a-z0-9.+-]+\+json)(;|$)/i.test(response.headers.get('Content-Type') ?? ''))
       const length = response.headers.get('Content-Length')
@@ -231,6 +230,18 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
     } finally { clearTimeout(timer); callerSignal?.removeEventListener('abort', abort) }
   }
 
+  async function freshness(path: string, field: 'lastSynchronizedAt' | 'lastSentAt', signal?: AbortSignal): Promise<QueryResult<string | null>> {
+    const result = await request(path, 'GET', undefined, signal, 'branch')
+    if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+    if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+    const body = result.body
+    if (!record(body) || body.schemaVersion !== 1 || !(field in body)) return { kind: 'unavailable', reason: 'protocol' }
+    const value = body[field]
+    // DateTimeOffset emits up to seven fractional digits. Require an explicit UTC offset.
+    if (value !== null && (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 19) !== value.slice(0, 19))) return { kind: 'unavailable', reason: 'protocol' }
+    return { kind: 'ok', value: value as string | null }
+  }
+
   function prepare(action: PreparedCommand['action'], tableSessionId: string, payload: object): PreparedCommand {
     if (!id(tableSessionId)) throw new Error('Invalid table session identifier.')
     const requestId = requestIdFactory()
@@ -244,6 +255,8 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    dataSyncStatus: (signal?: AbortSignal) => freshness('/employee-data-sync-status', 'lastSynchronizedAt', signal),
+    dataSentStatus: (signal?: AbortSignal) => freshness('/cloud-data-sent-status', 'lastSentAt', signal),
     get employeeId() { return identity.employeeId },
     snapshot(command: PreparedCommand): CommandSnapshot {
       const saved = prepared.get(command)

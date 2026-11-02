@@ -95,7 +95,8 @@ describe('PC POS read-only sent orders', () => {
     for (const name of ['หน้าหลัก', 'ประวัติธุรกรรม', 'ร้านและกะ', 'สถานะระบบ']) {
       await user.click(navigation.getByRole('button', { name }))
       expect(screen.getByRole('main', { name })).toBe(document.activeElement)
-      expect(screen.getByRole('status').textContent).toContain('ยังไม่พร้อมใช้งาน')
+      if (name === 'สถานะระบบ') expect(screen.getByText(/สถานะรวม: ยังไม่ทราบ/)).toBeTruthy()
+      else expect(screen.getByRole('status').textContent).toContain('ยังไม่พร้อมใช้งาน')
       expect(navigation.getByRole('button', { name }).getAttribute('aria-current')).toBe('page')
       expect(screen.queryByRole('button', { name: /A04/ })).toBeNull()
     }

@@ -65,6 +65,8 @@ export function createOrderingPreview(options: { factory?: IDBFactory; employeeI
         return receipt ? reply(receipt) : reply({ result: { schemaVersion: 1, requestId, status: 'NoDurableResult', tableSessionId: null, tableSessionStatus: null, tableVersion: null, branchSequence: null, serverReceivedAt: null, errorCode: null }, validationDetails: null }, 404)
       }
       if (state.failReads) return reply(null, 503)
+      if (url.endsWith('/employee-data-sync-status')) return reply({ schemaVersion: 1, lastSynchronizedAt: '2026-11-01T08:45:00Z' })
+      if (url.endsWith('/cloud-data-sent-status')) return reply({ schemaVersion: 1, lastSentAt: '2026-11-01T09:00:00Z' })
       if (url.endsWith('/menu')) return reply(state.menu)
       state.detailReads++
       return url.endsWith('/table-sessions') ? reply({ schemaVersion: 1, includesAvailableTables: false, sessions: [detail().session] }) : reply(detail())
