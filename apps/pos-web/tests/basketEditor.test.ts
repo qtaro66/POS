@@ -11,6 +11,20 @@ import type { OrderLine, SessionMenu } from '../src/api/orderingContracts.ts'
 const identity = { serviceOrigin: 'https://branch.example.test', branchId: 'BRANCH-01', deviceId: 'DEVICE-01', employeeId: 'EMP-01' }
 const scope = { ...identity, tableSessionId: 'S-A04' }
 const selection = { sellableItemId: 'F001', quantity: 1, comment: 'ไม่เผ็ด', options: [] }
+
+test('revision-bound line replacement rejects stale or different basket tokens without changing committed data', async () => {
+  const h = harness()
+  await h.editor.refresh(); await h.editor.addLine(selection)
+  const original = h.editor.getSnapshot().basket!
+  assert.equal(await h.editor.replaceLine(0, { ...original.lines[0], quantity: 2 }), true)
+  const current = h.editor.getSnapshot().basket!
+  assert.equal(await h.editor.replaceLine(0, { ...original.lines[0], quantity: 5 }, original), false)
+  assert.equal(await h.editor.replaceLine(0, { ...original.lines[0], quantity: 5 }, { basketId: 'WRONG-BASKET', revision: current.revision }), false)
+  assert.deepEqual(h.editor.getSnapshot().basket, current)
+  assert.equal(await h.editor.replaceLine(0, { ...current.lines[0], quantity: 3 }, current), true)
+  assert.equal(h.editor.getSnapshot().basket!.lines[0].quantity, 3)
+  assert.equal(h.calls.filter(call => call.init.method === 'POST').length, 0)
+})
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 function receipt(id: string, accepted = true) {
