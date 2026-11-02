@@ -1,0 +1,11 @@
+.cloud-replay { border-top: 1px solid #c8dbe8; margin-top: 24px; padding-top: 18px; }
+.cloud-replay header { flex-wrap: wrap; }
+.replay-counts { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.replay-counts > div { background: #edf6fa; border-radius: 8px; padding: 12px; }
+.replay-counts dd { margin: 8px 0 0; font-size: 20px; font-weight: bold; }
+.replay-items { max-height: 480px; overflow-y: auto; margin-block: 16px; }
+.replay-items:focus-visible { outline: 3px solid #007d93; outline-offset: -3px; }
+.replay-item { padding: 16px; border: 1px solid #c8dbe8; border-left: 5px solid #c56500; border-radius: 8px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.replay-item h4 { margin: 0 0 8px; }
+.replay-item dl > div { display: grid; grid-template-columns: minmax(120px, 1fr) 3fr; gap: 12px; padding-block: 4px; }
+.replay-item dd { margin: 0; }

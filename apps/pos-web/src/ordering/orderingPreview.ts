@@ -65,6 +65,18 @@ export function createOrderingPreview(options: { factory?: IDBFactory; employeeI
         return receipt ? reply(receipt) : reply({ result: { schemaVersion: 1, requestId, status: 'NoDurableResult', tableSessionId: null, tableSessionStatus: null, tableVersion: null, branchSequence: null, serverReceivedAt: null, errorCode: null }, validationDetails: null }, 404)
       }
       if (state.failReads) return reply(null, 503)
+      if (url.includes('/cloud-replay-status')) {
+        const next = url.includes('?afterSequence=')
+        return reply({ schemaVersion: 1, observedAt: '2026-11-01T09:30:00Z',
+          summary: { pendingCount: 2, leasedCount: 1, unleasedCount: 1, withRetriesCount: 1 }, nextAfterSequence: next ? null : '9007199254740993',
+          items: [{ recoveryId: next ? 'DEMO-RECOVERY-2' : 'DEMO-RECOVERY-1', outboxId: 'DEMO-ACKNOWLEDGED-EVENT',
+            expectedBranchSequence: next ? '9007199254740994' : '9007199254740993', receivedBranchSequence: '9007199254740995',
+            requestId: 'DEMO-REPLAY-REQUEST', tableSessionId: scope.tableSessionId, action: 'SubmitOrder', requestedAt: '2026-11-01T09:00:00Z',
+            hasLease: next, retryCount: next ? 0 : 2, nextRetryAt: next ? null : '2026-11-01T10:00:00Z',
+            leaseExpiresAt: next ? '2026-11-01T09:05:00Z' : null, lastFailedAt: next ? null : '2026-11-01T09:01:00Z',
+            lastExpectedBranchSequence: next ? null : '9007199254740992' }],
+        })
+      }
       if (url.includes('/cloud-outbox-status')) {
         const next = url.includes('?afterSequence=')
         return reply({ schemaVersion: 1, observedAt: '2026-11-01T09:30:00Z',
