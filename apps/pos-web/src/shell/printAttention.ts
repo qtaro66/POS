@@ -3,6 +3,10 @@ import type { PrintAttentionPage } from '../api/printAttentionContracts.ts'
 
 export interface PrintAttentionPort { printAttention?: (cursor?: string, signal?: AbortSignal) => Promise<QueryResult<PrintAttentionPage>> }
 interface State { readonly phase: 'unsupported' | 'loading' | 'ready' | 'unavailable'; readonly page: PrintAttentionPage | null; readonly pageNumber: number }
+function observationKey(value: string) {
+  const [whole, fraction = ''] = value.replace(/(?:Z|\+00:00)$/, '').split('.')
+  return `${whole}.${fraction.padEnd(7, '0')}`
+}
 
 /** Bounded, read-only pages. No dispatch, recovery, retry or printer access. */
 export function createPrintAttention(port: PrintAttentionPort) {
@@ -21,7 +25,7 @@ export function createPrintAttention(port: PrintAttentionPort) {
       const result = await port.printAttention(cursor, controller.signal)
       if (current !== epoch || controller.signal.aborted) return
       const valid = result.kind === 'ok' && (cursor === undefined || result.value.nextCursor !== cursor)
-        && (observedAt === undefined || Date.parse(result.value.observedAt) === Date.parse(observedAt))
+        && (observedAt === undefined || observationKey(result.value.observedAt) === observationKey(observedAt))
       update({ phase: valid ? 'ready' : 'unavailable', page: valid ? result.value : null, pageNumber })
     } catch { if (current === epoch && !controller.signal.aborted) update({ phase: 'unavailable', page: null, pageNumber }) }
   }

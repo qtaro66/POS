@@ -66,13 +66,25 @@ describe('PC POS read-only print attention workspace', () => {
   it('rejects a repeated pagination cursor or a changed observation rather than silently mixing pages', async () => {
     const fixture = createOrderingPreview(), first = await fixture.client.printAttention()
     if (first.kind !== 'ok') throw new Error('Invalid fixture')
-    for (const second of [first, { ...first, value: { ...first.value, observedAt, nextCursor: null } }]) {
+    for (const second of [first, { ...first, value: { ...first.value, observedAt, nextCursor: null } },
+      { ...first, value: { ...first.value, observedAt: first.value.observedAt.replace('Z', '.0000001Z'), nextCursor: null } }]) {
       const read = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
       const controller = createPrintAttention({ printAttention: read })
       await controller.refresh(); await controller.next()
       expect(controller.getSnapshot().phase).toBe('unavailable')
       expect(controller.getSnapshot().page).toBeNull()
     }
+  })
+
+  it('accepts equivalent UTC offset/fraction representations without losing sub-millisecond observation precision', async () => {
+    const fixture = createOrderingPreview(), first = await fixture.client.printAttention()
+    if (first.kind !== 'ok') throw new Error('Invalid fixture')
+    const read = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce({ ...first,
+      value: { ...first.value, observedAt: first.value.observedAt.replace('Z', '.0000000+00:00'), nextCursor: null } })
+    const controller = createPrintAttention({ printAttention: read })
+    await controller.refresh(); await controller.next()
+    expect(controller.getSnapshot().phase).toBe('ready')
+    expect(controller.getSnapshot().pageNumber).toBe(2)
   })
 
   it('ignores a pending page on identity replacement and cancels reads on lock', async () => {

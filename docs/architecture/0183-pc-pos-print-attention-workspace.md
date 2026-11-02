@@ -53,7 +53,9 @@ They are not a database snapshot: persisted job states and total counts may chan
 between page reads. Refresh starts a new first page/observation. The UI explicitly
 states this limitation, retains only one bounded page and does not accumulate an
 unbounded local history. It rejects repeated next cursors and changed observation
-times rather than mixing incompatible pages.
+times rather than mixing incompatible pages. UTC comparisons preserve all seven
+DateTimeOffset fractional digits while accepting equivalent Z/+00:00 offsets
+and zero-padded fractions; JavaScript millisecond rounding is not used.
 
 ## PC POS presentation and lifecycle
 
