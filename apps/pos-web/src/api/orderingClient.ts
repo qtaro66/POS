@@ -2,6 +2,7 @@ import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, S
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
 import { isOutboxSequence, parseCloudOutboxPage, type CloudOutboxPage } from './cloudOutboxContracts.ts'
 import { parseCloudReplayPage, type CloudReplayPage } from './cloudReplayContracts.ts'
+import { isPrinterId, parsePrinterInventoryPage, type PrinterInventoryPage } from './printerInventoryContracts.ts'
 
 export interface OrderingSession {
   readonly serviceOrigin: string
@@ -258,6 +259,13 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async printerInventory(after?: string, signal?: AbortSignal): Promise<QueryResult<PrinterInventoryPage>> {
+      if (after !== undefined && !isPrinterId(after)) throw new Error('Invalid printer cursor.')
+      const result = await request(`/printer-inventory${after === undefined ? '' : `?afterPrinterId=${encodeURIComponent(after)}`}`, 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parsePrinterInventoryPage(result.body, after) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
     async cloudReplayStatus(after?: string, signal?: AbortSignal): Promise<QueryResult<CloudReplayPage>> {
       if (after !== undefined && !isOutboxSequence(after)) throw new Error('Invalid replay sequence.')
       const result = await request(`/cloud-replay-status${after === undefined ? '' : `?afterSequence=${after}`}`, 'GET', undefined, signal)

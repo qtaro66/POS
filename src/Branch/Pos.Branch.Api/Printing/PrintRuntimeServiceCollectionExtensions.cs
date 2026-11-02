@@ -46,6 +46,8 @@ public static class PrintRuntimeServiceCollectionExtensions
 
         if (statusQueriesEnabled)
         {
+            services.TryAddSingleton<IBranchPrinterInventoryQuery>(provider =>
+                new SqliteBranchPrinterInventoryQuery(DatabasePath(provider)));
             services.TryAddSingleton<IPrintJobStatusQuery>(provider =>
                 new SqlitePrintJobStatusQuery(DatabasePath(provider)));
             services.TryAddSingleton<IPrintJobAttentionQuery>(provider =>

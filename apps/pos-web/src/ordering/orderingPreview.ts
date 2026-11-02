@@ -65,6 +65,15 @@ export function createOrderingPreview(options: { factory?: IDBFactory; employeeI
         return receipt ? reply(receipt) : reply({ result: { schemaVersion: 1, requestId, status: 'NoDurableResult', tableSessionId: null, tableSessionStatus: null, tableVersion: null, branchSequence: null, serverReceivedAt: null, errorCode: null }, validationDetails: null }, 404)
       }
       if (state.failReads) return reply(null, 503)
+      if (url.includes('/printer-inventory')) {
+        const next = url.includes('?afterPrinterId=')
+        return reply({ schemaVersion: 1, observedAt: '2026-11-01T09:30:00Z', totalCount: 2, activeCount: 1, nextAfterPrinterId: next ? null : 'DEMO-PRINTER-1',
+          items: [{ printerId: next ? 'DEMO-PRINTER-2' : 'DEMO-PRINTER-1', displayName: next ? 'เครื่องสำรองตัวอย่าง' : 'แคชเชียร์ตัวอย่าง',
+            productionStationId: 'Cashier', host: next ? null : 'printer.branch.test', port: 9100, protocol: 'RawTcpEscPos', compatibilityProfileId: 'DEMO-PROFILE',
+            manufacturer: 'Example', model: 'Thermal Example', productCode: null, firmwareVersion: null, paperWidthMillimeters: 80,
+            statusMode: next ? 'SnmpPrinterMib' : 'Unsupported', supportsCashDrawer: !next, isActive: !next, updatedAt: '2026-11-01T08:00:00Z' }],
+        })
+      }
       if (url.includes('/cloud-replay-status')) {
         const next = url.includes('?afterSequence=')
         return reply({ schemaVersion: 1, observedAt: '2026-11-01T09:30:00Z',

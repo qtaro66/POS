@@ -32,6 +32,7 @@ public sealed class PrintRuntimeCompositionTests
         Assert.Null(provider.GetService<IPrintSpoolRetentionProcessor>());
         Assert.Null(provider.GetService<IPrintJobStatusQuery>());
         Assert.Null(provider.GetService<IPrintJobAttentionQuery>());
+        Assert.Null(provider.GetService<IBranchPrinterInventoryQuery>());
         Assert.Empty(provider.GetServices<IPrintTransportAdapter>());
     }
 
@@ -306,6 +307,8 @@ public sealed class PrintRuntimeCompositionTests
                 provider.GetRequiredService<IPrintJobStatusQuery>());
             Assert.IsType<SqlitePrintJobAttentionQuery>(
                 provider.GetRequiredService<IPrintJobAttentionQuery>());
+            var inventory = Assert.IsType<SqliteBranchPrinterInventoryQuery>(provider.GetRequiredService<IBranchPrinterInventoryQuery>());
+            Assert.Empty((await inventory.ListAsync("BRANCH-01", 50)).Items);
             Assert.Null(provider.GetService<IPrintSpoolCycleProcessor>());
             Assert.Null(provider.GetService<IPrintSpoolRetentionProcessor>());
             Assert.Null(provider.GetService<IPrintDispatcher>());

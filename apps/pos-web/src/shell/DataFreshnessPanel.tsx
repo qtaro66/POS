@@ -6,6 +6,8 @@ import { CloudOutboxPanel } from './CloudOutboxPanel.tsx'
 import type { CloudOutboxPort } from './cloudOutboxStatus.ts'
 import { CloudReplayPanel } from './CloudReplayPanel.tsx'
 import type { CloudReplayPort } from './cloudReplayStatus.ts'
+import { PrinterInventoryPanel } from './PrinterInventoryPanel.tsx'
+import type { PrinterInventoryPort } from './printerInventory.ts'
 
 const clock = new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Bangkok' })
 export function FreshnessValue({ reading }: { reading: FreshnessReading }) {
@@ -20,7 +22,7 @@ export function DataFreshnessSidebar({ state }: { state: FreshnessState }) {
   </section>
 }
 
-export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort }) {
+export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort, printerPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort; printerPort?: PrinterInventoryPort }) {
   const loading = state.synced.phase === 'loading' || state.sent.phase === 'loading'
   return <section className="system-status panel" aria-labelledby="system-status-title">
     <header><div><p className="eyebrow">PC POS / สถานะระบบ</p><h2 id="system-status-title">สถานะระบบ</h2></div>
@@ -32,6 +34,7 @@ export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, re
     <h3>ข้อมูลที่ยังไม่เชื่อมต่อ</h3>
     <ul>{['Branch Service / Database Health Check', 'PrintGateway / สภาพเครื่องพิมพ์', 'Backup / Database Checkpoint / พื้นที่สำรองข้อมูล'].map(label => <li key={label}>{label}: ยังไม่ทราบ</li>)}</ul>
     <p>หน้านี้อ่านอย่างเดียว ไม่มีคำสั่ง Retry, Reprint หรือทดสอบอุปกรณ์</p>
+    {printerPort && <PrinterInventoryPanel port={printerPort} />}
     {printPort && <PrintAttentionPanel port={printPort} />}
     {outboxPort && <CloudOutboxPanel port={outboxPort} />}
     {replayPort && <CloudReplayPanel port={replayPort} />}
