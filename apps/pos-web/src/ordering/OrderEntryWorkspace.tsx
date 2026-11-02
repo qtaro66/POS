@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { createOrderingClient } from '../api/orderingClient.ts'
 import { createBasketEditor } from './basketEditor.ts'
 import { BasketPanel, type DraftLineEdit } from './BasketPanel.tsx'
@@ -17,6 +17,8 @@ export function OrderEntryWorkspace({ port, sessionId, sent, onAccepted }: {
   const editSequence = useRef(0)
   const [edit, setEdit] = useState<{ owner: typeof controller; target: DraftLineEdit; trigger: HTMLButtonElement; id: number } | null>(null)
   const activeEdit = edit?.owner === controller ? edit : null
+  const liveEdit = useRef(activeEdit)
+  useLayoutEffect(() => { liveEdit.current = activeEdit }, [activeEdit])
   const id = useId(), acknowledged = useRef<{ owner: typeof controller; requestId: string } | null>(null)
   const tabs = useRef<HTMLDivElement>(null)
   const basketRegion = useRef<HTMLElement>(null)
@@ -45,6 +47,11 @@ export function OrderEntryWorkspace({ port, sessionId, sent, onAccepted }: {
       <div className="entry-tab-panel" role="tabpanel" hidden={tab !== 'sent'} id={`${id}-sent-panel`} aria-labelledby={`${id}-sent-tab`}>{sent}</div>
     </section>
     <MenuSelector key={`${sessionId}:${activeEdit?.id ?? 'new'}`} controller={controller} editTarget={activeEdit?.target} editTrigger={activeEdit?.trigger}
-      onEndEditing={() => { if (activeEdit && !activeEdit.trigger.isConnected) basketRegion.current?.focus(); setEdit(null) }} onBeginSelection={() => { setTab('basket'); setEdit(null) }} />
+      onEndEditing={() => {
+        // A late save from an obsolete view must not close or refocus a newer editor.
+        if (liveEdit.current !== activeEdit) return
+        if (activeEdit && !activeEdit.trigger.isConnected) basketRegion.current?.focus()
+        setEdit(null)
+      }} onBeginSelection={() => { setTab('basket'); setEdit(null) }} />
   </div>
 }

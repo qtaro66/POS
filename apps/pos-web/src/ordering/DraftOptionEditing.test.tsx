@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../App.tsx'
 import type { OrderLine } from '../api/orderingContracts.ts'
 import { createOrderingPreview } from './orderingPreview.ts'
 import { basketPanelStrings as bs, editorIssueLabels } from './basketPanelStrings.ts'
+import * as editorModule from './basketEditor.ts'
 type Fixture = ReturnType<typeof createOrderingPreview>
 const rice: OrderLine = { sellableItemId: 'DEMO-RICE', quantity: 3, fulfillmentType: 'Takeaway', comment: 'ไม่เผ็ด', options: [{ optionGroupId: 'DEMO-TOPPING', sellableItemId: 'DEMO-EGG', quantity: 1 }] }
 async function seed(fixture: Fixture, lines: readonly OrderLine[] = [rice]) {
@@ -18,8 +19,36 @@ async function open(user: ReturnType<typeof userEvent.setup>, fixture: Fixture) 
   return view
 }
 const apply = () => within(screen.getByRole('dialog')).getByRole('button', { name: 'ยืนยันแก้ตัวเลือก' })
+afterEach(() => vi.restoreAllMocks())
 
 describe('persistent draft option editing', () => {
+  it('a late save from a replaced storage adapter cannot close or refocus a newer option editor', async () => {
+    const first = createOrderingPreview(), next = createOrderingPreview(), user = userEvent.setup()
+    await seed(first); await seed(next)
+    let release!: () => void
+    const waiting = new Promise<void>(resolve => { release = resolve })
+    const create = editorModule.createBasketEditor
+    vi.spyOn(editorModule, 'createBasketEditor').mockImplementation((client, session, factory) => {
+      const editor = create(client, session, factory)
+      return factory !== first.factory ? editor : { ...editor, replaceLine: async (...args) => {
+        const saved = await editor.replaceLine(...args); await waiting; return saved
+      } }
+    })
+    const view = await open(user, first)
+    await user.click(screen.getByRole('button', { name: 'แก้ตัวเลือก ข้าวผัดกุ้ง' }))
+    await user.click(apply())
+    await screen.findByText('ตะกร้าหรือข้อมูลเมนูเปลี่ยนแล้ว กรุณายกเลิกและเลือกแก้รายการใหม่')
+    view.rerender(<App client={first.client} ordering={{ factory: next.factory }} />)
+    await waitFor(() => expect((screen.getByRole('button', { name: 'แก้ตัวเลือก ข้าวผัดกุ้ง' }) as HTMLButtonElement).disabled).toBe(false))
+    await user.click(screen.getByRole('button', { name: 'แก้ตัวเลือก ข้าวผัดกุ้ง' }))
+    const dialog = screen.getByRole('dialog')
+    await act(async () => { release(); await waiting })
+    expect(screen.getByRole('dialog')).toBe(dialog)
+    expect(document.activeElement).toBe(dialog)
+    expect((apply() as HTMLButtonElement).disabled).toBe(false)
+    expect((await next.baskets.load(next.scope))?.revision).toBe(1)
+  })
+
   it('replaces SubItem/Topping in place, preserving quantity, comment, fulfillment and basket identity', async () => {
     const fixture = createOrderingPreview(), user = userEvent.setup()
     const line: OrderLine = { ...rice, sellableItemId: 'DEMO-STIR', options: [

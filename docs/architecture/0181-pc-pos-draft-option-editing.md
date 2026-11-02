@@ -35,6 +35,8 @@ old options accidentally. Other draft edits may commit, but invalidate the open
 option snapshot. Pending commands remain frozen; accepted rows stay read-only.
 Changing clients cannot inherit the old edit request; screen lock and navigation
 retain existing persistence and recovery rules.
+Late save completion from a replaced view/storage adapter is ignored by the
+current edit owner, so it cannot close or refocus a newer customization request.
 
 ## Availability and validation
 
