@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
+using Pos.Branch.Api.Printing;
 using Pos.Branch.Api.Security;
 using Pos.Contracts.Ordering;
+using Pos.Contracts.Printing;
 
 namespace Pos.Branch.Api.Ordering;
 
@@ -32,6 +34,13 @@ public static class BranchOrderingEndpoints
             .Produces<BranchSessionMenuResponse>().WithName("GetBranchSessionMenu");
         group.MapGet("/table-sessions/{tableSessionId}", BranchOrderingHttpHandlers.DetailAsync)
             .Produces<BranchSessionDetailResponse>().Produces<BranchOrderingError>(404).WithName("GetBranchOrderingSessionDetail");
+        if (configuration.GetSection(PrintStatusQueryOptions.SectionName).GetValue<bool>(nameof(PrintStatusQueryOptions.Enabled)))
+        {
+            group.MapGet("/print-attention", BranchPrintAttentionHttpHandler.HandleAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(0))
+                .Produces<BranchPrintAttentionResponse>().Produces<BranchPrintAttentionError>(400).Produces<BranchPrintAttentionError>(503)
+                .WithName("GetBranchPrintAttention");
+        }
         return endpoints;
     }
 
