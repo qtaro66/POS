@@ -9,6 +9,8 @@ import { PcPosShell } from '../shell/PcPosShell.tsx'
 import './TableWorkspace.css'
 import { OrderEntryWorkspace, type OrderingEntryPort } from './OrderEntryWorkspace.tsx'
 import type { BasketSubmissionResult } from './basketSubmission.ts'
+import { createDataFreshness } from '../shell/dataFreshness.ts'
+import { DataFreshnessPanel, DataFreshnessSidebar } from '../shell/DataFreshnessPanel.tsx'
 
 const money = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 const clock = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' })
@@ -63,6 +65,9 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   client: OrderingReadClient; branchLabel: string; preview: boolean; onLock: () => void; recovery?: RecoveryReadPort; ordering?: OrderingEntryPort
 }) {
   const controller = useMemo(() => createOrderingReadController(client), [client])
+  const freshness = useMemo(() => createDataFreshness(client), [client])
+  const freshnessState = useSyncExternalStore(freshness.subscribe, freshness.getSnapshot, freshness.getSnapshot)
+  useEffect(() => { void freshness.refresh(); return freshness.cancel }, [freshness])
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   useEffect(() => { void controller.refresh(); return controller.cancel }, [controller])
   const detail = state.tablesPhase === 'ready' && state.detailPhase === 'ready' ? state.detail : null
@@ -85,7 +90,9 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       <div className="batch-list" role="region" aria-label={s.batches} tabIndex={0}>{detail.batches.length === 0 ? <p className="empty-state">{s.noOrders}</p> : detail.batches.map((batch, index) => <Batch key={batch.orderBatchId} batch={batch} index={index} />)}</div>
       <Totals detail={detail} compact={inSession} /></>}
   </section>
-  return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}>
+  return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
+    sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
+    systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         {inSession && <button className="workspace-back" onClick={() => { moveFocus.current = true; setEntry(null) }}>{s.backToTables}</button>}

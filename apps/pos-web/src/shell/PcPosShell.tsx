@@ -11,8 +11,8 @@ const pages = [
 ] as const
 type PageId = typeof pages[number]['id']
 
-export function PcPosShell({ branchLabel, preview, onLock, children }: {
-  branchLabel: string; preview: boolean; onLock: () => void; children: ReactNode
+export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStatus, systemPage }: {
+  branchLabel: string; preview: boolean; onLock: () => void; children: ReactNode; sidebarStatus?: ReactNode; systemPage?: ReactNode
 }) {
   const [page, setPage] = useState<PageId>('tables')
   const main = useRef<HTMLElement>(null), moveFocus = useRef(false)
@@ -29,9 +29,9 @@ export function PcPosShell({ branchLabel, preview, onLock, children }: {
         {pages.map(value => <button key={value.id} type="button" aria-current={page === value.id ? 'page' : undefined}
           onClick={() => { if (page !== value.id) { moveFocus.current = true; setPage(value.id) } }}>
           <span aria-hidden="true">{value.icon}</span>{value.label}</button>)}
-      </nav><p>ข้อมูลจากบริการสาขา<br />ตามเวลาที่อ่านล่าสุด</p></aside>
+      </nav>{sidebarStatus ?? <p>ข้อมูลจากบริการสาขา<br />ตามเวลาที่อ่านล่าสุด</p>}</aside>
       <main className="ordering-main" ref={main} tabIndex={-1} aria-label={selected.label}>
-        {page === 'tables' ? children : <section className="shell-unavailable panel" aria-labelledby="shell-page-title">
+        {page === 'tables' ? children : page === 'system' && systemPage ? systemPage : <section className="shell-unavailable panel" aria-labelledby="shell-page-title">
           <p className="eyebrow">PC POS / {selected.label}</p><h2 id="shell-page-title">{selected.label}</h2>
           <p role="status">หน้านี้ยังไม่เชื่อมต่อข้อมูลและคำสั่ง จึงยังไม่พร้อมใช้งาน</p>
           <p>เลือกโต๊ะจากเมนูหลักเพื่อกลับไปยังงานเดิม</p>
