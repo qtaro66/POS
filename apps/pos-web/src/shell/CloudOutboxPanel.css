@@ -1,0 +1,11 @@
+.cloud-outbox { border-top: 1px solid #c8dbe8; margin-top: 24px; padding-top: 18px; }
+.cloud-outbox header { flex-wrap: wrap; }
+.outbox-counts { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.outbox-counts > div { background: #edf6fa; border-radius: 8px; padding: 12px; }
+.outbox-counts dd { margin: 8px 0 0; font-weight: bold; font-size: 20px; }
+.outbox-items { max-height: 480px; overflow-y: auto; margin-block: 16px; }
+.outbox-items:focus-visible { outline: 3px solid #007d93; outline-offset: -3px; }
+.outbox-item { padding: 16px; border: 1px solid #c8dbe8; border-left: 5px solid #c56500; border-radius: 8px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.outbox-item h4 { margin: 0 0 8px; }
+.outbox-item dl > div { display: grid; grid-template-columns: minmax(120px, 1fr) 3fr; gap: 12px; padding-block: 4px; }
+.outbox-item dd { margin: 0; }
