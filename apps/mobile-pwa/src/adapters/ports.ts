@@ -142,6 +142,7 @@ export interface DeviceStore {
 }
 
 export interface MobileServices {
+  readonly soldOut?: SoldOutGateway
   readonly qrScanner: QrScanner
   readonly pairing: PairingGateway
   readonly auth: EmployeeAuthGateway
@@ -150,4 +151,15 @@ export interface MobileServices {
   readonly drafts: DraftRepository
   readonly syncStatus: SyncStatusSource
   readonly deviceStore: DeviceStore
+}
+
+export interface SoldOutGateway {
+  read(device: PairedDevice, employee: EmployeeSession, offset: number, signal: AbortSignal): Promise<{
+    canSetSoldOut: boolean
+    items: readonly { sellableItemId: string; displayName: string | null }[]
+    nextOffset: number | null
+  }>
+  adjust(device: PairedDevice, employee: EmployeeSession, request: {
+    operationId: string; sellableItemId: string; expectedSoldOut: boolean; soldOut: boolean
+  }, signal: AbortSignal): Promise<'saved' | 'rejected' | 'unknown'>
 }

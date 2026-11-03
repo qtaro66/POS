@@ -20,11 +20,19 @@ public static class BranchOrderingEndpoints
         ArgumentNullException.ThrowIfNull(configuration);
         if (!configuration.GetSection(BranchOrderingOptions.SectionName).GetValue<bool>("Enabled")) { return endpoints; }
         var group = endpoints.MapGroup(Prefix).RequireAuthorization(BranchPosAuthorizationDefaults.CompleteIdentityPolicyName);
+        if (configuration.GetValue<bool>("BranchEmployeePermissionSync:Enabled"))
+        {
+            group.MapPost("/employee-permissions/refresh", BranchEmployeePermissionRefreshHttpHandler.HandleAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(0))
+                .WithName("RefreshBranchEmployeePermissions");
+        }
         group.MapPost("/sold-out/adjustments", BranchSoldOutAdjustmentHttpHandler.HandleAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchSoldOutAdjustmentResponse>().Produces(400).Produces(401).Produces(403)
             .Produces<BranchSoldOutAdjustmentResponse>(404).Produces<BranchSoldOutAdjustmentResponse>(409)
             .Produces<BranchSoldOutAdjustmentResponse>(503).WithName("AdjustBranchSoldOut");
+        group.MapGet("/sold-out/capability", BranchSoldOutAuthorization.Read)
+            .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetBranchSoldOutCapability");
         group.MapGet("/sold-out", BranchSoldOutHttpHandler.HandleAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0))
             .Produces<BranchSoldOutResponse>().Produces(400).Produces(503)

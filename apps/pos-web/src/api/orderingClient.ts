@@ -260,6 +260,14 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async refreshEmployeePermissions(signal?: AbortSignal): Promise<'Updated' | 'NoUpdate' | 'Busy' | 'Unavailable'> {
+      const result = await request('/employee-permissions/refresh', 'POST', undefined, signal)
+      if ('reason' in result || result.status !== 200) return 'Unavailable'
+      const body = result.body as { schemaVersion?: unknown; outcome?: unknown } | null
+      if (body?.schemaVersion !== 1) return 'Unavailable'
+      const outcome = body.outcome
+      return outcome === 'Updated' || outcome === 'NoUpdate' || outcome === 'Busy' ? outcome : 'Unavailable'
+    },
     async adjustSoldOut(adjustment: SoldOutAdjustment, signal?: AbortSignal): Promise<SoldOutAdjustmentOutcome> {
       const result = await request('/sold-out/adjustments', 'POST', JSON.stringify(adjustment), signal)
       return 'reason' in result ? 'Unknown' : soldOutAdjustmentOutcome(result.status, result.body)

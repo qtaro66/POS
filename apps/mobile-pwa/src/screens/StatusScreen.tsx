@@ -1,5 +1,6 @@
 import { useId, useSyncExternalStore } from 'react'
-import type { SyncStatusSource } from '../adapters/ports.ts'
+import type { SoldOutGateway, SyncStatusSource } from '../adapters/ports.ts'
+import { MobileSoldOut } from '../components/MobileSoldOut.tsx'
 import { Screen } from '../components/Screen.tsx'
 import { Time } from '../components/Time.tsx'
 import type { EmployeeSession, OutboxSummary, PairedDevice } from '../domain/types.ts'
@@ -9,6 +10,7 @@ interface StatusScreenProps {
   readonly device: PairedDevice
   readonly employee: EmployeeSession
   readonly source: SyncStatusSource
+  readonly soldOut?: SoldOutGateway
 }
 
 const outboxStates: readonly (keyof OutboxSummary)[] = ['draft', 'pending', 'submitted', 'unknown']
@@ -18,7 +20,7 @@ const outboxStates: readonly (keyof OutboxSummary)[] = ['draft', 'pending', 'sub
  * state. Mobile keeps the outbox visible because background sending is not
  * guaranteed (requirement 3.3).
  */
-export function StatusScreen({ device, employee, source }: StatusScreenProps) {
+export function StatusScreen({ device, employee, source, soldOut }: StatusScreenProps) {
   const status = useSyncExternalStore(
     (listener) => source.subscribe(listener),
     () => source.getStatus(),
@@ -29,6 +31,8 @@ export function StatusScreen({ device, employee, source }: StatusScreenProps) {
 
   return (
     <Screen title={text.statusTitle}>
+      {soldOut && <MobileSoldOut key={JSON.stringify([device.branchId, device.deviceId, employee.employeeId, employee.sessionId])}
+        device={device} employee={employee} gateway={soldOut} />}
       <section className="panel" aria-labelledby={connectionId}>
         <h2 id={connectionId}>{text.statusConnectionHeading}</h2>
         <dl className="facts">
