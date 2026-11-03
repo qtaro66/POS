@@ -97,7 +97,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
     sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
     homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh() }}
-      openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} client={client} />}
+      openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} client={client} freshness={freshnessState} />}
     systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>

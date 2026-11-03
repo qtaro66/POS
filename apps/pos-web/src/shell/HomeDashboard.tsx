@@ -4,10 +4,13 @@ import { sessionLabels } from '../ordering/strings.ts'
 import './DataFreshnessPanel.css'
 import { BranchReadinessPanel } from './BranchReadinessPanel.tsx'
 import { HomePrintAttention } from './HomePrintAttention.tsx'
+import { HomeCloudStatus } from './HomeCloudStatus.tsx'
+import type { FreshnessState } from './dataFreshness.ts'
+import type { SystemFocusTarget } from './PcPosShell.tsx'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 
-export function HomeDashboard({ state, onRefresh, openTables, openSystem, client }: {
-  state: OrderingReadState; onRefresh: () => void; openTables: (status?: SessionStatus) => void; openSystem: (target?: "print-attention-title") => void; client: OrderingReadClient
+export function HomeDashboard({ state, onRefresh, openTables, openSystem, client, freshness }: {
+  state: OrderingReadState; onRefresh: () => void; openTables: (status?: SessionStatus) => void; openSystem: (target?: SystemFocusTarget) => void; client: OrderingReadClient; freshness: FreshnessState
 }) {
   const ready = state.tablesPhase === 'ready'
   const loading = state.tablesPhase === 'idle' || state.tablesPhase === 'loading'
@@ -25,6 +28,7 @@ export function HomeDashboard({ state, onRefresh, openTables, openSystem, client
     </dl>
     <button className="refresh-button" onClick={() => openTables()}>เปิดรายการโต๊ะ</button>
     <BranchReadinessPanel read={client.branchReadiness} />
+    <HomeCloudStatus port={client} freshness={freshness} openDetails={() => openSystem('cloud-outbox-title')} />
     <HomePrintAttention port={client} openDetails={() => openSystem('print-attention-title')} />
     <button className="refresh-button" onClick={() => openSystem()}>เปิดสถานะระบบ</button>
   </section>

@@ -10,10 +10,11 @@ const pages = [
   { id: 'system', label: 'สถานะระบบ', icon: '⚙' },
 ] as const
 type PageId = typeof pages[number]['id']
+export type SystemFocusTarget = 'print-attention-title' | 'cloud-outbox-title'
 
 export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStatus, systemPage, homePage }: {
   branchLabel: string; preview: boolean; onLock: () => void; children: ReactNode; sidebarStatus?: ReactNode; systemPage?: ReactNode
-  homePage?: (openTables: () => void, openSystem: (target?: 'print-attention-title') => void) => ReactNode
+  homePage?: (openTables: () => void, openSystem: (target?: SystemFocusTarget) => void) => ReactNode
 }) {
   const [page, setPage] = useState<PageId>('tables')
   const main = useRef<HTMLElement>(null), moveFocus = useRef(false), focusTarget = useRef<string | undefined>(undefined)
@@ -27,7 +28,7 @@ export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStat
     }
   }, [page])
   const selected = pages.find(value => value.id === page)!
-  function navigate(next: PageId, target?: 'print-attention-title') {
+  function navigate(next: PageId, target?: SystemFocusTarget) {
     if (page === next) return
     focusTarget.current = target
     moveFocus.current = true
