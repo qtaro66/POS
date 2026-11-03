@@ -49,7 +49,7 @@ describe('PC POS data freshness', () => {
     const fixture = createOrderingPreview(), user = userEvent.setup()
     render(<App client={{ activeTables: fixture.client.activeTables, sessionDetail: fixture.client.sessionDetail }} />)
     await user.click(screen.getByRole('button', { name: 'สถานะระบบ' }))
-    expect(within(screen.getByRole('main')).getAllByText('ยังไม่เชื่อมต่อ')).toHaveLength(2)
+    expect(within(screen.getByRole('main')).getAllByText('ยังไม่เชื่อมต่อ')).toHaveLength(3)
     expect(screen.queryByText('ยังไม่มีบันทึก')).toBeNull()
   })
 
