@@ -14,6 +14,26 @@ function empty(nextCursor: string | null = null): Result { return { kind: 'ok', 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 
 describe('PC POS read-only print attention workspace', () => {
+  it('summarizes Branch readiness and print attention on Home and focuses print details', async () => {
+    const fixture = createOrderingPreview(), user = userEvent.setup()
+    const branchReadiness = vi.fn(async (): Promise<QueryResult<{ checkedAt: string; orderingDatabaseReady: boolean }>> => ({
+      kind: 'ok', value: { checkedAt: observedAt, orderingDatabaseReady: true },
+    }))
+    const printAttention = vi.fn(fixture.client.printAttention)
+    render(<App client={{ ...fixture.client, branchReadiness, printAttention }} />)
+    await user.click(screen.getByRole('button', { name: 'หน้าหลัก' }))
+    await screen.findByText('พร้อมอ่านโครงสร้างข้อมูล')
+    const summary = within(screen.getByRole('region', { name: 'งานพิมพ์ที่ต้องตรวจสอบ' }))
+    expect((await summary.findByText('2')).closest('p')?.querySelector('time')).toBeTruthy()
+    expect(screen.queryByRole('article', { name: 'งานพิมพ์ DEMO-PRINT-1' })).toBeNull()
+    await user.click(summary.getByRole('button', { name: 'เปิดรายละเอียดงานพิมพ์' }))
+    expect(screen.getByRole('heading', { name: 'งานพิมพ์ที่ต้องตรวจสอบ' })).toBe(document.activeElement)
+    await screen.findByRole('article', { name: 'งานพิมพ์ DEMO-PRINT-1' })
+    expect(branchReadiness).toHaveBeenCalledTimes(2)
+    expect(printAttention).toHaveBeenCalledTimes(2)
+    expect(fixture.state.postedBodies).toHaveLength(0)
+  })
+
   it('reads only on the System page, displays provenance and uncertainty and pages without submitting', async () => {
     const fixture = createOrderingPreview(), user = userEvent.setup(), read = vi.fn(fixture.client.printAttention)
     render(<App client={{ ...fixture.client, printAttention: read }} />)

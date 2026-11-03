@@ -13,16 +13,23 @@ type PageId = typeof pages[number]['id']
 
 export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStatus, systemPage, homePage }: {
   branchLabel: string; preview: boolean; onLock: () => void; children: ReactNode; sidebarStatus?: ReactNode; systemPage?: ReactNode
-  homePage?: (openTables: () => void, openSystem: () => void) => ReactNode
+  homePage?: (openTables: () => void, openSystem: (target?: 'print-attention-title') => void) => ReactNode
 }) {
   const [page, setPage] = useState<PageId>('tables')
-  const main = useRef<HTMLElement>(null), moveFocus = useRef(false)
+  const main = useRef<HTMLElement>(null), moveFocus = useRef(false), focusTarget = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (moveFocus.current) { main.current?.focus(); moveFocus.current = false }
+    if (moveFocus.current) {
+      const target = focusTarget.current && main.current?.querySelector<HTMLElement>('#' + focusTarget.current)
+      if (target) target.focus()
+      else main.current?.focus()
+      focusTarget.current = undefined
+      moveFocus.current = false
+    }
   }, [page])
   const selected = pages.find(value => value.id === page)!
-  function navigate(next: PageId) {
+  function navigate(next: PageId, target?: 'print-attention-title') {
     if (page === next) return
+    focusTarget.current = target
     moveFocus.current = true
     setPage(next)
   }
@@ -37,7 +44,7 @@ export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStat
           <span aria-hidden="true">{value.icon}</span>{value.label}</button>)}
       </nav>{sidebarStatus ?? <p>ข้อมูลจากบริการสาขา<br />ตามเวลาที่อ่านล่าสุด</p>}</aside>
       <main className="ordering-main" ref={main} tabIndex={-1} aria-label={selected.label}>
-        {page === 'tables' ? children : page === 'home' && homePage ? homePage(() => navigate('tables'), () => navigate('system')) : page === 'system' && systemPage ? systemPage : <section className="shell-unavailable panel" aria-labelledby="shell-page-title">
+        {page === 'tables' ? children : page === 'home' && homePage ? homePage(() => navigate('tables'), target => navigate('system', target)) : page === 'system' && systemPage ? systemPage : <section className="shell-unavailable panel" aria-labelledby="shell-page-title">
           <p className="eyebrow">PC POS / {selected.label}</p><h2 id="shell-page-title">{selected.label}</h2>
           <p role="status">หน้านี้ยังไม่เชื่อมต่อข้อมูลและคำสั่ง จึงยังไม่พร้อมใช้งาน</p>
           <p>เลือกโต๊ะจากเมนูหลักเพื่อกลับไปยังงานเดิม</p>

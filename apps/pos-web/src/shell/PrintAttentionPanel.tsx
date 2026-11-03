@@ -19,7 +19,7 @@ export function PrintAttentionPanel({ port }: { port: PrintAttentionPort }) {
     }
   }, [state, controller])
   return <section className="print-attention" aria-labelledby="print-attention-title" aria-busy={state.phase === 'loading'}>
-    <header><h3 id="print-attention-title">งานพิมพ์ที่ต้องตรวจสอบ</h3><button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.phase === 'loading'}>อ่านงานพิมพ์ใหม่</button></header>
+    <header><h3 id="print-attention-title" tabIndex={-1}>งานพิมพ์ที่ต้องตรวจสอบ</h3><button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.phase === 'loading'}>อ่านงานพิมพ์ใหม่</button></header>
     <p>อ่านอย่างเดียว การส่งงานสำเร็จไม่ยืนยันว่ากระดาษออกจริง หน้านี้ไม่ส่งงานซ้ำและไม่ติดต่อเครื่องพิมพ์</p>
     {state.phase === 'unsupported' && <p role="status">ยังไม่เชื่อมต่อรายการงานพิมพ์</p>}
     {state.phase === 'loading' && <p role="status">กำลังอ่านงานพิมพ์</p>}
