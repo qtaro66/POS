@@ -259,6 +259,16 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async branchReadiness(signal?: AbortSignal): Promise<QueryResult<{ checkedAt: string; orderingDatabaseReady: boolean }>> {
+      const result = await request('/branch-readiness', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      const body = result.body as Record<string, unknown> | null
+      if (!body || body.schemaVersion !== 1 || !isUtcTimestamp(body.checkedAt) || typeof body.orderingDatabaseReady !== 'boolean') {
+        return { kind: 'unavailable', reason: 'protocol' }
+      }
+      return { kind: 'ok', value: { checkedAt: body.checkedAt, orderingDatabaseReady: body.orderingDatabaseReady } }
+    },
     async printerInventory(after?: string, signal?: AbortSignal): Promise<QueryResult<PrinterInventoryPage>> {
       if (after !== undefined && !isPrinterId(after)) throw new Error('Invalid printer cursor.')
       const result = await request(`/printer-inventory${after === undefined ? '' : `?afterPrinterId=${encodeURIComponent(after)}`}`, 'GET', undefined, signal)

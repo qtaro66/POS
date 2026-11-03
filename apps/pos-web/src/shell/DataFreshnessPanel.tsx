@@ -1,5 +1,7 @@
 import type { FreshnessReading, FreshnessState } from './dataFreshness.ts'
 import './DataFreshnessPanel.css'
+import { BranchReadinessPanel } from './BranchReadinessPanel.tsx'
+import type { OrderingReadClient } from '../ordering/readController.ts'
 import { PrintAttentionPanel } from './PrintAttentionPanel.tsx'
 import type { PrintAttentionPort } from './printAttention.ts'
 import { CloudOutboxPanel } from './CloudOutboxPanel.tsx'
@@ -22,7 +24,7 @@ export function DataFreshnessSidebar({ state }: { state: FreshnessState }) {
   </section>
 }
 
-export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort, printerPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort; printerPort?: PrinterInventoryPort }) {
+export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort, printerPort, readinessRead }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort; printerPort?: PrinterInventoryPort; readinessRead?: OrderingReadClient['branchReadiness'] }) {
   const loading = state.synced.phase === 'loading' || state.sent.phase === 'loading'
   return <section className="system-status panel" aria-labelledby="system-status-title">
     <header><div><p className="eyebrow">PC POS / สถานะระบบ</p><h2 id="system-status-title">สถานะระบบ</h2></div>
@@ -31,8 +33,9 @@ export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, re
     <p>แสดงข้อมูลล่าสุดที่อ่านจาก Branch Service ไม่ใช่การยืนยันว่าเชื่อมต่อส่วนกลางอยู่ในขณะนี้</p>
     <dl className="system-readings"><div><dt>Data Synced</dt><dd><FreshnessValue reading={state.synced} /></dd><dd>ครอบคลุมข้อมูลพนักงาน ยังไม่ยืนยันการซิงก์ Master Data ทั้งหมด</dd></div>
       <div><dt>Data Sent</dt><dd><FreshnessValue reading={state.sent} /></dd><dd>เวลาล่าสุดที่บันทึกการยืนยันรับจากส่วนกลาง ไม่ใช่จำนวนรายการค้างส่ง</dd></div></dl>
+    <BranchReadinessPanel read={readinessRead} />
     <h3>ข้อมูลที่ยังไม่เชื่อมต่อ</h3>
-    <ul>{['Branch Service / Database Health Check', 'PrintGateway / สภาพเครื่องพิมพ์', 'Backup / Database Checkpoint / พื้นที่สำรองข้อมูล'].map(label => <li key={label}>{label}: ยังไม่ทราบ</li>)}</ul>
+    <ul>{['PrintGateway / สภาพเครื่องพิมพ์', 'Backup / Database Checkpoint / พื้นที่สำรองข้อมูล'].map(label => <li key={label}>{label}: ยังไม่ทราบ</li>)}</ul>
     <p>หน้านี้อ่านอย่างเดียว ไม่มีคำสั่ง Retry, Reprint หรือทดสอบอุปกรณ์</p>
     {printerPort && <PrinterInventoryPanel port={printerPort} />}
     {printPort && <PrintAttentionPanel port={printPort} />}
