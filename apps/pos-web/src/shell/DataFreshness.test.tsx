@@ -53,6 +53,31 @@ describe('PC POS data freshness', () => {
     expect(screen.queryByText('ยังไม่มีบันทึก')).toBeNull()
   })
 
+  it('refreshes every status source, cancels previous reads and restarts paged queries at the first page', async () => {
+    const fixture = createOrderingPreview(), user = userEvent.setup()
+    const pending = deferred<QueryResult<never>>()
+    const pagedRead = () => vi.fn((_cursor?: string, _signal?: AbortSignal) => pending.promise)
+    const printerInventory = pagedRead(), printAttention = pagedRead()
+    const cloudOutboxStatus = pagedRead(), cloudReplayStatus = pagedRead()
+    const branchReadiness = vi.fn((_signal?: AbortSignal) => pending.promise)
+    const dataSyncStatus = vi.fn(fixture.client.dataSyncStatus)
+    const dataSentStatus = vi.fn(fixture.client.dataSentStatus)
+    render(<App client={{ ...fixture.client, printerInventory, printAttention, cloudOutboxStatus, cloudReplayStatus, branchReadiness, dataSyncStatus, dataSentStatus }} />)
+    await user.click(screen.getByRole('button', { name: 'สถานะระบบ' }))
+    await user.click(await screen.findByRole('button', { name: 'อ่านสถานะใหม่' }))
+    for (const read of [printerInventory, printAttention, cloudOutboxStatus, cloudReplayStatus]) {
+      expect(read).toHaveBeenCalledTimes(2)
+      expect(read.mock.calls[0][1]?.aborted).toBe(true)
+      expect(read.mock.calls[1][0]).toBeUndefined()
+      expect(read.mock.calls[1][1]?.aborted).toBe(false)
+    }
+    expect(branchReadiness).toHaveBeenCalledTimes(2)
+    expect(branchReadiness.mock.calls[0][0]?.aborted).toBe(true)
+    expect(dataSyncStatus).toHaveBeenCalledTimes(2)
+    expect(dataSentStatus).toHaveBeenCalledTimes(2)
+    expect(fixture.state.postedBodies).toHaveLength(0)
+  })
+
   it('preserves the durable basket across status navigation and never submits an order while refreshing status', async () => {
     const fixture = createOrderingPreview(), user = userEvent.setup()
     render(<App client={fixture.client} ordering={{ factory: fixture.factory }} />)
