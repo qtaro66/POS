@@ -1,6 +1,8 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Pos.Branch.Api.Security;
+using Pos.Branch.Api.Synchronization;
 using Pos.Branch.Infrastructure.Sqlite;
 
 namespace Pos.Branch.Api.Ordering;
@@ -11,17 +13,15 @@ public sealed record BranchSoldOutAdjustmentResponse(int SchemaVersion, string O
 public static class BranchSoldOutAdjustmentHttpHandler
 {
     public static async Task<IResult> HandleAsync(
-        ClaimsPrincipal principal, BranchSoldOutAdjustmentRequest request, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+        ClaimsPrincipal principal, BranchSoldOutAdjustmentRequest request, BranchOrderingRuntime runtime, CancellationToken cancellationToken,
+        [FromServices] BranchEmployeePermissionCache? permissions = null)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity))
         {
             return TypedResults.Unauthorized();
         }
 
-        var deviceClaims = principal.Identities
-            .Where(candidate => candidate.IsAuthenticated && candidate.AuthenticationType == BranchDeviceAuthenticationDefaults.SchemeName)
-            .SelectMany(candidate => candidate.Claims);
-        if (!AuthenticatedBranchClaimResolver.TryGetSingle(deviceClaims, BranchPosClaimTypes.DeviceRole, out var role) || role != "PcPos")
+        if (!BranchSoldOutAuthorization.CanAdjust(principal, identity, permissions))
         {
             return TypedResults.StatusCode(403);
         }

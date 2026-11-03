@@ -27,7 +27,7 @@ import { TableScreen } from './TableScreen.tsx'
 interface AuthenticatedShellProps {
   readonly device: PairedDevice
   readonly employee: EmployeeSession
-  readonly services: Pick<MobileServices, 'tables' | 'menu' | 'drafts' | 'syncStatus'>
+  readonly services: Pick<MobileServices, 'tables' | 'menu' | 'drafts' | 'syncStatus' | 'soldOut'>
   /** Device clock for Draft timestamps and the 30-day review rule; must keep its identity. */
   readonly now: () => Date
   /** Creates basket line identifiers; replaced in tests. */
@@ -165,7 +165,7 @@ export function AuthenticatedShell({
         />
       )}
       {route.screen === 'status' && (
-        <StatusScreen key="status" device={device} employee={employee} source={services.syncStatus} />
+        <StatusScreen key="status" device={device} employee={employee} source={services.syncStatus} soldOut={services.soldOut} />
       )}
       <BottomNav route={route} currentTable={currentTable} onNavigate={navigate} />
     </>

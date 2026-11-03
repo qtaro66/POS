@@ -3,6 +3,7 @@ import { IndexedDbDeviceStore } from '../indexedDbDeviceStore.ts'
 import type { MobileServices } from '../ports.ts'
 import { BranchEmployeeAuthGateway, BranchPairingGateway } from './branchGateways.ts'
 import type { FetchLike } from './http.ts'
+import { createSoldOutGateway } from './soldOutGateway.ts'
 
 /**
  * Services that pair and log in through the Branch API. Ports without a
@@ -15,10 +16,12 @@ export function createBranchServices(
   const deviceStore = new IndexedDbDeviceStore()
   const fixtures = createFixtureServices()
   const options = { fetch: fetchImpl, deviceStore }
+  const auth = new BranchEmployeeAuthGateway(options)
   return {
     ...fixtures,
     deviceStore,
     pairing: new BranchPairingGateway(options),
-    auth: new BranchEmployeeAuthGateway(options),
+    auth,
+    soldOut: createSoldOutGateway(fetchImpl, deviceStore, id => auth.sessionTokenFor(id)),
   }
 }

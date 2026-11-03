@@ -7,6 +7,33 @@ using Pos.Branch.Api.Synchronization;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+if (builder.Configuration.GetValue<bool>("BranchCentralMtls:Enabled"))
+{
+    builder.Services.AddSingleton<IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>(
+        new BranchCertificateHttpHandlerFactory(builder.Configuration));
+}
+var permissionSync = builder.Configuration.GetSection("BranchEmployeePermissionSync");
+if (permissionSync.GetValue<bool>("Enabled"))
+{
+    var branchId = permissionSync["BranchId"];
+    var cachePath = permissionSync["CachePath"];
+    if (!builder.Configuration.GetValue<bool>("BranchCentralMtls:Enabled")
+        || string.IsNullOrWhiteSpace(branchId) || branchId != branchId.Trim()
+        || string.IsNullOrWhiteSpace(cachePath) || !Path.IsPathFullyQualified(cachePath)
+        || !Uri.TryCreate(permissionSync["CentralOrigin"], UriKind.Absolute, out var origin)
+        || origin.Scheme != Uri.UriSchemeHttps || origin.AbsolutePath != "/"
+        || origin.UserInfo.Length != 0 || origin.Query.Length != 0 || origin.Fragment.Length != 0)
+    {
+        throw new InvalidOperationException("Employee permission sync requires mTLS, a Branch ID, an absolute cache path and a Central HTTPS origin.");
+    }
+
+    builder.Services.AddSingleton(new BranchEmployeePermissionCache(branchId, cachePath));
+    builder.Services.AddHttpClient(BranchEmployeePermissionPollingService.ClientName, client => client.BaseAddress = origin)
+        .ConfigurePrimaryHttpMessageHandler(provider =>
+            provider.GetRequiredService<IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>().CreateHandler());
+    builder.Services.AddSingleton<BranchEmployeePermissionPollingService>();
+    builder.Services.AddHostedService(provider => provider.GetRequiredService<BranchEmployeePermissionPollingService>());
+}
 builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
 builder.Services.AddBranchEmployeeSessions(builder.Configuration);
 builder.Services.AddBranchPairing(builder.Configuration);

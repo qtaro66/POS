@@ -6,6 +6,25 @@ import type { TableSessionStatus } from './domain/types.ts'
  * screens, so no Thai labels are introduced here.
  */
 export const text = {
+  soldOut: {
+    heading: 'Sold Out',
+    loading: 'Loading Sold Out items…',
+    unavailable: 'Could not read Sold Out items.',
+    empty: 'No Sold Out items on this page.',
+    readOnly: 'View only',
+    itemId: 'Item ID',
+    set: 'Set Sold Out',
+    clear: (name: string) => `Clear Sold Out for ${name}`,
+    confirm: (name: string) => `Clear Sold Out for ${name}?`,
+    refresh: 'Refresh Sold Out',
+    next: 'Next Sold Out page',
+    previous: 'Previous Sold Out page',
+    saving: 'Saving Sold Out change…',
+    saved: 'Sold Out change recorded.',
+    rejected: 'The Branch declined the change. Check the latest list and permission.',
+    unknown: 'The result is unknown. Check the refreshed list or retry the same request.',
+    retry: 'Retry the same request',
+  },
   appName: 'POS Mobile',
 
   pairingTitle: 'Pair this device',

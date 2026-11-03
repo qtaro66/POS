@@ -238,7 +238,7 @@ counts them from when the Draft was started, the literal reading of "kept
     `Expired/NeedsReview` waits for DEC-6.
 
 ### MOB-12 Sold Out for permitted employees
-- Approved: no
+- Approved: yes
 - UI: not verified | Integration: not verified | Device validation: n/a
 - Integration needs: CAP-13
 - Depends on: MOB-05
