@@ -35,7 +35,7 @@ it('sets Sold Out and manually retries an uncertain response with the original o
   render(<HomeSoldOut read={read} adjust={adjust} />)
   await user.click(screen.getByRole('button', { name: 'ดูรายการ Sold Out ทั้งหมด' }))
   await user.type(screen.getByRole('textbox', { name: 'รหัสสินค้าที่จะตั้ง Sold Out' }), 'ITEM-01')
-  await user.click(screen.getByRole('button', { name: 'ตั้ง Sold Out', exact: true }))
+  await user.click(screen.getByRole('button', { name: 'ตั้ง Sold Out' }))
   const retry = await screen.findByRole('button', { name: 'ลองคำขอเดิมอีกครั้ง' })
   expect(adjust).toHaveBeenCalledTimes(1)
   const request = adjust.mock.calls[0][0]
