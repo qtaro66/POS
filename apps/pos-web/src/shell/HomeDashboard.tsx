@@ -2,9 +2,12 @@ import type { SessionStatus } from '../api/orderingContracts.ts'
 import type { OrderingReadState } from '../ordering/readController.ts'
 import { sessionLabels } from '../ordering/strings.ts'
 import './DataFreshnessPanel.css'
+import { BranchReadinessPanel } from './BranchReadinessPanel.tsx'
+import { HomePrintAttention } from './HomePrintAttention.tsx'
+import type { OrderingReadClient } from '../ordering/readController.ts'
 
-export function HomeDashboard({ state, onRefresh, openTables, openSystem }: {
-  state: OrderingReadState; onRefresh: () => void; openTables: (status?: SessionStatus) => void; openSystem: () => void
+export function HomeDashboard({ state, onRefresh, openTables, openSystem, client }: {
+  state: OrderingReadState; onRefresh: () => void; openTables: (status?: SessionStatus) => void; openSystem: (target?: "print-attention-title") => void; client: OrderingReadClient
 }) {
   const ready = state.tablesPhase === 'ready'
   const loading = state.tablesPhase === 'idle' || state.tablesPhase === 'loading'
@@ -21,6 +24,8 @@ export function HomeDashboard({ state, onRefresh, openTables, openSystem }: {
       </div>)}
     </dl>
     <button className="refresh-button" onClick={() => openTables()}>เปิดรายการโต๊ะ</button>
-    <button className="refresh-button" onClick={openSystem}>เปิดสถานะระบบ</button>
+    <BranchReadinessPanel read={client.branchReadiness} />
+    <HomePrintAttention port={client} openDetails={() => openSystem('print-attention-title')} />
+    <button className="refresh-button" onClick={() => openSystem()}>เปิดสถานะระบบ</button>
   </section>
 }
