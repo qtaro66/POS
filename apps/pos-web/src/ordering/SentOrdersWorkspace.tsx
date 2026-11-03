@@ -11,6 +11,7 @@ import { OrderEntryWorkspace, type OrderingEntryPort } from './OrderEntryWorkspa
 import type { BasketSubmissionResult } from './basketSubmission.ts'
 import { createDataFreshness } from '../shell/dataFreshness.ts'
 import { DataFreshnessPanel, DataFreshnessSidebar } from '../shell/DataFreshnessPanel.tsx'
+import { HomeDashboard } from '../shell/HomeDashboard.tsx'
 
 const money = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 const clock = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' })
@@ -92,6 +93,8 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   </section>
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
     sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
+    homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh() }}
+      openTables={() => { setEntry(null); openTables() }} openSystem={openSystem} />}
     systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>

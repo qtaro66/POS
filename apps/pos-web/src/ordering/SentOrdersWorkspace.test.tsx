@@ -96,12 +96,30 @@ describe('PC POS read-only sent orders', () => {
       await user.click(navigation.getByRole('button', { name }))
       expect(screen.getByRole('main', { name })).toBe(document.activeElement)
       if (name === 'สถานะระบบ') expect(screen.getByText(/สถานะรวม: ยังไม่ทราบ/)).toBeTruthy()
+      else if (name === 'หน้าหลัก') expect(screen.getByText('ยังไม่มีข้อมูลผังโต๊ะ')).toBeTruthy()
       else expect(screen.getByRole('status').textContent).toContain('ยังไม่พร้อมใช้งาน')
       expect(navigation.getByRole('button', { name }).getAttribute('aria-current')).toBe('page')
       expect(screen.queryByRole('button', { name: /A04/ })).toBeNull()
     }
     expect(activeTables).toHaveBeenCalledTimes(1)
     expect(sessionDetail).not.toHaveBeenCalled()
+  })
+
+  it('shows active-session counts and routes from Home to the table list and System', async () => {
+    const user = userEvent.setup(), base = createPreviewReadClient()
+    render(<App client={base} />)
+    await screen.findByRole('button', { name: /A04/ })
+    await user.click(screen.getByRole('button', { name: 'หน้าหลัก' }))
+    const home = within(screen.getByRole('main', { name: 'หน้าหลัก' }))
+    expect(home.getByText('กำลังสั่ง').nextElementSibling?.textContent).toBe('2')
+    expect(home.getByText('รอชำระ').nextElementSibling?.textContent).toBe('1')
+    expect(home.getByText('โต๊ะว่าง').nextElementSibling?.textContent).toBe('ยังไม่มีข้อมูลผังโต๊ะ')
+    await user.click(home.getByRole('button', { name: 'เปิดสถานะระบบ' }))
+    expect(screen.getByRole('main', { name: 'สถานะระบบ' })).toBe(document.activeElement)
+    await user.click(screen.getByRole('button', { name: 'หน้าหลัก' }))
+    await user.click(home.getByRole('button', { name: 'เปิดรายการโต๊ะ' }))
+    expect(screen.getByRole('main', { name: 'โต๊ะ' })).toBe(document.activeElement)
+    expect(screen.getByRole('button', { name: /A04/ })).toBeTruthy()
   })
 
   it('preserves the selected session and Branch totals across keyboard navigation without rereading', async () => {
