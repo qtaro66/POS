@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { AcceptedBatch, SessionDetail } from '../api/orderingContracts.ts'
+import type { AcceptedBatch, SessionDetail, SessionStatus } from '../api/orderingContracts.ts'
 import { createOrderingReadController } from './readController.ts'
 import type { OrderingReadClient } from './readController.ts'
 import { sessionLabels, strings as s } from './strings.ts'
@@ -71,19 +71,22 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   useEffect(() => { void freshness.refresh(); return freshness.cancel }, [freshness])
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   useEffect(() => { void controller.refresh(); return controller.cancel }, [controller])
-  const detail = state.tablesPhase === 'ready' && state.detailPhase === 'ready' ? state.detail : null
+  const [tableFilter, setTableFilter] = useState<SessionStatus>()
+  const visibleTables = tableFilter ? state.tables.filter(table => table.status === tableFilter) : state.tables
   const [entry, setEntry] = useState<{ owner: typeof controller; sessionId: string } | null>(null)
   const inSession = entry?.owner === controller && entry.sessionId === state.selectedSessionId
+  const selectionVisible = inSession || !tableFilter || visibleTables.some(table => table.tableSessionId === state.selectedSessionId)
+  const detail = selectionVisible && state.tablesPhase === 'ready' && state.detailPhase === 'ready' ? state.detail : null
   const heading = useRef<HTMLHeadingElement>(null), moveFocus = useRef(false)
   const [receipt, setReceipt] = useState<{ owner: OrderingReadClient; outcome: Extract<BasketSubmissionResult, { kind: 'durable' }> } | null>(null)
   useEffect(() => {
     if (moveFocus.current) { heading.current?.focus(); moveFocus.current = false }
   }, [inSession])
-  const sentPanel = <section key="detail" id="sent-order-panel" className="detail-panel panel" aria-label={s.sent} aria-busy={state.detailPhase === 'loading'}>
-    {state.detailPhase === 'idle' && <p className="empty-state">{s.chooseTable}</p>}
-    {state.detailPhase === 'loading' && <p className="empty-state" role="status">{s.loadingDetail}</p>}
-    {state.detailPhase === 'notFound' && <p className="empty-state" role="status">{s.notFound}</p>}
-    {state.detailPhase === 'unavailable' && <p className="error-state" role="alert">{s.detailError}</p>}
+  const sentPanel = <section key="detail" id="sent-order-panel" className="detail-panel panel" aria-label={s.sent} aria-busy={selectionVisible && state.detailPhase === 'loading'}>
+    {(!selectionVisible || state.detailPhase === 'idle') && <p className="empty-state">{s.chooseTable}</p>}
+    {selectionVisible && state.detailPhase === 'loading' && <p className="empty-state" role="status">{s.loadingDetail}</p>}
+    {selectionVisible && state.detailPhase === 'notFound' && <p className="empty-state" role="status">{s.notFound}</p>}
+    {selectionVisible && state.detailPhase === 'unavailable' && <p className="error-state" role="alert">{s.detailError}</p>}
     {detail && <><header className="session-heading"><div><h2>โต๊ะ: {detail.session.tableId}</h2><span className="badge">{sessionLabels[detail.session.status]}</span></div>
       <p>{s.readAt} <time dateTime={detail.asOf}>{time(detail.asOf)}</time></p>
       {!inSession && <button className="workspace-open" onClick={() => { moveFocus.current = true; setEntry({ owner: controller, sessionId: detail.session.tableSessionId }) }}>{s.openTableWorkspace}</button>}</header>
@@ -94,7 +97,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
     sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
     homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh() }}
-      openTables={() => { setEntry(null); openTables() }} openSystem={openSystem} />}
+      openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} />}
     systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
@@ -105,11 +108,12 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
         {inSession && ordering ? <OrderEntryWorkspace port={ordering} sessionId={state.selectedSessionId!} sent={sentPanel} onAccepted={outcome => {
           setReceipt({ owner: client, outcome }); void controller.refresh()
         }} /> : <div className={inSession ? 'session-ordering-panels' : 'ordering-panels'}>
-          {!inSession && <section key="tables" className="table-panel panel" aria-labelledby="table-list-heading"><header><h2 id="table-list-heading">{s.tables}{state.tablesPhase === 'ready' && ` (${state.tables.length})`}</h2><p>{s.partialFloorPlan}</p></header>
+          {!inSession && <section key="tables" className="table-panel panel" aria-labelledby="table-list-heading"><header><h2 id="table-list-heading">{s.tables}{state.tablesPhase === 'ready' && ` (${visibleTables.length})`}</h2><p>{s.partialFloorPlan}</p>
+            {tableFilter && <p>สถานะ: {sessionLabels[tableFilter]} <button className="refresh-button" onClick={() => setTableFilter(undefined)}>แสดงโต๊ะที่เปิดอยู่ทั้งหมด</button></p>}</header>
             {(state.tablesPhase === 'idle' || state.tablesPhase === 'loading') && <p className="empty-state" role="status">{s.loadingTables}</p>}
             {state.tablesPhase === 'unavailable' && <p className="error-state" role="alert">{s.tablesError}</p>}
-            {state.tablesPhase === 'ready' && (state.tables.length === 0 ? <p className="empty-state">{s.noTables}</p> :
-              <div className="table-grid">{state.tables.map(table => <button key={table.tableSessionId}
+            {state.tablesPhase === 'ready' && (visibleTables.length === 0 ? <p className="empty-state">{tableFilter ? "ไม่มีโต๊ะในสถานะนี้" : s.noTables}</p> :
+              <div className="table-grid">{visibleTables.map(table => <button key={table.tableSessionId}
                 className={`table-tile ${state.selectedSessionId === table.tableSessionId ? 'selected' : ''} ${table.status !== 'Ordering' ? 'payment-table' : ''}`}
                 aria-pressed={state.selectedSessionId === table.tableSessionId} aria-controls="sent-order-panel"
                 onClick={() => { void controller.selectSession(table.tableSessionId) }}>

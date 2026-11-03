@@ -122,6 +122,21 @@ describe('PC POS read-only sent orders', () => {
     expect(screen.getByRole('button', { name: /A04/ })).toBeTruthy()
   })
 
+  it('drills into a Home status without displaying a previously selected nonmatching session', async () => {
+    const user = userEvent.setup()
+    render(<App client={createPreviewReadClient()} />)
+    await user.click(await screen.findByRole('button', { name: /A04/ }))
+    await screen.findByTestId('net-total')
+    await user.click(screen.getByRole('button', { name: 'หน้าหลัก' }))
+    await user.click(screen.getByRole('button', { name: 'ดูโต๊ะรอชำระ' }))
+    expect(screen.getByRole('main', { name: 'โต๊ะ' })).toBe(document.activeElement)
+    expect(screen.getByRole('button', { name: /B12/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /A04/ })).toBeNull()
+    expect(screen.queryByTestId('net-total')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'แสดงโต๊ะที่เปิดอยู่ทั้งหมด' }))
+    expect(screen.getByRole('button', { name: /A04/ })).toBeTruthy()
+  })
+
   it('preserves the selected session and Branch totals across keyboard navigation without rereading', async () => {
     const user = userEvent.setup(), base = createPreviewReadClient()
     const sessionDetail = vi.fn(base.sessionDetail)
