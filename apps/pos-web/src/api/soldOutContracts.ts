@@ -1,5 +1,24 @@
 import { isUtcTimestamp } from './printAttentionContracts.ts'
 
+export interface SoldOutAdjustment {
+  readonly operationId: string
+  readonly sellableItemId: string
+  readonly expectedSoldOut: boolean
+  readonly soldOut: boolean
+}
+
+export type SoldOutAdjustmentOutcome = 'Applied' | 'Replayed' | 'Conflict' | 'ItemNotFound' | 'Rejected' | 'Unknown'
+
+export function soldOutAdjustmentOutcome(status: number, value: unknown): SoldOutAdjustmentOutcome {
+  if ([400, 401, 403, 413, 415].includes(status)) return 'Rejected'
+  if (!record(value) || value.schemaVersion !== 1) return 'Unknown'
+  const outcome = value.outcome
+  if (status === 200 && (outcome === 'Applied' || outcome === 'Replayed')) return outcome
+  if (status === 409 && outcome === 'Conflict') return outcome
+  if (status === 404 && outcome === 'ItemNotFound') return outcome
+  return 'Unknown'
+}
+
 export interface SoldOutItem {
   readonly sellableItemId: string
   readonly displayName: string | null

@@ -1,4 +1,4 @@
-import { parseSoldOutPage, type SoldOutPage } from './soldOutContracts.ts'
+import { parseSoldOutPage, soldOutAdjustmentOutcome, type SoldOutAdjustment, type SoldOutAdjustmentOutcome, type SoldOutPage } from './soldOutContracts.ts'
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
 import { isOutboxSequence, parseCloudOutboxPage, type CloudOutboxPage } from './cloudOutboxContracts.ts'
@@ -260,6 +260,10 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async adjustSoldOut(adjustment: SoldOutAdjustment, signal?: AbortSignal): Promise<SoldOutAdjustmentOutcome> {
+      const result = await request('/sold-out/adjustments', 'POST', JSON.stringify(adjustment), signal)
+      return 'reason' in result ? 'Unknown' : soldOutAdjustmentOutcome(result.status, result.body)
+    },
     async soldOut(search: string, offset: number, signal?: AbortSignal): Promise<QueryResult<SoldOutPage>> {
       const query = new URLSearchParams({ search, offset: String(offset) })
       const result = await request(`/sold-out?${query}`, 'GET', undefined, signal)

@@ -24,3 +24,49 @@ it('shows only six recent rows and searches the complete branch list', async () 
   expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(1)
   expect(read).toHaveBeenLastCalledWith('ข้าว', 0, expect.any(AbortSignal))
 })
+
+it('sets Sold Out and manually retries an uncertain response with the original operation ID', async () => {
+  const user = userEvent.setup()
+  const read = vi.fn<NonNullable<OrderingReadClient['soldOut']>>().mockResolvedValue({
+    kind: 'ok', value: { totalCount: 0, nextOffset: null, items: [] },
+  })
+  const adjust = vi.fn<NonNullable<OrderingReadClient['adjustSoldOut']>>()
+    .mockResolvedValueOnce('Unknown').mockResolvedValueOnce('Replayed')
+  render(<HomeSoldOut read={read} adjust={adjust} />)
+  await user.click(screen.getByRole('button', { name: 'ดูรายการ Sold Out ทั้งหมด' }))
+  await user.type(screen.getByRole('textbox', { name: 'รหัสสินค้าที่จะตั้ง Sold Out' }), 'ITEM-01')
+  await user.click(screen.getByRole('button', { name: 'ตั้ง Sold Out' }))
+  const retry = await screen.findByRole('button', { name: 'ลองคำขอเดิมอีกครั้ง' })
+  expect(adjust).toHaveBeenCalledTimes(1)
+  const request = adjust.mock.calls[0][0]
+  expect(request).toMatchObject({ sellableItemId: 'ITEM-01', expectedSoldOut: false, soldOut: true })
+  await user.click(retry)
+  await screen.findByText('ระบบเคยบันทึกคำขอนี้แล้ว')
+  expect(adjust).toHaveBeenLastCalledWith(request, expect.any(AbortSignal))
+})
+
+it('clears a Sold Out item only after confirmation', async () => {
+  const user = userEvent.setup()
+  const read = vi.fn<NonNullable<OrderingReadClient['soldOut']>>().mockResolvedValue({
+    kind: 'ok', value: { totalCount: 1, nextOffset: null, items: [{
+      sellableItemId: 'ITEM-01', displayName: 'ข้าวผัด', stationId: null,
+      changedByEmployeeId: 'EMP1', changedAt: '2026-11-03T00:00:00Z',
+    }] },
+  })
+  const adjust = vi.fn<NonNullable<OrderingReadClient['adjustSoldOut']>>().mockResolvedValue('Applied')
+  const view = render(<HomeSoldOut read={read} adjust={adjust} />)
+  const dialog = view.container.querySelector('dialog')!
+  dialog.showModal = () => { dialog.open = true }
+  dialog.close = () => { dialog.open = false }
+  await user.click(screen.getByRole('button', { name: 'ดูรายการ Sold Out ทั้งหมด' }))
+  await user.click(await screen.findByRole('button', { name: 'ยกเลิก Sold Out ข้าวผัด' }))
+  expect(adjust).not.toHaveBeenCalled()
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'กลับ' }))
+  expect(adjust).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'ยกเลิก Sold Out ข้าวผัด' }))
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'ยืนยันยกเลิก Sold Out' }))
+  await screen.findByText('บันทึก Sold Out แล้ว')
+  expect(adjust).toHaveBeenCalledWith(expect.objectContaining({
+    sellableItemId: 'ITEM-01', expectedSoldOut: true, soldOut: false,
+  }), expect.any(AbortSignal))
+})

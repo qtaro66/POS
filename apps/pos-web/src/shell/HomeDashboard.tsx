@@ -10,8 +10,8 @@ import type { FreshnessState } from './dataFreshness.ts'
 import type { SystemFocusTarget } from './PcPosShell.tsx'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 
-export function HomeDashboard({ state, onRefresh, openTables, openSystem, client, freshness }: {
-  state: OrderingReadState; onRefresh: () => void; openTables: (status?: SessionStatus) => void; openSystem: (target?: SystemFocusTarget) => void; client: OrderingReadClient; freshness: FreshnessState
+export function HomeDashboard({ state, onRefresh, openTables, openSystem, client, freshness, canAdjust }: {
+  state: OrderingReadState; onRefresh: () => void; openTables: (status?: SessionStatus) => void; openSystem: (target?: SystemFocusTarget) => void; client: OrderingReadClient; freshness: FreshnessState; canAdjust: boolean
 }) {
   const ready = state.tablesPhase === 'ready'
   const loading = state.tablesPhase === 'idle' || state.tablesPhase === 'loading'
@@ -28,7 +28,7 @@ export function HomeDashboard({ state, onRefresh, openTables, openSystem, client
       </div>)}
     </dl>
     <button className="refresh-button" onClick={() => openTables()}>เปิดรายการโต๊ะ</button>
-    <HomeSoldOut read={client.soldOut} />
+    <HomeSoldOut read={client.soldOut} adjust={canAdjust ? client.adjustSoldOut : undefined} />
     <BranchReadinessPanel read={client.branchReadiness} />
     <HomeCloudStatus port={client} freshness={freshness} openDetails={() => openSystem('cloud-outbox-title')} />
     <HomePrintAttention port={client} openDetails={() => openSystem('print-attention-title')} />
