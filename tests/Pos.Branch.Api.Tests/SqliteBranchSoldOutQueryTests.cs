@@ -6,7 +6,7 @@ namespace Pos.Branch.Api.Tests;
 public sealed class SqliteBranchSoldOutQueryTests
 {
     [Fact]
-    public async Task Reads_current_branch_overrides_and_searches_the_active_catalog_without_writing()
+    public async Task Reads_without_writing_and_applies_audited_branch_adjustments()
     {
         var directory = Path.Combine(Path.GetTempPath(), "pos-sold-out-" + Guid.NewGuid().ToString("N"));
         var path = Path.Combine(directory, "branch.db");
@@ -49,6 +49,32 @@ public sealed class SqliteBranchSoldOutQueryTests
             Assert.Empty((await query.ReadAsync("B1", "%", 0, CancellationToken.None)).Items);
             Assert.Equal("I2", Assert.Single((await query.ReadAsync("B1", "", 1, CancellationToken.None)).Items).SellableItemId);
             Assert.Equal(before, await File.ReadAllBytesAsync(path));
+
+            var store = new SqliteBranchSoldOutAdjustmentStore(path);
+            var clear = new SoldOutAdjustment("OP-1", "B1", "I1", "EMP1", "DEVICE1", true, false, DateTimeOffset.UnixEpoch);
+            Assert.Equal(SoldOutAdjustmentResult.Applied, await store.ApplyAsync(clear, CancellationToken.None));
+            Assert.Equal(SoldOutAdjustmentResult.Conflict, await store.ApplyAsync(clear with { DeviceId = "DEVICE2" }, CancellationToken.None));
+            Assert.Equal(SoldOutAdjustmentResult.Conflict, await store.ApplyAsync(clear with { OperationId = "OP-2" }, CancellationToken.None));
+            var set = clear with { OperationId = "OP-3", ExpectedSoldOut = false, SoldOut = true };
+            Assert.Equal(SoldOutAdjustmentResult.ItemNotFound, await store.ApplyAsync(set with { SellableItemId = "MISSING" }, CancellationToken.None));
+            Assert.Equal(SoldOutAdjustmentResult.Applied, await store.ApplyAsync(set, CancellationToken.None));
+            Assert.Equal(SoldOutAdjustmentResult.Replayed, await store.ApplyAsync(clear, CancellationToken.None));
+            Assert.Equal(2, (await query.ReadAsync("B1", "", 0, CancellationToken.None)).TotalCount);
+            Assert.Single((await query.ReadAsync("B2", "", 0, CancellationToken.None)).Items);
+
+            await using var auditConnection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString());
+            await auditConnection.OpenAsync();
+            using var audit = auditConnection.CreateCommand();
+            audit.CommandText = """
+                SELECT count(*) FROM branch_sold_out_audit WHERE branch_id = 'B1' AND sellable_item_id = 'I1'
+                    AND employee_id = 'EMP1' AND device_id = 'DEVICE1' AND previous_sold_out <> current_sold_out;
+                """;
+            Assert.Equal(2L, await audit.ExecuteScalarAsync());
         }
         finally
         {
