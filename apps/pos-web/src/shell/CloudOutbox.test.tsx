@@ -13,6 +13,20 @@ const empty = (): Result => ({ kind: 'ok', value: { schemaVersion: 1, observedAt
   summary: { unacknowledgedCount: 0, pendingCount: 0, processingCount: 0, failedCount: 0, otherCount: 0 }, items: [], nextAfterSequence: null } })
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 
+it('shows branch cloud observations on Home and focuses the detailed outbox', async () => {
+  const fixture = createOrderingPreview(), user = userEvent.setup()
+  render(<App client={fixture.client} />)
+  await user.click(screen.getByRole('button', { name: 'หน้าหลัก' }))
+  const summary = within(screen.getByRole('region', { name: 'ข้อมูลส่วนกลาง' }))
+  await summary.findByText('2')
+  expect(summary.getByText('ซิงก์ข้อมูลพนักงานล่าสุด').nextElementSibling?.querySelector('time')?.dateTime).toBe('2026-11-01T08:45:00Z')
+  expect(summary.getByText('ส่วนกลางยืนยันรับล่าสุด').nextElementSibling?.querySelector('time')?.dateTime).toBe('2026-11-01T09:00:00Z')
+  expect(summary.getByText(/สถานะการเชื่อมต่อส่วนกลางขณะนี้ยังไม่ทราบ/)).toBeTruthy()
+  await user.click(summary.getByRole('button', { name: 'เปิดรายละเอียด Outbox' }))
+  expect(screen.getByRole('heading', { name: 'ข้อมูลรอส่วนกลางยืนยันรับ' })).toBe(document.activeElement)
+  expect(fixture.state.postedBodies).toHaveLength(0)
+})
+
 describe('PC POS read-only cloud outbox workspace', () => {
   it('reads only in System, preserves sequence digits, pages and refreshes without sending', async () => {
     const fixture = createOrderingPreview(), user = userEvent.setup(), read = vi.fn(fixture.client.cloudOutboxStatus)

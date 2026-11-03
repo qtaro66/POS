@@ -18,7 +18,7 @@ export function CloudOutboxPanel({ port }: { port: CloudOutboxPort }) {
   }, [state, controller])
   const page = state.page
   return <section className="cloud-outbox" aria-labelledby="cloud-outbox-title" aria-busy={state.phase === 'loading'}>
-    <header><h3 id="cloud-outbox-title">ข้อมูลรอส่วนกลางยืนยันรับ</h3><button className="refresh-button" disabled={state.phase === 'loading'} onClick={() => { void controller.refresh() }}>อ่าน Outbox ใหม่</button></header>
+    <header><h3 id="cloud-outbox-title" tabIndex={-1}>ข้อมูลรอส่วนกลางยืนยันรับ</h3><button className="refresh-button" disabled={state.phase === 'loading'} onClick={() => { void controller.refresh() }}>อ่าน Outbox ใหม่</button></header>
     <p>อ่านอย่างเดียว ไม่ส่งข้อมูล ไม่ Retry หรือ Replay ข้อมูลที่ยังไม่ยืนยันรับยังคงอยู่ใน Outbox หลัก ไม่นับคิวกู้คืน Sequence</p>
     {state.phase === 'unsupported' && <p role="status">ยังไม่เชื่อมต่อข้อมูล Outbox</p>}
     {state.phase === 'loading' && <p role="status">กำลังอ่าน Outbox</p>}
