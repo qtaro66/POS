@@ -1,3 +1,4 @@
+import { parseSoldOutPage, type SoldOutPage } from './soldOutContracts.ts'
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
 import { isOutboxSequence, parseCloudOutboxPage, type CloudOutboxPage } from './cloudOutboxContracts.ts'
@@ -259,6 +260,14 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    async soldOut(search: string, offset: number, signal?: AbortSignal): Promise<QueryResult<SoldOutPage>> {
+      const query = new URLSearchParams({ search, offset: String(offset) })
+      const result = await request(`/sold-out?${query}`, 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      const page = parseSoldOutPage(result.body, offset)
+      return page ? { kind: 'ok', value: page } : { kind: 'unavailable', reason: 'protocol' }
+    },
     async branchReadiness(signal?: AbortSignal): Promise<QueryResult<{ checkedAt: string; orderingDatabaseReady: boolean }>> {
       const result = await request('/branch-readiness', 'GET', undefined, signal)
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
