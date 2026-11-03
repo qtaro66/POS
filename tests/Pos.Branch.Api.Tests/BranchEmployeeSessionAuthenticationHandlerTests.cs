@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using Pos.Application.Security;
@@ -144,6 +145,7 @@ public sealed class BranchEmployeeSessionAuthenticationHandlerTests
         services.AddSingleton<IBranchDeviceCredentialValidator>(
             new ActiveDeviceValidator());
         services.AddSingleton<BranchDeviceTokenAuthenticationService>();
+        services.AddSingleton(new BranchProvisionedDeviceRoles(new ConfigurationBuilder().Build()));
         services.AddSingleton(sessionValidator);
         services.AddSingleton<BranchEmployeeSessionAuthenticationService>();
         services

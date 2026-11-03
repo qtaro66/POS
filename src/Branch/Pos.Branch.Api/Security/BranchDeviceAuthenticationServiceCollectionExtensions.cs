@@ -42,6 +42,7 @@ public static class BranchDeviceAuthenticationServiceCollectionExtensions
             return new SqliteBranchDeviceCredentialValidator(options.DatabasePath.Trim());
         });
         services.TryAddSingleton<BranchDeviceTokenAuthenticationService>();
+        services.TryAddSingleton(new BranchProvisionedDeviceRoles(configuration));
         services
             .AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, BranchDeviceAuthenticationHandler>(

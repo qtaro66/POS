@@ -8,6 +8,7 @@ public static class BranchPosClaimTypes
 {
     public const string BranchId = "pos_branch_id";
     public const string DeviceId = "pos_device_id";
+    public const string DeviceRole = "pos_device_role";
     public const string EmployeeId = "pos_employee_id";
 }
 
