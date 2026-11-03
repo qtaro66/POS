@@ -42,11 +42,32 @@ public sealed class BranchDeviceAuthenticationHandlerTests
             "DEVICE-01",
             principal.FindFirst(BranchPosClaimTypes.DeviceId)?.Value);
         Assert.Null(principal.FindFirst(BranchPosClaimTypes.EmployeeId));
+        Assert.Null(principal.FindFirst(BranchPosClaimTypes.DeviceRole));
         Assert.False(AuthenticatedBranchRequestIdentityResolver.TryResolve(
             principal,
             out var requestIdentity));
         Assert.Null(requestIdentity);
         Assert.Equal(1, validator.CallCount);
+    }
+
+    [Theory]
+    [InlineData("BRANCH-01", "PcPos", "PcPos")]
+    [InlineData("BRANCH-01", "Mobile", "Mobile")]
+    [InlineData("BRANCH-02", "PcPos", null)]
+    [InlineData("BRANCH-01", "pcpos", null)]
+    public async Task Role_comes_from_matching_server_provisioning(string branch, string role, string? expected)
+    {
+        await using var database = await AuthenticationDatabase.CreateAsync();
+        var validator = new RecordingValidator(new VerifiedBranchDevice("BRANCH-01", "DEVICE-01"));
+        using var provider = Provider(database.Path, validator, branch, role);
+        var context = Context(provider);
+        context.Request.Headers.Authorization = $"Device {BranchDeviceCredentialFormat.Generate().Token}";
+        context.Request.Headers["X-Device-Role"] = "PcPos";
+
+        var result = await AuthenticateAsync(provider, context);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expected, result.Principal?.FindFirst(BranchPosClaimTypes.DeviceRole)?.Value);
     }
 
     [Fact]
@@ -162,13 +183,18 @@ public sealed class BranchDeviceAuthenticationHandlerTests
 
     private static ServiceProvider Provider(
         string databasePath,
-        IBranchDeviceCredentialValidator validator)
+        IBranchDeviceCredentialValidator validator,
+        string? provisionedBranch = null,
+        string? provisionedRole = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["BranchDeviceAuthentication:Enabled"] = "true",
-                ["BranchDeviceAuthentication:DatabasePath"] = databasePath
+                ["BranchDeviceAuthentication:DatabasePath"] = databasePath,
+                ["BranchDeviceAuthentication:ProvisionedRoles:0:BranchId"] = provisionedBranch,
+                ["BranchDeviceAuthentication:ProvisionedRoles:0:DeviceId"] = "DEVICE-01",
+                ["BranchDeviceAuthentication:ProvisionedRoles:0:Role"] = provisionedRole
             })
             .Build();
         var services = new ServiceCollection();

@@ -20,16 +20,19 @@ public sealed class BranchDeviceAuthenticationHandler :
     private const string FailureMessage = "Invalid Branch device credential.";
 
     private readonly BranchDeviceTokenAuthenticationService _authentication;
+    private readonly BranchProvisionedDeviceRoles _roles;
 
     public BranchDeviceAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
-        BranchDeviceTokenAuthenticationService authentication)
+        BranchDeviceTokenAuthenticationService authentication,
+        BranchProvisionedDeviceRoles roles)
         : base(options, logger, encoder)
     {
         _authentication = authentication ??
             throw new ArgumentNullException(nameof(authentication));
+        _roles = roles;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -59,6 +62,10 @@ public sealed class BranchDeviceAuthenticationHandler :
             new Claim(BranchPosClaimTypes.DeviceId, device.DeviceId)
         };
         var identity = new ClaimsIdentity(claims, Scheme.Name);
+        if (_roles.Resolve(device) is { } role)
+        {
+            identity.AddClaim(new Claim(BranchPosClaimTypes.DeviceRole, role));
+        }
         var principal = new ClaimsPrincipal(identity);
         return AuthenticateResult.Success(
             new AuthenticationTicket(principal, Scheme.Name));
