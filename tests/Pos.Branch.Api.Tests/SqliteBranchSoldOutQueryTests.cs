@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
+using Pos.Branch.Api.Ordering;
 using Pos.Branch.Infrastructure.Sqlite;
 
 namespace Pos.Branch.Api.Tests;
@@ -51,8 +53,13 @@ public sealed class SqliteBranchSoldOutQueryTests
             Assert.Equal(before, await File.ReadAllBytesAsync(path));
 
             var store = new SqliteBranchSoldOutAdjustmentStore(path);
-            var clear = new SoldOutAdjustment("OP-1", "B1", "I1", "EMP1", "DEVICE1", true, false, DateTimeOffset.UnixEpoch);
-            Assert.Equal(SoldOutAdjustmentResult.Applied, await store.ApplyAsync(clear, CancellationToken.None));
+            var operationId = Guid.NewGuid();
+            var clear = new SoldOutAdjustment(operationId.ToString("D"), "B1", "I1", "EMP1", "DEVICE1", true, false, DateTimeOffset.UnixEpoch);
+            var result = await BranchSoldOutAdjustmentHttpHandler.HandleAsync(
+                BranchSoldOutAdjustmentHttpHandlerTests.Principal("PcPos", null, true),
+                new(operationId, "I1", true, false), new BranchOrderingRuntime(path, TimeProvider.System), CancellationToken.None);
+            Assert.Equal(200, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+            Assert.Equal(1, (await query.ReadAsync("B1", "", 0, CancellationToken.None)).TotalCount);
             Assert.Equal(SoldOutAdjustmentResult.Conflict, await store.ApplyAsync(clear with { DeviceId = "DEVICE2" }, CancellationToken.None));
             Assert.Equal(SoldOutAdjustmentResult.Conflict, await store.ApplyAsync(clear with { OperationId = "OP-2" }, CancellationToken.None));
             var set = clear with { OperationId = "OP-3", ExpectedSoldOut = false, SoldOut = true };
