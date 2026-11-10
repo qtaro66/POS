@@ -239,7 +239,16 @@ counts them from when the Draft was started, the literal reading of "kept
 
 ### MOB-12 Sold Out for permitted employees
 - Approved: yes
-- UI: not verified | Integration: not verified | Device validation: n/a
+- UI: verified (fixtures) | Integration: not verified | Device validation: not verified
+- UI evidence: PR #305 merged as 81057e3. The clean-commit verification gate
+  passed on 23dcbf3, including Mobile read-only controls and same-operation
+  retry tests. The merged content matches the tested source.
+- Integration evidence to date: PR #306 merged as e21e2e41 with matching
+  content and a clean-commit verification PASS on 82f9195. The Branch
+  permission refresh test uses a simulated Central HTTP response. Direct
+  Kestrel mTLS and the Mobile workflow still require deployment validation.
+- Verification procedure: [Mobile Sold Out deployment verification](../../docs/architecture/0190-mobile-sold-out-deployment-verification.md).
+- PRs: https://github.com/qtaro66/POS/pull/305 and https://github.com/qtaro66/POS/pull/306
 - Integration needs: CAP-13
 - Depends on: MOB-05
 - Acceptance: set or clear only with `SetSoldOut`; read-only otherwise (D08.2).
