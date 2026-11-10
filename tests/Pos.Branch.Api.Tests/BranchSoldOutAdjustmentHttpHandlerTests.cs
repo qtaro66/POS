@@ -14,12 +14,12 @@ public sealed class BranchSoldOutAdjustmentHttpHandlerTests
     [InlineData("PcPos", null, false, 401)]
     [InlineData("PcPos", null, true, 503)]
     public async Task Only_provisioned_pc_pos_with_employee_identity_reaches_the_store(
-        string? deviceRole, string? employeeRole, bool employeePresent, int expectedStatus)
+        string? deviceRole, string? unrelatedRole, bool employeePresent, int expectedStatus)
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".db");
         var runtime = new BranchOrderingRuntime(path, TimeProvider.System);
         var result = await BranchSoldOutAdjustmentHttpHandler.HandleAsync(
-            Principal(deviceRole, employeeRole, employeePresent), new(Guid.NewGuid(), "ITEM-01", false, true),
+            Principal(deviceRole, unrelatedRole, employeePresent), new(Guid.NewGuid(), "ITEM-01", false, true),
             runtime, CancellationToken.None);
         Assert.Equal(expectedStatus, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
         Assert.False(File.Exists(path));
@@ -37,15 +37,18 @@ public sealed class BranchSoldOutAdjustmentHttpHandlerTests
         Assert.Equal(400, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
     }
 
-    internal static ClaimsPrincipal Principal(string? deviceRole, string? employeeRole, bool employeePresent)
+    internal static ClaimsPrincipal Principal(string? deviceRole, string? unrelatedRole, bool employeePresent)
     {
-        var device = new ClaimsIdentity(
+        var employee = new ClaimsIdentity(
             [new(BranchPosClaimTypes.BranchId, "B1"), new(BranchPosClaimTypes.DeviceId, "DEVICE1")],
-            BranchDeviceAuthenticationDefaults.SchemeName);
-        var employee = new ClaimsIdentity(BranchEmployeeSessionAuthenticationDefaults.SchemeName);
-        if (deviceRole is not null) { device.AddClaim(new(BranchPosClaimTypes.DeviceRole, deviceRole)); }
-        if (employeeRole is not null) { employee.AddClaim(new(BranchPosClaimTypes.DeviceRole, employeeRole)); }
+            BranchEmployeeSessionAuthenticationDefaults.SchemeName);
+        if (deviceRole is not null) { employee.AddClaim(new(BranchPosClaimTypes.DeviceRole, deviceRole)); }
         if (employeePresent) { employee.AddClaim(new(BranchPosClaimTypes.EmployeeId, "EMP1")); }
-        return new ClaimsPrincipal([device, employee]);
+        var principal = new ClaimsPrincipal(employee);
+        if (unrelatedRole is not null)
+        {
+            principal.AddIdentity(new ClaimsIdentity([new(BranchPosClaimTypes.DeviceRole, unrelatedRole)], "Unrelated"));
+        }
+        return principal;
     }
 }

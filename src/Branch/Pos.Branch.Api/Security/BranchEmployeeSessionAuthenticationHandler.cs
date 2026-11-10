@@ -73,6 +73,14 @@ public sealed class BranchEmployeeSessionAuthenticationHandler :
             new Claim(BranchPosClaimTypes.EmployeeId, session.EmployeeId)
         };
         var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var authenticatedDeviceClaims = deviceResult.Principal!.Identities
+            .Where(candidate => candidate.IsAuthenticated && candidate.AuthenticationType == BranchDeviceAuthenticationDefaults.SchemeName)
+            .SelectMany(candidate => candidate.Claims);
+        if (AuthenticatedBranchClaimResolver.TryGetSingle(authenticatedDeviceClaims, BranchPosClaimTypes.DeviceRole, out var role)
+            && role is "PcPos" or "Mobile")
+        {
+            identity.AddClaim(new Claim(BranchPosClaimTypes.DeviceRole, role));
+        }
         var principal = new ClaimsPrincipal(identity);
         return AuthenticateResult.Success(
             new AuthenticationTicket(principal, Scheme.Name));

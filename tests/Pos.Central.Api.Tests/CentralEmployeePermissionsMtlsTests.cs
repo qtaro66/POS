@@ -156,9 +156,9 @@ public sealed class CentralEmployeePermissionsMtlsTests
         new ClaimsIdentity([
             new Claim(BranchPosClaimTypes.BranchId, "B1"),
             new Claim(BranchPosClaimTypes.DeviceId, "D1"),
-            new Claim(BranchPosClaimTypes.DeviceRole, "Mobile")
-        ], BranchDeviceAuthenticationDefaults.SchemeName),
-        new ClaimsIdentity([new Claim(BranchPosClaimTypes.EmployeeId, "E1")], BranchEmployeeSessionAuthenticationDefaults.SchemeName)
+            new Claim(BranchPosClaimTypes.DeviceRole, "Mobile"),
+            new Claim(BranchPosClaimTypes.EmployeeId, "E1")
+        ], BranchEmployeeSessionAuthenticationDefaults.SchemeName)
     ]);
 
     private static async Task InitializeBranchAsync(string path, CancellationToken cancellationToken)
