@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace Pos.Branch.Api.Synchronization;
@@ -15,7 +16,22 @@ public sealed class BranchCertificateHttpHandlerFactory(IConfiguration configura
             throw new InvalidOperationException("Branch mTLS requires absolute certificate and private key paths.");
         }
 
-        return new CertificateHandler(X509Certificate2.CreateFromPemFile(certificatePath, privateKeyPath));
+        var certificate = X509Certificate2.CreateFromPemFile(certificatePath, privateKeyPath);
+        if (!OperatingSystem.IsWindows()) { return new CertificateHandler(certificate); }
+
+        // Schannel requires a key backed by the Windows key store.
+        using (certificate)
+        {
+            var pkcs12 = certificate.Export(X509ContentType.Pkcs12);
+            try
+            {
+                return new CertificateHandler(X509CertificateLoader.LoadPkcs12(pkcs12, null));
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(pkcs12);
+            }
+        }
     }
 
     private sealed class CertificateHandler : HttpClientHandler
