@@ -1,4 +1,5 @@
 using Pos.Branch.Api.Commands;
+using Pos.Branch.Api.Hosting;
 using Pos.Branch.Api.Ordering;
 using Pos.Branch.Api.Printing;
 using Pos.Branch.Api.Security;
@@ -75,5 +76,6 @@ app.MapBranchPairingRedemptionEndpointIfEnabled(builder.Configuration);
 app.MapBranchEmployeeSessionLoginEndpointIfEnabled(builder.Configuration);
 app.MapBranchEmployeeDataSyncStatusEndpointIfEnabled(builder.Configuration);
 app.MapBranchCloudDataSentStatusEndpointIfEnabled(builder.Configuration);
+app.MapBranchMobileIfEnabled(builder.Configuration);
 
 app.Run();
