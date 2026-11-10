@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MenuGateway } from '../adapters/ports.ts'
 import type { Menu } from '../domain/menu.ts'
 import type { EmployeeSession, PairedDevice } from '../domain/types.ts'
@@ -28,31 +28,26 @@ export function useMenu(
   employee: EmployeeSession,
 ): MenuData {
   const [attempt, setAttempt] = useState(0)
-  // The result is tagged with the request it answers, so a new table session or
-  // retry shows `loading` until its own answer arrives.
-  const [result, setResult] = useState<{ readonly request: string; readonly state: MenuState } | null>(
-    null,
-  )
-  const request = tableSessionId ? `${tableSessionId}#${attempt}` : null
+  const request = useMemo(() => ({ gateway, device, employee, tableSessionId, attempt }),
+    [gateway, device, employee, tableSessionId, attempt])
+  const [result, setResult] = useState<{ readonly request: typeof request; readonly state: MenuState }>()
 
   useEffect(() => {
-    if (!tableSessionId || !request) return
-    let active = true
-    gateway.loadMenu(device, tableSessionId, employee).then(
+    if (!tableSessionId) return
+    const controller = new AbortController()
+    void gateway.loadMenu(device, tableSessionId, employee, controller.signal).then(
       (outcome) => {
-        if (!active) return
+        if (controller.signal.aborted) return
         setResult({
           request,
           state: outcome.kind === 'ok' ? { status: 'ready', menu: outcome.menu } : { status: 'unreachable' },
         })
       },
       () => {
-        if (active) setResult({ request, state: { status: 'failed' } })
+        if (!controller.signal.aborted) setResult({ request, state: { status: 'failed' } })
       },
     )
-    return () => {
-      active = false
-    }
+    return () => controller.abort()
   }, [device, employee, gateway, request, tableSessionId])
 
   const retry = useCallback(() => setAttempt((count) => count + 1), [])
