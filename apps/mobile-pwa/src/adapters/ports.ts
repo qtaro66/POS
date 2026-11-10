@@ -72,7 +72,7 @@ export type ActiveTablesOutcome =
   | { readonly kind: 'unreachable' }
 
 export interface ActiveTablesGateway {
-  listActiveTables(device: PairedDevice, employee?: EmployeeSession): Promise<ActiveTablesOutcome>
+  listActiveTables(device: PairedDevice, employee?: EmployeeSession, signal?: AbortSignal): Promise<ActiveTablesOutcome>
 }
 
 export type MenuOutcome =
@@ -84,7 +84,7 @@ export type MenuOutcome =
  * the session was opened and the current sellability (D08.3, D08.4, D09).
  */
 export interface MenuGateway {
-  loadMenu(device: PairedDevice, tableSessionId: string, employee?: EmployeeSession): Promise<MenuOutcome>
+  loadMenu(device: PairedDevice, tableSessionId: string, employee?: EmployeeSession, signal?: AbortSignal): Promise<MenuOutcome>
 }
 
 /**

@@ -56,9 +56,9 @@ function optionGroup(value: unknown): OptionGroup {
 
 export function createOrderingReadGateways(request: AuthenticatedBranchRequest): { tables: ActiveTablesGateway; menu: MenuGateway } {
   return {
-    tables: { async listActiveTables(device, employee) {
+    tables: { async listActiveTables(device, employee, signal) {
       if (!employee) return { kind: 'unreachable' }
-      const response = await request(device, employee, '/api/v1/ordering/table-sessions')
+      const response = await request(device, employee, '/api/v1/ordering/table-sessions', signal)
       if (response.status !== 200) return { kind: 'unreachable' }
       const body = object(response.value)
       if (body.schemaVersion !== 1 || body.includesAvailableTables !== false) throw new Error('Invalid active table response.')
@@ -71,9 +71,9 @@ export function createOrderingReadGateways(request: AuthenticatedBranchRequest):
       })
       return { kind: 'ok', snapshot: { tables, receivedAt: new Date().toISOString() } }
     } },
-    menu: { async loadMenu(device, sessionId, employee) {
+    menu: { async loadMenu(device, sessionId, employee, signal) {
       if (!employee) return { kind: 'unreachable' }
-      const response = await request(device, employee, `/api/v1/ordering/table-sessions/${encodeURIComponent(sessionId)}/menu`)
+      const response = await request(device, employee, `/api/v1/ordering/table-sessions/${encodeURIComponent(sessionId)}/menu`, signal)
       if (response.status !== 200) return { kind: 'unreachable' }
       const body = object(response.value)
       if (body.schemaVersion !== 1 || body.tableSessionId !== sessionId) throw new Error('Invalid Branch menu response.')

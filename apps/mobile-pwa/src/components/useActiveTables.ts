@@ -1,13 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ActiveTablesGateway } from '../adapters/ports.ts'
 import type { ActiveTablesSnapshot, EmployeeSession, PairedDevice } from '../domain/types.ts'
 
 export type TablesProblem = 'unreachable' | 'failed'
-
-interface FetchResult {
-  readonly snapshot: ActiveTablesSnapshot | null
-  readonly problem: TablesProblem | null
-}
 
 export interface ActiveTables {
   /** Last list received from the Branch Service; kept when a later refresh fails. */
@@ -22,42 +17,38 @@ export interface ActiveTables {
  * shell owns the result so every screen shows the same last-known list.
  */
 export function useActiveTables(device: PairedDevice, tables: ActiveTablesGateway, employee: EmployeeSession): ActiveTables {
-  const [snapshot, setSnapshot] = useState<ActiveTablesSnapshot | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [problem, setProblem] = useState<TablesProblem | null>(null)
-
-  const fetchTables = useCallback(async (): Promise<FetchResult> => {
-    try {
-      const outcome = await tables.listActiveTables(device, employee)
-      return outcome.kind === 'ok'
-        ? { snapshot: outcome.snapshot, problem: null }
-        : { snapshot: null, problem: 'unreachable' }
-    } catch {
-      return { snapshot: null, problem: 'failed' }
-    }
-  }, [device, employee, tables])
-
-  const apply = useCallback((result: FetchResult) => {
-    // A failed refresh keeps the last snapshot; it is shown together with the warning.
-    if (result.snapshot) setSnapshot(result.snapshot)
-    setProblem(result.problem)
-    setLoading(false)
-  }, [])
-
-  const refresh = useCallback(() => {
-    setLoading(true)
-    void fetchTables().then(apply)
-  }, [apply, fetchTables])
+  const scope = useMemo(() => ({ device, employee, tables }), [device, employee, tables])
+  const [attempt, setAttempt] = useState(0)
+  const request = useMemo(() => ({ scope, attempt }), [scope, attempt])
+  const [result, setResult] = useState<{
+    request: typeof request; snapshot: ActiveTablesSnapshot | null; problem: TablesProblem | null
+  }>()
+  const refresh = useCallback(() => setAttempt(count => count + 1), [])
 
   useEffect(() => {
-    let active = true
-    void fetchTables().then((result) => {
-      if (active) apply(result)
-    })
-    return () => {
-      active = false
+    const controller = new AbortController()
+    function apply(snapshot: ActiveTablesSnapshot | null, problem: TablesProblem | null) {
+      if (controller.signal.aborted) return
+      setResult(previous => ({
+        request,
+        snapshot: snapshot ?? (previous?.request.scope === scope ? previous.snapshot : null),
+        problem,
+      }))
     }
-  }, [apply, fetchTables])
+    void (async () => {
+      try {
+        const outcome = await tables.listActiveTables(device, employee, controller.signal)
+        if (outcome.kind === 'ok') apply(outcome.snapshot, null)
+        else apply(null, 'unreachable')
+      } catch { apply(null, 'failed') }
+    })()
+    return () => controller.abort()
+  }, [device, employee, request, scope, tables])
 
-  return { snapshot, loading, problem, refresh }
+  return {
+    snapshot: result?.request.scope === scope ? result.snapshot : null,
+    loading: result?.request !== request,
+    problem: result?.request === request ? result.problem : null,
+    refresh,
+  }
 }
