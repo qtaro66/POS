@@ -66,7 +66,7 @@ export interface ActiveTable {
   readonly tableSessionId: string
   readonly status: TableSessionStatus
   readonly tableVersion: number
-  readonly openedAt: string
+  readonly openedAt: string | null
 }
 
 export interface ActiveTablesSnapshot {

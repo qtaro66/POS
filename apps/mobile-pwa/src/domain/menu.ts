@@ -1,8 +1,7 @@
 /**
  * Mobile view model of the menu for one table session (requirements D08.3,
  * D08.4, D09). The Branch Service resolves prices and sellability; Mobile only
- * displays them and never calculates bill totals (D10.1). The Branch contract
- * for this menu does not exist yet (backlog CAP-07), so only fixtures fill it.
+ * displays them and never calculates bill totals (D10.1).
  */
 
 /** Price in the smallest currency unit (satang), as resolved by the Branch Service. */
@@ -41,9 +40,9 @@ export interface OptionGroup {
 
 export interface MenuItem {
   readonly sellableItemId: string
-  readonly code: string
+  readonly code: string | null
   readonly name: string
-  readonly categoryId: string
+  readonly categoryId: string | null
   readonly price: MinorAmount
   readonly availability: Availability
   readonly optionGroups: readonly OptionGroup[]

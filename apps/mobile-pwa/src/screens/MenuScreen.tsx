@@ -83,7 +83,7 @@ export function MenuScreen({ table, menu, draft, message, onChooseItem, onViewBa
                     >
                       <span className="menu-item__name">{item.name}</span>
                       <span className="menu-item__meta">
-                        <span className="muted">{item.code}</span>
+                        {item.code && <span className="muted">{item.code}</span>}
                         <span>{formatPrice(item.price)}</span>
                         {soldOut ? (
                           <span className="badge badge--soldOut">{text.menuSoldOut}</span>

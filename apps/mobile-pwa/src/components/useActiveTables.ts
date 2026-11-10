@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ActiveTablesGateway } from '../adapters/ports.ts'
-import type { ActiveTablesSnapshot, PairedDevice } from '../domain/types.ts'
+import type { ActiveTablesSnapshot, EmployeeSession, PairedDevice } from '../domain/types.ts'
 
 export type TablesProblem = 'unreachable' | 'failed'
 
@@ -21,21 +21,21 @@ export interface ActiveTables {
  * Loads the branch's open table sessions once per login and on request. The
  * shell owns the result so every screen shows the same last-known list.
  */
-export function useActiveTables(device: PairedDevice, tables: ActiveTablesGateway): ActiveTables {
+export function useActiveTables(device: PairedDevice, tables: ActiveTablesGateway, employee: EmployeeSession): ActiveTables {
   const [snapshot, setSnapshot] = useState<ActiveTablesSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [problem, setProblem] = useState<TablesProblem | null>(null)
 
   const fetchTables = useCallback(async (): Promise<FetchResult> => {
     try {
-      const outcome = await tables.listActiveTables(device)
+      const outcome = await tables.listActiveTables(device, employee)
       return outcome.kind === 'ok'
         ? { snapshot: outcome.snapshot, problem: null }
         : { snapshot: null, problem: 'unreachable' }
     } catch {
       return { snapshot: null, problem: 'failed' }
     }
-  }, [device, tables])
+  }, [device, employee, tables])
 
   const apply = useCallback((result: FetchResult) => {
     // A failed refresh keeps the last snapshot; it is shown together with the warning.

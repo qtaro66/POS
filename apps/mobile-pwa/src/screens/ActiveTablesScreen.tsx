@@ -70,9 +70,9 @@ export function ActiveTablesScreen({ employee, tables, onOpenTable }: ActiveTabl
               <span className={`badge badge--${table.status}`}>
                 {tableStatusText[table.status]}
               </span>
-              <span className="muted table-card__opened">
+              {table.openedAt && <span className="muted table-card__opened">
                 {text.tableOpenedAt} <Time value={table.openedAt} />
-              </span>
+              </span>}
             </li>
           ))}
         </ul>

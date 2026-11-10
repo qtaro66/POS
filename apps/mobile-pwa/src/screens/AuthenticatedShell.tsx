@@ -54,9 +54,9 @@ export function AuthenticatedShell({
   const { route, currentTable, navigate, back } = useShellNavigation((next) => {
     if (next.screen === 'tables' || next.screen === 'status') setMessage(null)
   })
-  const tables = useActiveTables(device, services.tables)
+  const tables = useActiveTables(device, services.tables, employee)
   const tableSessionId = currentTable?.tableSessionId ?? null
-  const menu = useMenu(services.menu, device, tableSessionId)
+  const menu = useMenu(services.menu, device, tableSessionId, employee)
   const readyMenu = menu.state.status === 'ready' ? menu.state.menu : null
   const draft = useDraft(
     services.drafts,

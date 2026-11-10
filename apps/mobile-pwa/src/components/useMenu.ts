@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MenuGateway } from '../adapters/ports.ts'
 import type { Menu } from '../domain/menu.ts'
-import type { PairedDevice } from '../domain/types.ts'
+import type { EmployeeSession, PairedDevice } from '../domain/types.ts'
 
 export type MenuState =
   | { readonly status: 'loading' }
@@ -25,6 +25,7 @@ export function useMenu(
   gateway: MenuGateway,
   device: PairedDevice,
   tableSessionId: string | null,
+  employee: EmployeeSession,
 ): MenuData {
   const [attempt, setAttempt] = useState(0)
   // The result is tagged with the request it answers, so a new table session or
@@ -37,7 +38,7 @@ export function useMenu(
   useEffect(() => {
     if (!tableSessionId || !request) return
     let active = true
-    gateway.loadMenu(device, tableSessionId).then(
+    gateway.loadMenu(device, tableSessionId, employee).then(
       (outcome) => {
         if (!active) return
         setResult({
@@ -52,7 +53,7 @@ export function useMenu(
     return () => {
       active = false
     }
-  }, [device, gateway, request, tableSessionId])
+  }, [device, employee, gateway, request, tableSessionId])
 
   const retry = useCallback(() => setAttempt((count) => count + 1), [])
 
