@@ -14,4 +14,6 @@ Use an isolated test Branch and Central with synthetic employees and menu items.
 | Central outage | Make only Central unreachable. Keep Mobile connected to Branch over the LAN, then restart Branch. | Branch restores the last accepted permissions. A fresh Branch with no valid cache denies Mobile writes. |
 | Certificate rotation | Register a replacement certificate, configure Branch to use it, then disable the old certificate registration. | The replacement can fetch permissions. Requests using the old registration are denied. |
 
-Record the tested commit, deployment type, OS and browser versions, scenario outcome, and a sanitized evidence reference. Verify Android Chrome and iOS Safari separately. Automated coverage includes a simulated permission refresh and a loopback TLS handshake with a generated CA trusted only inside the test. Deployment and device results require the checks above.
+Record the tested commit, deployment type, OS and browser versions, scenario outcome, and a sanitized evidence reference. Verify Android Chrome and iOS Safari separately.
+
+The loopback regression uses a generated CA trusted only inside the test. It connects the Central permission endpoint to the Branch polling service and verifies audited Sold Out writes in temporary SQLite with a synthetic Mobile identity. It restores the cached permission after Central denies the certificate, then verifies that a newer snapshot revokes write access. The deployment and device results require the checks above.
