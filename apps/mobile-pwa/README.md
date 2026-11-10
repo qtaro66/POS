@@ -108,8 +108,8 @@ payload (RFC 5737 documentation address) and the fixture PIN is
 
 ## Branch API adapters
 
-`VITE_MOBILE_ADAPTERS=branch` (build time) switches pairing and PIN login to
-the Branch API (`src/adapters/branchApi/`); any other value keeps fixtures.
+`VITE_MOBILE_ADAPTERS=branch` switches pairing, PIN login, active tables,
+session menus and Sold Out to the Branch API. Any other value keeps fixtures.
 
 - `POST /api/v1/pairing/redemptions` and `POST /api/v1/employee-sessions`,
   schema version 1, HTTPS only, no cookies, no cache, redirects refused,
@@ -120,10 +120,21 @@ the Branch API (`src/adapters/branchApi/`); any other value keeps fixtures.
   (`IndexedDbDeviceStore`); the employee session token is kept in memory only.
 - The Branch Service answers 401 for every rejected pairing code and for a
   rejected PIN or revoked device, so those cases share one message each.
-- Camera scanning, the active-table list and sync status still use fixtures:
-  there is no camera adapter and no Branch endpoint for them yet.
-- End-to-end use needs the Branch Service to serve this app from its own
-  origin or to allow it through CORS; neither exists yet.
+- Camera scanning and the sync status screen still use fixtures.
+
+### Phase 0 same-origin hosting
+
+Build from the repository root with `VITE_MOBILE_ADAPTERS=branch` in the build
+environment and run `npm run build --workspace apps/mobile-pwa -- --base=/mobile/`.
+Copy the resulting `apps/mobile-pwa/dist` to a dedicated deployment directory.
+Configure Branch with `BranchMobileHosting:Enabled=true` and an absolute
+`BranchMobileHosting:BuildDirectory` pointing to that directory.
+
+Open `/mobile/` on the Branch HTTPS origin named in the pairing QR. The
+certificate must be trusted on the device. The hosted page allows requests only
+to its own origin. Existing Branch authentication and API feature flags still
+apply. This serves the Phase 0 browser app. Installation and service-worker
+behavior require their own validation.
 
 ## Employee session expiry
 
