@@ -10,10 +10,7 @@ public static class BranchSoldOutAuthorization
     public static bool CanAdjust(ClaimsPrincipal principal, AuthenticatedBranchRequestIdentity identity,
         BranchEmployeePermissionCache? permissions)
     {
-        var claims = principal.Identities
-            .Where(candidate => candidate.IsAuthenticated && candidate.AuthenticationType == BranchDeviceAuthenticationDefaults.SchemeName)
-            .SelectMany(candidate => candidate.Claims);
-        return AuthenticatedBranchClaimResolver.TryGetSingle(claims, BranchPosClaimTypes.DeviceRole, out var role)
+        return AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role)
             && (role == "PcPos" || (role == "Mobile" && permissions?.CanSetSoldOut(identity.BranchId, identity.EmployeeId) == true));
     }
 

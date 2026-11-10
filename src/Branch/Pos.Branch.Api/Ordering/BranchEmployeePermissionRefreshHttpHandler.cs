@@ -11,11 +11,8 @@ public static class BranchEmployeePermissionRefreshHttpHandler
         BranchEmployeePermissionCache cache, BranchEmployeePermissionPollingService polling, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
-        var claims = principal.Identities
-            .Where(candidate => candidate.IsAuthenticated && candidate.AuthenticationType == BranchDeviceAuthenticationDefaults.SchemeName)
-            .SelectMany(candidate => candidate.Claims);
         if (!cache.IsForBranch(identity.BranchId)
-            || !AuthenticatedBranchClaimResolver.TryGetSingle(claims, BranchPosClaimTypes.DeviceRole, out var role)
+            || !AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role)
             || role != "PcPos") { return TypedResults.StatusCode(403); }
         if (context.Request.ContentLength > 0 || context.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody == true)
         {

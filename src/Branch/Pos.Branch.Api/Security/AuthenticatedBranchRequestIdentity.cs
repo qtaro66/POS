@@ -84,6 +84,15 @@ public static class AuthenticatedBranchDeviceIdentityResolver
 
 public static class AuthenticatedBranchRequestIdentityResolver
 {
+    internal static bool TryGetProvisionedDeviceRole(ClaimsPrincipal principal, out string role)
+    {
+        var sessionClaims = principal.Identities
+            .Where(candidate => candidate.IsAuthenticated
+                && candidate.AuthenticationType == BranchEmployeeSessionAuthenticationDefaults.SchemeName)
+            .SelectMany(candidate => candidate.Claims);
+        return AuthenticatedBranchClaimResolver.TryGetSingle(sessionClaims, BranchPosClaimTypes.DeviceRole, out role);
+    }
+
     public static bool TryResolve(
         ClaimsPrincipal? principal,
         [NotNullWhen(true)] out AuthenticatedBranchRequestIdentity? identity)

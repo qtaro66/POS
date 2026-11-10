@@ -133,7 +133,11 @@ Configure Branch with `BranchMobileHosting:Enabled=true` and an absolute
 Open `/mobile/` on the Branch HTTPS origin named in the pairing QR. The
 certificate must be trusted on the device. The hosted page allows requests only
 to its own origin. Existing Branch authentication and API feature flags still
-apply. This serves the Phase 0 browser app. Installation and service-worker
+apply. An enabled employee-session runtime requires an implementation of
+`IBranchEmployeePinValidator`. The repository's loopback login test registers a
+synthetic validator for test employees. The default Branch host has no
+production PIN validator registered. This serves the Phase 0 browser app.
+Installation and service-worker
 behavior require their own validation.
 
 ## Employee session expiry

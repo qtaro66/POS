@@ -93,7 +93,7 @@ public sealed class BranchMobileHostingTests
             ["BranchMobileHosting:BuildDirectory"] = path
         }).Build();
 
-    private static X509Certificate2 CreateCertificate()
+    internal static X509Certificate2 CreateCertificate()
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest("CN=Branch loopback", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
