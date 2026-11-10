@@ -1,3 +1,6 @@
+import type { DeviceStore } from '../ports.ts'
+import type { EmployeeSession, PairedDevice } from '../../domain/types.ts'
+
 /** Minimal subset of `fetch` the adapters use, so tests can inject a fake. */
 export type FetchLike = (
   input: string,
@@ -73,5 +76,30 @@ export async function postJson(
     return { kind: 'response', status: response.status, body: await response.json() }
   } catch {
     throw new BranchProtocolError('The Branch service returned a response that is not JSON.')
+  }
+}
+
+export type AuthenticatedBranchRequest = (
+  device: PairedDevice, employee: EmployeeSession, path: string, signal?: AbortSignal, body?: unknown,
+) => Promise<{ status: number; value: unknown }>
+
+export function createAuthenticatedBranchRequest(
+  fetch: FetchLike, store: DeviceStore, tokenFor: (id: string) => string | null,
+): AuthenticatedBranchRequest {
+  return async (device, employee, path, signal, body) => {
+    const credential = await store.loadCredential(device.deviceId)
+    const token = employee.sessionId ? tokenFor(employee.sessionId) : null
+    if (!credential || !token) throw new Error('Branch session required.')
+    const timeout = signal ? AbortSignal.any([signal, AbortSignal.timeout(DEFAULT_BRANCH_TIMEOUT_MS)]) : AbortSignal.timeout(DEFAULT_BRANCH_TIMEOUT_MS)
+    timeout.throwIfAborted()
+    const response = await fetch(branchUrl(device.branchServiceUrl, path), {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { Authorization: `Device ${credential}`, 'X-POS-Employee-Session': token,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'omit', redirect: 'error', cache: 'no-store', signal: timeout,
+    })
+    const value: unknown = response.ok ? await response.json() : null
+    return { status: response.status, value }
   }
 }

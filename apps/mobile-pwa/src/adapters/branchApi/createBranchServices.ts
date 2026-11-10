@@ -2,13 +2,13 @@ import { createFixtureServices } from '../fixtures.ts'
 import { IndexedDbDeviceStore } from '../indexedDbDeviceStore.ts'
 import type { MobileServices } from '../ports.ts'
 import { BranchEmployeeAuthGateway, BranchPairingGateway } from './branchGateways.ts'
-import type { FetchLike } from './http.ts'
+import { createAuthenticatedBranchRequest, type FetchLike } from './http.ts'
+import { createOrderingReadGateways } from './orderingReadGateways.ts'
 import { createSoldOutGateway } from './soldOutGateway.ts'
 
 /**
- * Services that pair and log in through the Branch API. Ports without a
- * Branch endpoint or device implementation yet (QR camera, active tables,
- * sync status) still use the fixtures.
+ * Branch-backed pairing, login, active tables, menu and Sold Out.
+ * QR camera and sync status still use fixtures.
  */
 export function createBranchServices(
   fetchImpl: FetchLike = (input, init) => fetch(input, init),
@@ -17,11 +17,13 @@ export function createBranchServices(
   const fixtures = createFixtureServices()
   const options = { fetch: fetchImpl, deviceStore }
   const auth = new BranchEmployeeAuthGateway(options)
+  const request = createAuthenticatedBranchRequest(fetchImpl, deviceStore, id => auth.sessionTokenFor(id))
   return {
     ...fixtures,
     deviceStore,
     pairing: new BranchPairingGateway(options),
     auth,
-    soldOut: createSoldOutGateway(fetchImpl, deviceStore, id => auth.sessionTokenFor(id)),
+    ...createOrderingReadGateways(request),
+    soldOut: createSoldOutGateway(request),
   }
 }

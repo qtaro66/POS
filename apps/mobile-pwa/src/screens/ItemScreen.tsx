@@ -78,7 +78,7 @@ export function ItemScreen({ item, line, onSave }: ItemScreenProps) {
       title={item.name}
       subtitle={
         <p className="muted">
-          {item.code} · {formatPrice(item.price)}
+          {item.code && `${item.code} · `}{formatPrice(item.price)}
         </p>
       }
     >

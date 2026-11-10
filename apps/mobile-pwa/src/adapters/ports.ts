@@ -72,7 +72,7 @@ export type ActiveTablesOutcome =
   | { readonly kind: 'unreachable' }
 
 export interface ActiveTablesGateway {
-  listActiveTables(device: PairedDevice): Promise<ActiveTablesOutcome>
+  listActiveTables(device: PairedDevice, employee?: EmployeeSession): Promise<ActiveTablesOutcome>
 }
 
 export type MenuOutcome =
@@ -82,10 +82,9 @@ export type MenuOutcome =
 /**
  * Menu of one table session, with the prices and option structure fixed when
  * the session was opened and the current sellability (D08.3, D08.4, D09).
- * No Branch endpoint exists yet (backlog CAP-07); only fixtures implement it.
  */
 export interface MenuGateway {
-  loadMenu(device: PairedDevice, tableSessionId: string): Promise<MenuOutcome>
+  loadMenu(device: PairedDevice, tableSessionId: string, employee?: EmployeeSession): Promise<MenuOutcome>
 }
 
 /**

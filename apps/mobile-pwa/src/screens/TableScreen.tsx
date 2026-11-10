@@ -61,12 +61,12 @@ export function TableScreen({
       <LiveMessage message={message} />
       {listed ? (
         <dl className="facts">
-          <div>
+          {listed.openedAt && <div>
             <dt>{text.tableOpenedAt}</dt>
             <dd>
               <Time value={listed.openedAt} />
             </dd>
-          </div>
+          </div>}
           {tables.snapshot && (
             <div>
               <dt>{text.tablesReceivedAt}</dt>
