@@ -82,6 +82,17 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Ok(Response(receipt));
     }
 
+    public static async Task<IResult> CancellationQueueAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        return TypedResults.Ok(new { SchemaVersion = 1, Requests = await runtime.Queries.CancellationQueueAsync(identity.BranchId, cancellationToken) });
+    }
+
     public static async Task<IResult> FloorPlanAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }

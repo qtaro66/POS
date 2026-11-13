@@ -63,6 +63,8 @@ public static class BranchOrderingEndpoints
             .WithName("SubmitBranchOrder");
         group.MapGet("/commands/{requestId}", BranchOrderingHttpHandlers.StatusAsync)
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(404).WithName("GetOrderingCommandStatus");
+        group.MapGet("/cancellation-queue", BranchOrderingHttpHandlers.CancellationQueueAsync)
+            .WithName("ListBranchCancellationQueue");
         group.MapGet("/floor-plan", BranchOrderingHttpHandlers.FloorPlanAsync)
             .Produces<BranchOrderingHttpHandlers.BranchFloorPlanResponse>()
             .Produces<BranchOrderingError>(503).WithName("GetBranchFloorPlan");

@@ -20,7 +20,7 @@ public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time
     public TimeProvider Time { get; } = time;
     public TableSessionCommandService Commands { get; } = new(new SqliteTableSessionCommandStore(databasePath), new Clock(time));
     public IBranchCommandStatusQuery Status { get; } = new SqliteBranchCommandStatusQuery(databasePath);
-    public IBranchOrderingQuery Queries { get; } = new SqliteBranchOrderingQuery(databasePath);
+    public SqliteBranchOrderingQuery Queries { get; } = new SqliteBranchOrderingQuery(databasePath);
     public IBranchCloudOutboxStatusQuery CloudOutboxStatus { get; } = outboxStatusQuery ?? new SqliteBranchCloudOutboxStatusQuery(databasePath);
     public IBranchCloudReplayStatusQuery CloudReplayStatus { get; } = replayStatusQuery ?? new SqliteBranchCloudReplayStatusQuery(databasePath);
 
