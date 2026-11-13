@@ -280,6 +280,21 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       const page = parseSoldOutPage(result.body, offset)
       return page ? { kind: 'ok', value: page } : { kind: 'unavailable', reason: 'protocol' }
     },
+    async cancellationQueue(signal?: AbortSignal): Promise<QueryResult<readonly CancellationQueueEntry[]>> {
+      const result = await request('/cancellation-queue', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      const body = result.body
+      if (!record(body) || body.schemaVersion !== 1 || !Array.isArray(body.requests) ||
+          !body.requests.every(entry => record(entry) && id(entry.cancellationRequestId) && id(entry.tableSessionId) &&
+            ['CancellationRequested', 'ProductionStatusChecking', 'StatusRecorded'].includes(String(entry.status)) &&
+            Array.isArray(entry.lines) && entry.lines.every(line => record(line) && id(line.orderLineId) &&
+              typeof line.displayName === 'string' && typeof line.requestedQuantity === 'number' &&
+              Number.isSafeInteger(line.requestedQuantity) && line.requestedQuantity > 0))) {
+        return { kind: 'unavailable', reason: 'protocol' }
+      }
+      return { kind: 'ok', value: body.requests as CancellationQueueEntry[] }
+    },
     async branchReadiness(signal?: AbortSignal): Promise<QueryResult<{ checkedAt: string; orderingDatabaseReady: boolean }>> {
       const result = await request('/branch-readiness', 'GET', undefined, signal)
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
@@ -388,4 +403,11 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       try { return { kind: 'ok', value: detail(result.body, tableSessionId) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
   }
+}
+
+export interface CancellationQueueEntry {
+  readonly cancellationRequestId: string
+  readonly tableSessionId: string
+  readonly status: 'CancellationRequested' | 'ProductionStatusChecking' | 'StatusRecorded'
+  readonly lines: readonly { orderLineId: string; displayName: string; requestedQuantity: number }[]
 }
