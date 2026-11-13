@@ -9,6 +9,24 @@ namespace Pos.Printing.Tests;
 public sealed class EscPosRasterPayloadRendererTests
 {
     [Fact]
+    public async Task RenderAsync_CancellationInspection_IncludesRequestedQuantityAndProductionFields()
+    {
+        var rasterizer = new CapturingRasterizer();
+        var renderer = new EscPosRasterPayloadRenderer(rasterizer);
+        var document = Document(PrintDocumentKind.CancellationInspection, """
+            {"schemaVersion":1,"cancellationRequestId":"C1","tableId":"A04",
+             "items":[{"displayName":"ผัดไทย","requestedQuantity":2}]}
+            """);
+
+        await renderer.RenderAsync(new PrintRenderRequest(document, Profile()), CancellationToken.None);
+
+        Assert.Contains(rasterizer.Lines, line => line.Text == "โต๊ะ A04");
+        Assert.Contains(rasterizer.Lines, line => line.Text == "ผัดไทย" && line.RightText == "× 2");
+        Assert.Contains(rasterizer.Lines, line => line.Text.Contains("กำลังทำ", StringComparison.Ordinal));
+        Assert.Contains(rasterizer.Lines, line => line.Text.Contains("ไม่มีกระบวนการผลิต", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task RenderAsync_BillPreview_ProducesRasterAndCutterWithoutDrawerPulse()
     {
         var rasterizer = new CapturingRasterizer();

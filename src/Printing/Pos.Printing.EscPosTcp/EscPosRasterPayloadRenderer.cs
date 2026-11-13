@@ -38,6 +38,7 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
         {
             PrintDocumentKind.BillPreview => BuildBillPreview(request.Document.ContentJson),
             PrintDocumentKind.KitchenOrder => BuildKitchenOrder(request.Document.ContentJson),
+            PrintDocumentKind.CancellationInspection => BuildCancellationInspection(request.Document.ContentJson),
             _ => throw new InvalidDataException("Unsupported print document kind.")
         };
         var raster = _rasterizer.Rasterize(
@@ -149,6 +150,44 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
             $"VAT รวมในราคา {Percent(bill.VatRate)}",
             Money(bill.VatInclusiveAmount),
             23));
+        return lines;
+    }
+
+    private sealed record CancellationInspectionDocument(
+        int SchemaVersion, string CancellationRequestId, string TableId, IReadOnlyList<CancellationInspectionItem>? Items);
+
+    private sealed record CancellationInspectionItem(string DisplayName, int RequestedQuantity);
+
+    private static IReadOnlyList<EscPosTextLine> BuildCancellationInspection(string json)
+    {
+        var document = Deserialize<CancellationInspectionDocument>(json);
+        if (document.SchemaVersion != 1 || document.Items is not { Count: > 0 })
+        {
+            throw new InvalidDataException("Invalid cancellation inspection document.");
+        }
+
+        Require(document.CancellationRequestId, "cancellationRequestId");
+        Require(document.TableId, "tableId");
+
+        var lines = new List<EscPosTextLine>
+        {
+            new("ใบตรวจสอบรายการขอยกเลิก", FontSize: 32, Bold: true, Alignment: EscPosTextAlignment.Center),
+            new($"โต๊ะ {document.TableId}", FontSize: 30, Bold: true),
+            new($"คำขอ {document.CancellationRequestId}", FontSize: 22)
+        };
+        foreach (var item in document.Items)
+        {
+            if (item is null || item.RequestedQuantity <= 0)
+            {
+                throw new InvalidDataException("Invalid cancellation inspection item.");
+            }
+
+            Require(item.DisplayName, "displayName");
+            lines.Add(new(item.DisplayName, $"× {item.RequestedQuantity}", 26));
+            lines.Add(new("ยังไม่เริ่ม ___  กำลังทำ ___  เสร็จแล้ว ___", FontSize: 21));
+            lines.Add(new("ไม่มีกระบวนการผลิต ___", FontSize: 21));
+        }
+
         return lines;
     }
 
