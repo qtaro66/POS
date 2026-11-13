@@ -24,7 +24,8 @@ public enum PrintDispatchOutcome
 public enum PrintDocumentKind
 {
     BillPreview,
-    KitchenOrder
+    KitchenOrder,
+    CancellationInspection
 }
 
 public sealed record PrintSourceDocument(
