@@ -13,13 +13,14 @@ import {
 } from './adapters/fixtures.ts'
 import type { ActiveTable } from './domain/types.ts'
 
-function renderShell(options: FixtureOptions = {}) {
+function renderShell(options: FixtureOptions = {}, loadDetail?: import('./adapters/ports.ts').ActiveTablesGateway['loadDetail']) {
   const fixtures = createFixtureServices({ pairedDevice: FIXTURE_DEVICE, ...options })
   let listed: readonly ActiveTable[] = options.tables ?? FIXTURE_ACTIVE_TABLES
   let tableLoads = 0
   const services = {
     ...fixtures,
     tables: {
+      loadDetail,
       listActiveTables: () => {
         tableLoads += 1
         return Promise.resolve({
@@ -83,6 +84,23 @@ it('shows and selects a table within the fixture performance target', async () =
   const renderP95 = renders[Math.ceil(renders.length * 0.95) - 1]
   expect(renderP95).toBeLessThanOrEqual(500)
   expect(p95).toBeLessThanOrEqual(500)
+})
+
+it('refreshes authoritative detail when the table version changes', async () => {
+  const loadDetail = vi.fn()
+    .mockResolvedValueOnce({ tableVersion: 3, status: 'Ordering', hasOpenCancellationRequest: false, lines: [], totals: { 'Net total': 40 } })
+    .mockResolvedValue({ tableVersion: 4, status: 'PaymentPending', hasOpenCancellationRequest: false, lines: [], totals: { 'Net total': 80 } })
+  const { user, setListed } = renderShell({}, loadDetail)
+  await logIn(user)
+  await user.click(within(screen.getByRole('list', { name: 'Active tables' })).getByRole('button', { name: 'Table A1' }))
+  expect(await screen.findByRole('heading', { name: 'Current estimate' })).toBeTruthy()
+
+  await user.click(within(mainNav()).getByRole('button', { name: 'Tables' }))
+  setListed(FIXTURE_ACTIVE_TABLES.map(table => table.tableLabel === 'A1' ? { ...table, tableVersion: 4, status: 'PaymentPending' } : table))
+  await user.click(screen.getByRole('button', { name: 'Refresh tables' }))
+  await waitFor(() => expect(screen.getAllByText('Payment pending')).toHaveLength(2))
+  await user.click(within(screen.getByRole('list', { name: 'Active tables' })).getByRole('button', { name: 'Table A1' }))
+  expect(await screen.findByRole('heading', { name: 'Bill totals' })).toBeTruthy()
 })
 
 describe('authenticated shell navigation', () => {
