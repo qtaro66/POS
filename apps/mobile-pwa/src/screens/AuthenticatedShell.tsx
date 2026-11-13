@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MobileServices } from '../adapters/ports.ts'
 import { BottomNav } from '../components/BottomNav.tsx'
 import { Notice } from '../components/Messages.tsx'
@@ -55,6 +55,10 @@ export function AuthenticatedShell({
   const { route, currentTable, navigate, back } = useShellNavigation((next) => {
     if (next.screen === 'tables' || next.screen === 'status') setMessage(null)
   })
+  const [opening, setOpening] = useState(false)
+  const [openFailed, setOpenFailed] = useState(false)
+  const openInFlight = useRef(false)
+  const pendingOpen = useRef(new Map<string, { requestId: string; tableSessionId: string; clientCreatedAt: string }>())
   const tables = useActiveTables(device, services.tables, employee)
   const refreshTables = tables.refresh
   const openTableSessionId = route.screen === 'table' ? route.table.tableSessionId : null
@@ -73,6 +77,28 @@ export function AuthenticatedShell({
       : null,
     now,
   )
+
+  async function openAvailable(table: { tableId: string; tableLabel: string }) {
+    if (!services.tables.openTable || openInFlight.current) return
+    openInFlight.current = true
+    setOpening(true)
+    setOpenFailed(false)
+    const context = pendingOpen.current.get(table.tableId) ?? {
+      requestId: crypto.randomUUID(), tableSessionId: crypto.randomUUID(), clientCreatedAt: now().toISOString(),
+    }
+    pendingOpen.current.set(table.tableId, context)
+    try {
+      const tableSessionId = await services.tables.openTable(device, employee, table.tableId, context)
+      pendingOpen.current.delete(table.tableId)
+      tables.refresh()
+      navigate({ screen: 'table', table: { tableSessionId, tableLabel: table.tableLabel } })
+    } catch {
+      setOpenFailed(true)
+    } finally {
+      openInFlight.current = false
+      setOpening(false)
+    }
+  }
 
   function nameOf(sellableItemId: string): string {
     return (readyMenu && findItem(readyMenu, sellableItemId)?.name) ?? sellableItemId
@@ -121,6 +147,9 @@ export function AuthenticatedShell({
           key="tables"
           employee={employee}
           tables={tables}
+          opening={opening}
+          openFailed={openFailed}
+          onOpenAvailable={services.tables.openTable ? openAvailable : undefined}
           onOpenTable={(table) => navigate({ screen: 'table', table })}
         />
       )}

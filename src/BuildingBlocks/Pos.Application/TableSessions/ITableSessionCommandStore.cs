@@ -37,6 +37,8 @@ public interface ITableSessionCommandTransaction
         string branchId,
         CancellationToken cancellationToken);
 
+    Task<bool> IsRegisteredTableAsync(string branchId, string masterDataVersion, TableId tableId, CancellationToken cancellationToken) => Task.FromResult(true);
+
     Task<bool> HasOpenCancellationRequestAsync(
         string branchId,
         TableSessionId tableSessionId,

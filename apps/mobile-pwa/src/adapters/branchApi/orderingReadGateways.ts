@@ -100,8 +100,36 @@ export function createOrderingReadGateways(request: AuthenticatedBranchRequest):
         const response = await request(device, employee, `/api/v1/ordering/table-sessions/${encodeURIComponent(sessionId)}`, signal)
         return response.status === 200 ? tableDetail(response.value, sessionId) : null
       },
+      async openTable(device, employee, tableId, context) {
+        const response = await request(device, employee, '/api/v1/ordering/tables/open', undefined, {
+          schemaVersion: 1, tableId, context: { ...context, branchId: device.branchId, deviceId: device.deviceId, employeeId: employee.employeeId },
+        })
+        if (response.status !== 200) throw new Error('OpenTable was not confirmed.')
+        const result = object(object(response.value).result)
+        if (result.status !== 'BranchAccepted' || result.requestId !== context.requestId) throw new Error('Invalid OpenTable result.')
+        return string(result.tableSessionId)
+      },
       async listActiveTables(device, employee, signal) {
       if (!employee) return { kind: 'unreachable' }
+      const floor = await request(device, employee, '/api/v1/ordering/floor-plan', signal)
+      if (floor.status === 200) {
+        const body = object(floor.value)
+        if (body.schemaVersion !== 1) throw new Error('Invalid floor plan response.')
+        const rows = list(body.tables).map(object)
+        const available = rows.filter(row => row.status === 'Available').map(row => ({
+          tableId: string(row.tableId), tableLabel: string(row.displayName), zone: row.zone === null ? null : string(row.zone),
+        }))
+        const tables = rows.filter(row => row.status !== 'Available').map((row): ActiveTable => {
+          const status = row.status
+          if (status !== 'Ordering' && status !== 'PaymentPending' && status !== 'PaymentInProgress' && status !== 'PartiallyPaid') {
+            throw new Error('Invalid active table status.')
+          }
+          return { tableId: string(row.tableId), tableLabel: string(row.displayName), tableSessionId: string(row.tableSessionId),
+            tableVersion: integer(row.tableVersion, 1), status, openedAt: null }
+        })
+        return { kind: 'ok', snapshot: { tables, available, receivedAt: new Date().toISOString() } }
+      }
+      if (floor.status !== 503 && floor.status !== 404) return { kind: 'unreachable' }
       const response = await request(device, employee, '/api/v1/ordering/table-sessions', signal)
       if (response.status !== 200) return { kind: 'unreachable' }
       const body = object(response.value)

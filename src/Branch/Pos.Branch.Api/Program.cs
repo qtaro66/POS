@@ -35,6 +35,34 @@ if (permissionSync.GetValue<bool>("Enabled"))
     builder.Services.AddSingleton<BranchEmployeePermissionPollingService>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<BranchEmployeePermissionPollingService>());
 }
+var tableRegistrySync = builder.Configuration.GetSection("BranchTableRegistrySync");
+if (tableRegistrySync.GetValue<bool>("Enabled"))
+{
+    var branchId = tableRegistrySync["BranchId"];
+    var databasePath = builder.Configuration["BranchOrdering:DatabasePath"];
+    if (!builder.Configuration.GetValue<bool>("BranchCentralMtls:Enabled")
+        || !builder.Configuration.GetValue<bool>("BranchOrdering:Enabled")
+        || string.IsNullOrWhiteSpace(branchId) || branchId != branchId.Trim()
+        || string.IsNullOrWhiteSpace(databasePath) || !Path.IsPathFullyQualified(databasePath)
+        || !Uri.TryCreate(tableRegistrySync["CentralOrigin"], UriKind.Absolute, out var origin)
+        || origin.Scheme != Uri.UriSchemeHttps || origin.AbsolutePath != "/"
+        || origin.UserInfo.Length != 0 || origin.Query.Length != 0 || origin.Fragment.Length != 0)
+    {
+        throw new InvalidOperationException("Table registry sync requires Branch ordering, mTLS, a Branch ID and a Central HTTPS origin.");
+    }
+
+    builder.Services.AddHttpClient(BranchTableRegistryPollingService.ClientName, client =>
+    {
+        client.BaseAddress = origin;
+        client.Timeout = TimeSpan.FromSeconds(10);
+        client.MaxResponseContentBufferSize = 1_400_000;
+    }).ConfigurePrimaryHttpMessageHandler(provider =>
+        provider.GetRequiredService<IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>().CreateHandler());
+    builder.Services.AddHostedService(provider => new BranchTableRegistryPollingService(
+        provider.GetRequiredService<IHttpClientFactory>(), new Pos.Branch.Infrastructure.Sqlite.SqliteTableRegistryStore(databasePath),
+        branchId, provider.GetRequiredService<ILogger<BranchTableRegistryPollingService>>()));
+}
+
 builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
 builder.Services.AddBranchEmployeeSessions(builder.Configuration);
 builder.Services.AddBranchPairing(builder.Configuration);

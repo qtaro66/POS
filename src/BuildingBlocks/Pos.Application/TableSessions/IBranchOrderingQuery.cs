@@ -8,6 +8,7 @@ public sealed record BranchSessionMenu(string TableSessionId, string MasterDataV
 public interface IBranchOrderingQuery
 {
     Task<IReadOnlyList<BranchActiveTableSession>> ListActiveAsync(string branchId, CancellationToken cancellationToken = default);
+    Task<BranchFloorPlan?> FloorPlanAsync(string branchId, CancellationToken cancellationToken);
     Task<BranchSessionMenu?> MenuAsync(string branchId, string tableSessionId, CancellationToken cancellationToken = default);
     Task<BranchOrderingSessionDetail?> DetailAsync(string branchId, string tableSessionId, DateTimeOffset asOf, CancellationToken cancellationToken = default);
 }

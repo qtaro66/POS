@@ -59,6 +59,9 @@ public static class BranchOrderingEndpoints
             .WithName("SubmitBranchOrder");
         group.MapGet("/commands/{requestId}", BranchOrderingHttpHandlers.StatusAsync)
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(404).WithName("GetOrderingCommandStatus");
+        group.MapGet("/floor-plan", BranchOrderingHttpHandlers.FloorPlanAsync)
+            .Produces<BranchOrderingHttpHandlers.BranchFloorPlanResponse>()
+            .Produces<BranchOrderingError>(503).WithName("GetBranchFloorPlan");
         group.MapGet("/table-sessions", BranchOrderingHttpHandlers.TablesAsync)
             .Produces<BranchActiveTableResponse>().WithName("ListActiveBranchTableSessions");
         group.MapGet("/table-sessions/{tableSessionId}/menu", BranchOrderingHttpHandlers.MenuAsync)

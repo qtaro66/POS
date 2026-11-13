@@ -69,6 +69,12 @@ public sealed class TableSessionCommandService
                     token);
             }
 
+            if (!await transaction.IsRegisteredTableAsync(command.Metadata.BranchId,
+                activeMasterData.MasterDataVersion, command.TableId, token))
+            {
+                return await PersistRejectionAsync(transaction, command.Metadata, receivedAt, "TableNotRegistered", token);
+            }
+
             var session = TableSession.Open(
                 command.Metadata.TableSessionId,
                 command.TableId,
