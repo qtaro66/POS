@@ -25,8 +25,9 @@ and shared by the screens; Refresh reloads it.
   screen. The URL never changes and a reload starts at the PIN login.
 - Each screen (`src/components/Screen.tsx`) moves focus to its heading when
   shown, so screen readers announce it, and sets the document title.
-- The table screen shows only what the last Branch list reports. Order lines
-  and bill totals need a Branch capability that does not exist yet (CAP-10).
+- The table screen reads accepted lines and authoritative bill totals from Branch.
+  While the screen is open it refreshes every 15 seconds, and reports closure
+  when the session leaves the active list.
 - The Status screen shows connection, employee-data sync time and the outbox
   counts by D20.1 state; the counts still come from fixtures.
 - Targets are at least 44 px, focus is a 3 px outline, and text and control

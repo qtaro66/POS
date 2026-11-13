@@ -71,7 +71,26 @@ export type ActiveTablesOutcome =
   | { readonly kind: 'ok'; readonly snapshot: ActiveTablesSnapshot }
   | { readonly kind: 'unreachable' }
 
+export interface TableDetail {
+  readonly tableVersion: number
+  readonly status: string
+  readonly hasOpenCancellationRequest: boolean
+  readonly lines: readonly {
+    id: string
+    name: string
+    quantity: number
+    unitPrice: number
+    discount: number
+    total: number
+    status: string
+    comment: string | null
+    options: readonly { name: string; quantity: number; unitPrice: number }[]
+  }[]
+  readonly totals: Readonly<Record<string, number>> | null
+}
+
 export interface ActiveTablesGateway {
+  loadDetail?(device: PairedDevice, employee: EmployeeSession, sessionId: string, signal: AbortSignal): Promise<TableDetail | null>
   listActiveTables(device: PairedDevice, employee?: EmployeeSession, signal?: AbortSignal): Promise<ActiveTablesOutcome>
 }
 

@@ -61,3 +61,27 @@ it('rejects a mismatched session and a price the current view cannot represent e
   await expect(menu.loadMenu(device, 'B1', employee)).rejects.toThrow('Invalid Branch menu response.')
   await expect(menu.loadMenu(device, 'A1', employee)).rejects.toThrow('Unrepresentable Branch price.')
 })
+
+it('reads authoritative table amounts without exposing payment fields', async () => {
+  const fetch = vi.fn<FetchLike>().mockResolvedValue({ ok: true, status: 200, json: async () => ({
+    schemaVersion: 1,
+    session: { tableSessionId: 'A:01', tableVersion: 3, status: 'Ordering' },
+    hasOpenCancellationRequest: true,
+    batches: [{ lines: [{
+      orderLineId: 'L1', displayName: 'Demo item', activeQuantity: 2, unitPrice: 25,
+      activeDiscountAmount: 1, activeNetAmount: 49, status: 'Active', comment: null, options: [],
+    }] }],
+    billPreviewTotals: {
+      itemGrossAmount: 50, lineDiscountAmount: 1, billDiscountAmount: 0,
+      serviceChargeAmount: 0, vatInclusiveAmount: 3.21, netTotal: 49, tenderedAmount: 100,
+    },
+  }) })
+  const { tables } = gateways(fetch)
+  expect(await tables.loadDetail?.(device, employee, 'A:01', new AbortController().signal)).toEqual({
+    tableVersion: 3, status: 'Ordering', hasOpenCancellationRequest: true,
+    lines: [{ id: 'L1', name: 'Demo item', quantity: 2, unitPrice: 25, discount: 1,
+      total: 49, status: 'Active', comment: null, options: [] }],
+    totals: { Items: 50, 'Line discounts': 1, 'Bill discount': 0, 'Service charge': 0, 'VAT included': 3.21, 'Net total': 49 },
+  })
+  expect(fetch).toHaveBeenCalledWith('https://branch.test/api/v1/ordering/table-sessions/A%3A01', expect.anything())
+})

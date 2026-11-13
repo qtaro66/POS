@@ -1,6 +1,7 @@
+import { setTimeout as nodeSetTimeout } from 'node:timers'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
 import {
   createFixtureServices,
@@ -150,28 +151,27 @@ describe('authenticated shell navigation', () => {
     expect(tableLoads()).toBe(1)
   })
 
-  it('says so when the current table is no longer in the latest list', async () => {
-    const { user, setListed } = renderShell()
-    await logIn(user)
-    await user.click(screen.getByRole('button', { name: 'Table A1' }))
-    await user.click(within(mainNav()).getByRole('button', { name: 'Tables' }))
+  it('shows closure on the open table screen after the next automatic refresh', async () => {
+    let refreshOpenTable: (() => void) | undefined
+    const interval = vi.spyOn(window, 'setInterval').mockImplementation((callback, delay) => {
+      if (delay === 15_000 && typeof callback === 'function') refreshOpenTable = () => callback()
+      return nodeSetTimeout(() => {}, 0)
+    })
+    try {
+      const { user, setListed } = renderShell()
+      await logIn(user)
+      await user.click(screen.getByRole('button', { name: 'Table A1' }))
+      expect(screen.getByRole('button', { name: 'Add items' })).toBeTruthy()
 
-    setListed(FIXTURE_ACTIVE_TABLES.filter((table) => table.tableLabel !== 'A1'))
-    await user.click(screen.getByRole('button', { name: 'Refresh tables' }))
-    await waitFor(() =>
-      expect(
-        within(screen.getByRole('list', { name: 'Active tables' })).queryByRole('button', {
-          name: 'Table A1',
-        }),
-      ).toBeNull(),
-    )
-
-    await user.click(within(mainNav()).getByRole('button', { name: 'Table A1' }))
-    expect(
-      screen.getByText(
-        'Table A1 is not in the last list received from the branch. It may have been closed or moved.',
-      ),
-    ).toBeTruthy()
+      setListed(FIXTURE_ACTIVE_TABLES.filter((table) => table.tableLabel !== 'A1'))
+      expect(refreshOpenTable).toBeDefined()
+      act(() => refreshOpenTable?.())
+      expect(await screen.findByText('This table session is closed.')).toBeTruthy()
+      expect(heading().textContent).toBe('Table A1')
+      expect(screen.queryByRole('button', { name: 'Add items' })).toBeNull()
+    } finally {
+      interval.mockRestore()
+    }
   })
 
   it('shows connection, employee-data sync and each outbox state on the status screen', async () => {
