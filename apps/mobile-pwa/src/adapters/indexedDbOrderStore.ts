@@ -117,6 +117,12 @@ export class IndexedDbOrderStore implements DraftRepository, OrderOutbox {
     const transaction = database.transaction([DRAFTS, REQUESTS], 'readwrite')
     const done = transactionDone(transaction)
     // `add` fails if the requestId already exists, which aborts the whole transaction.
+    const drafts = transaction.objectStore(DRAFTS)
+    if (await requestResult(drafts.getKey(draftKeyPath(key))) === undefined) {
+      transaction.abort()
+      await done.catch(() => undefined)
+      throw new Error('The draft is no longer available.')
+    }
     transaction.objectStore(REQUESTS).add(request)
     transaction.objectStore(DRAFTS).delete(draftKeyPath(key))
     await done
@@ -125,7 +131,7 @@ export class IndexedDbOrderStore implements DraftRepository, OrderOutbox {
 
   async updateRequest(request: MobileRequest): Promise<void> {
     const database = await this.open()
-    const transaction = database.transaction(REQUESTS, 'readwrite')
+    const transaction = database.transaction([REQUESTS, DRAFTS], 'readwrite')
     const done = transactionDone(transaction)
     const store = transaction.objectStore(REQUESTS)
     const existing = await requestResult(store.getKey(request.requestId))
@@ -133,6 +139,13 @@ export class IndexedDbOrderStore implements DraftRepository, OrderOutbox {
       transaction.abort()
       await done.catch(() => undefined)
       throw new Error(`No outbox request ${request.requestId} to update.`)
+    }
+    if (request.state === 'Rejected') {
+      const drafts = transaction.objectStore(DRAFTS)
+      const key = draftKeyPath(request)
+      if (await requestResult(drafts.getKey(key)) === undefined) {
+        drafts.put({ ...request, reviewState: 'Active', createdAt: request.clientCreatedAt })
+      }
     }
     store.put(request)
     await done

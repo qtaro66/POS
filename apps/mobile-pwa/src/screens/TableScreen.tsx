@@ -7,12 +7,14 @@ import { Screen } from '../components/Screen.tsx'
 import { Time } from '../components/Time.tsx'
 import type { ActiveTables } from '../components/useActiveTables.ts'
 import type { DraftData } from '../components/useDraft.ts'
-import type { DraftLine } from '../domain/draft.ts'
+import type { DraftLine, FulfillmentType } from '../domain/draft.ts'
 import type { Menu } from '../domain/menu.ts'
 import type { CurrentTable } from '../domain/shellRoute.ts'
 import { tableStatusText, text } from '../strings.ts'
 
 interface TableScreenProps {
+  readonly sending?: boolean
+  readonly onSend?: () => void
   readonly detail?: ReactNode
   readonly table: CurrentTable
   readonly tables: ActiveTables
@@ -23,6 +25,7 @@ interface TableScreenProps {
   readonly message: string | null
   readonly onAddItems: () => void
   readonly onQuantity: (line: DraftLine, quantity: number) => void
+  readonly onFulfillment: (line: DraftLine, fulfillmentType: FulfillmentType) => void
   readonly onEdit: (line: DraftLine) => void
   readonly onRemove: (line: DraftLine) => void
 }
@@ -36,6 +39,8 @@ interface TableScreenProps {
 export function TableScreen({
   table,
   detail,
+  sending,
+  onSend,
   tables,
   draft,
   persistence,
@@ -44,6 +49,7 @@ export function TableScreen({
   onAddItems,
   onQuantity,
   onEdit,
+  onFulfillment,
   onRemove,
 }: TableScreenProps) {
   const listed = tables.snapshot?.tables.find(
@@ -97,7 +103,7 @@ export function TableScreen({
         listed && <p className="muted">{text.addItemsNotOrdering}</p>
       )}
 
-      {!closed && draft.loaded && (
+      {!closed && draft.loaded && !sending && (
         <Basket
           lines={draft.draft?.lines ?? []}
           menu={menu}
@@ -107,8 +113,15 @@ export function TableScreen({
           needsReview={draft.draft?.reviewState === 'ExpiredNeedsReview'}
           onQuantity={onQuantity}
           onEdit={onEdit}
+          onFulfillment={onFulfillment}
           onRemove={onRemove}
         />
+      )}
+      {ordering && onSend && !!draft.draft?.lines.length && (
+        <button type="button" className="button button--primary" onClick={onSend}
+          disabled={sending || draft.saving || draft.saveFailed || draft.draft.reviewState === 'ExpiredNeedsReview'}>
+          {sending ? 'Sending…' : 'Send order'}
+        </button>
       )}
       {!closed && (detail || <p className="muted">{text.tableDetailsUnavailable}</p>)}
     </Screen>

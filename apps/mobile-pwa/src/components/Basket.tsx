@@ -1,6 +1,6 @@
 import { useId, useRef } from 'react'
 import type { DraftRepository } from '../adapters/ports.ts'
-import { countLineItems, lineProblem, type DraftLine } from '../domain/draft.ts'
+import { countLineItems, lineProblem, type DraftLine, type FulfillmentType } from '../domain/draft.ts'
 import { findItem, type Menu } from '../domain/menu.ts'
 import { text } from '../strings.ts'
 import { formatPrice } from './formatPrice.ts'
@@ -18,6 +18,7 @@ interface BasketProps {
   /** True when the basket is older than the retention period (D19.4). */
   readonly needsReview: boolean
   readonly onQuantity: (line: DraftLine, quantity: number) => void
+  readonly onFulfillment: (line: DraftLine, fulfillmentType: FulfillmentType) => void
   readonly onEdit: (line: DraftLine) => void
   readonly onRemove: (line: DraftLine) => void
 }
@@ -59,6 +60,7 @@ export function Basket({
   needsReview,
   onQuantity,
   onEdit,
+  onFulfillment,
   onRemove,
 }: BasketProps) {
   const headingId = useId()
@@ -92,6 +94,14 @@ export function Basket({
                       {text.basketUnitPrice} {formatPrice(item.price)}
                     </span>
                   )}
+                  <label>
+                    Order type for {name}
+                    <select value={line.fulfillmentType ?? 'DineIn'} onChange={event =>
+                      onFulfillment(line, event.currentTarget.value === 'Takeaway' ? 'Takeaway' : 'DineIn')}>
+                      <option value="DineIn">Dine in</option>
+                      <option value="Takeaway">Takeaway</option>
+                    </select>
+                  </label>
                   {summary && <span>{summary}</span>}
                   {line.comment && (
                     <span>

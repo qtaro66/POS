@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { processOrders } from '../adapters/processOrders.ts'
 import type { MobileServices } from '../adapters/ports.ts'
 import { BottomNav } from '../components/BottomNav.tsx'
 import { Notice } from '../components/Messages.tsx'
@@ -28,7 +29,7 @@ import { TableScreen } from './TableScreen.tsx'
 interface AuthenticatedShellProps {
   readonly device: PairedDevice
   readonly employee: EmployeeSession
-  readonly services: Pick<MobileServices, 'tables' | 'menu' | 'drafts' | 'syncStatus' | 'soldOut'>
+  readonly services: Pick<MobileServices, 'tables' | 'menu' | 'drafts' | 'syncStatus' | 'soldOut' | 'outbox' | 'submitOrder'>
   /** Device clock for Draft timestamps and the 30-day review rule; must keep its identity. */
   readonly now: () => Date
   /** Creates basket line identifiers; replaced in tests. */
@@ -50,6 +51,8 @@ export function AuthenticatedShell({
   now,
   newLineId = randomLineId,
 }: AuthenticatedShellProps) {
+  const [sending, setSending] = useState(false)
+  const sendingRef = useRef(false)
   const [message, setMessage] = useState<string | null>(null)
   // Confirmations belong to the table's screens; leaving them clears the last one.
   const { route, currentTable, navigate, back } = useShellNavigation((next) => {
@@ -100,6 +103,44 @@ export function AuthenticatedShell({
     }
   }
 
+  const reloadDraft = draft.reload
+  useEffect(() => {
+    if (!services.outbox || !services.submitOrder) return
+    const controller = new AbortController()
+    function resume() {
+      if (document.visibilityState === 'hidden') return
+      void processOrders(services, device, employee, now, undefined, controller.signal)
+        .then(reloadDraft, () => undefined)
+    }
+    resume()
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('online', resume)
+    return () => {
+      controller.abort()
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('online', resume)
+    }
+  }, [services, device, employee, now, reloadDraft])
+
+  async function sendOrder() {
+    if (sendingRef.current || !draft.draft || draft.saving || draft.saveFailed) return
+    sendingRef.current = true
+    setSending(true)
+    try {
+      const state = await processOrders(services, device, employee, now, draft.draft)
+      setMessage(state === 'BranchAccepted' ? 'Order accepted by the branch.'
+        : state === 'Rejected' ? 'Order rejected by the branch. Review the saved items before sending again.'
+        : 'Order saved on this device. Branch confirmation is pending.')
+      if (state === 'BranchAccepted') tables.refresh()
+    } catch {
+      setMessage('Order status could not be confirmed. Check the outbox before trying again.')
+    } finally {
+      reloadDraft()
+      sendingRef.current = false
+      setSending(false)
+    }
+  }
+
   function nameOf(sellableItemId: string): string {
     return (readyMenu && findItem(readyMenu, sellableItemId)?.name) ?? sellableItemId
   }
@@ -134,7 +175,7 @@ export function AuthenticatedShell({
 
   function saveItem(lineId: string | null, values: Omit<DraftLine, 'lineId'>) {
     const count = changeBasket((current) =>
-      lineId ? replaceLine(current, { ...values, lineId }) : addLine(current, { ...values, lineId: newLineId() }),
+      lineId ? replaceLine(current, { ...values, lineId, fulfillmentType: current.lines.find(line => line.lineId === lineId)?.fulfillmentType }) : addLine(current, { ...values, lineId: newLineId() }),
     )
     setMessage(lineId ? text.basketUpdated(nameOf(values.sellableItemId)) : text.menuAdded(nameOf(values.sellableItemId), count))
     back()
@@ -168,12 +209,20 @@ export function AuthenticatedShell({
           )}
           tables={tables}
           draft={draft}
+          sending={sending}
+          onSend={services.outbox && services.submitOrder ? sendOrder : undefined}
           persistence={services.drafts.persistence}
           menu={readyMenu}
           message={message}
           onAddItems={() => navigate({ screen: 'menu', table: route.table })}
           onQuantity={(line, quantity) => {
             changeBasket((current) => setLineQuantity(current, line.lineId, quantity))
+          }}
+          onFulfillment={(line, fulfillmentType) => {
+            changeBasket(current => {
+              const latest = current.lines.find(candidate => candidate.lineId === line.lineId)
+              return latest ? replaceLine(current, { ...latest, fulfillmentType }) : current
+            })
           }}
           onEdit={(line) =>
             navigate({

@@ -23,6 +23,7 @@ export interface DraftData {
    * without that version a new basket cannot be started and the change is
    * ignored.
    */
+  readonly reload: () => void
   readonly update: (
     change: (draft: Draft) => Draft,
     sessionMasterDataVersion: string | null,
@@ -48,6 +49,8 @@ export function useDraft(
   key: DraftKey | null,
   now: () => Date,
 ): DraftData {
+  const [revision, setRevision] = useState(0)
+  const reload = useCallback(() => setRevision(value => value + 1), [])
   const scope = scopeOf(key)
   const [held, setHeld] = useState<Held | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
@@ -85,7 +88,7 @@ export function useDraft(
     return () => {
       active = false
     }
-  }, [deviceId, employeeId, now, persist, repository, scope, tableSessionId])
+  }, [deviceId, employeeId, now, persist, repository, revision, scope, tableSessionId])
 
   const update = useCallback(
     (change: (draft: Draft) => Draft, sessionMasterDataVersion: string | null) => {
@@ -113,6 +116,7 @@ export function useDraft(
     loaded: current !== null,
     saving: pendingSaves > 0,
     saveFailed,
+    reload,
     update,
   }
 }

@@ -4,6 +4,7 @@ import type { MobileServices } from '../ports.ts'
 import { BranchEmployeeAuthGateway, BranchPairingGateway } from './branchGateways.ts'
 import { createAuthenticatedBranchRequest, type FetchLike } from './http.ts'
 import { createOrderingReadGateways } from './orderingReadGateways.ts'
+import { createSubmitOrderGateway } from './submitOrderGateway.ts'
 import { createSoldOutGateway } from './soldOutGateway.ts'
 
 /**
@@ -24,6 +25,7 @@ export function createBranchServices(
     pairing: new BranchPairingGateway(options),
     auth,
     ...createOrderingReadGateways(request),
+    submitOrder: createSubmitOrderGateway(request),
     soldOut: createSoldOutGateway(request),
   }
 }

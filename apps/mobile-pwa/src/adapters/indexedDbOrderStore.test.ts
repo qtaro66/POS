@@ -96,6 +96,7 @@ describe('IndexedDbOrderStore outbox', () => {
 
   it('stores state changes of a request and refuses an unknown requestId', async () => {
     const store = new IndexedDbOrderStore(new IDBFactory())
+    await store.save(draftWithWater())
     await store.submitDraft(key, request)
     const submitted = transitionRequest(request, { type: 'sendStarted' }, NOW)
     await store.updateRequest(submitted)
@@ -114,6 +115,7 @@ describe('IndexedDbOrderStore outbox', () => {
       notifications += 1
     })
     await store.save(draftWithWater({ ...key, tableSessionId: 'session-2' }))
+    await store.save(draftWithWater())
     await store.submitDraft(key, request)
     await store.updateRequest(transitionRequest(request, { type: 'sendStarted' }, NOW))
 
@@ -123,9 +125,9 @@ describe('IndexedDbOrderStore outbox', () => {
       submitted: 1,
       unknown: 0,
     })
-    expect(notifications).toBe(3)
+    expect(notifications).toBe(4)
     unsubscribe()
     await store.save(draftWithWater())
-    expect(notifications).toBe(3)
+    expect(notifications).toBe(4)
   })
 })

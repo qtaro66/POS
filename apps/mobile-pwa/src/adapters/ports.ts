@@ -161,6 +161,8 @@ export interface DeviceStore {
 }
 
 export interface MobileServices {
+  readonly outbox?: OrderOutbox
+  readonly submitOrder?: ReturnType<typeof import('./branchApi/submitOrderGateway.ts').createSubmitOrderGateway>
   readonly soldOut?: SoldOutGateway
   readonly qrScanner: QrScanner
   readonly pairing: PairingGateway

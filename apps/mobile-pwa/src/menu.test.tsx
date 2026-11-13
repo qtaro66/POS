@@ -329,6 +329,7 @@ describe('basket', () => {
         saveFailed={false}
         needsReview={false}
         onQuantity={() => undefined}
+        onFulfillment={() => undefined}
         onEdit={() => undefined}
         onRemove={() => undefined}
       />,

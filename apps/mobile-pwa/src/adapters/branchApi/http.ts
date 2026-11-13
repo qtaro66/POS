@@ -99,7 +99,8 @@ export function createAuthenticatedBranchRequest(
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: 'omit', redirect: 'error', cache: 'no-store', signal: timeout,
     })
-    const value: unknown = response.ok ? await response.json() : null
+    const value: unknown = response.ok || response.status === 409 || (response.status === 404 && path.startsWith('/api/v1/ordering/commands/'))
+      ? await response.json() : null
     return { status: response.status, value }
   }
 }
