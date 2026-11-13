@@ -1,3 +1,4 @@
+import type { OrderRejection } from './mobileRequest.ts'
 import { findItem, type Menu, type MenuItem } from './menu.ts'
 import { itemProblems, type OptionSelection } from './optionRules.ts'
 
@@ -36,6 +37,7 @@ export interface DraftKey {
 export type DraftReviewState = 'Active' | 'ExpiredNeedsReview'
 
 export interface Draft extends DraftKey {
+  readonly rejection?: OrderRejection
   /** Master Data version of the table session the lines were chosen from (D09). */
   readonly sessionMasterDataVersion: string
   readonly lines: readonly DraftLine[]

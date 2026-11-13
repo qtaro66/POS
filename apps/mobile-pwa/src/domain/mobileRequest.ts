@@ -17,7 +17,13 @@ export type MobileRequestState = 'Pending' | 'Submitted' | 'BranchAccepted' | 'R
 /** Commands Mobile may send (D12.4). Only `SubmitOrder` is held in the outbox so far. */
 export type MobileCommand = 'SubmitOrder'
 
+export interface OrderRejection {
+  readonly code?: string
+  readonly lines: Readonly<Record<string, readonly string[]>>
+}
+
 export interface MobileRequest {
+  readonly rejection?: OrderRejection
   readonly requestId: string
   readonly command: MobileCommand
   readonly deviceId: string

@@ -27,8 +27,9 @@ export async function processOrders(
 
     async function process(initial: MobileRequest) {
       let order = initial
-      async function apply(type: Parameters<typeof transitionRequest>[1]['type']) {
+      async function apply(type: Parameters<typeof transitionRequest>[1]['type'], rejection?: MobileRequest['rejection']) {
         order = transitionRequest(order, { type }, now())
+        if (rejection) order = { ...order, rejection }
         await outbox!.updateRequest(order)
       }
       if (order.state === 'Submitted') await apply('resultUnknown')
@@ -36,7 +37,8 @@ export async function processOrders(
         const result = await submitOrder!(device, employee, order, true).catch(() => 'unknown' as const)
         if (result === 'unknown') return order.state
         if (result !== 'notFound') {
-          await apply(result)
+          if (typeof result === 'object') await apply('rejected', result.rejection)
+          else await apply(result)
           return order.state
         }
         await apply('notFound')
@@ -44,7 +46,8 @@ export async function processOrders(
       signal?.throwIfAborted()
       await apply('sendStarted')
       const result = await submitOrder!(device, employee, order, false).catch(() => 'unknown' as const)
-      await apply(result === 'accepted' || result === 'rejected' ? result : 'resultUnknown')
+      if (typeof result === 'object') await apply('rejected', result.rejection)
+      else await apply(result === 'accepted' ? result : 'resultUnknown')
       return order.state
     }
   })

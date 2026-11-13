@@ -102,7 +102,12 @@ export function useDraft(
           ? emptyDraft({ deviceId, employeeId, tableSessionId }, sessionMasterDataVersion, at)
           : null)
       if (!current) return
-      const next = touchDraft(change(current), at)
+      const updated = change(current)
+      const rejection = current.rejection
+      const unchanged = new Set(updated.lines.filter(line => current.lines.includes(line)).map(line => line.lineId))
+      const next = touchDraft({ ...updated, rejection: rejection && {
+        ...rejection, lines: Object.fromEntries(Object.entries(rejection.lines).filter(([id]) => unchanged.has(id))),
+      } }, at)
       heldRef.current = { scope, draft: next }
       setHeld(heldRef.current)
       persist(next)
