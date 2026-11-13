@@ -106,6 +106,7 @@ export function TableScreen({
       {!closed && draft.loaded && !sending && (
         <Basket
           lines={draft.draft?.lines ?? []}
+          rejection={draft.draft?.rejection}
           menu={menu}
           persistence={persistence}
           saving={draft.saving}

@@ -8,6 +8,7 @@ import { Alert, Notice } from './Messages.tsx'
 import { Stepper } from './Stepper.tsx'
 
 interface BasketProps {
+  readonly rejection?: import('../domain/mobileRequest.ts').OrderRejection
   readonly lines: readonly DraftLine[]
   /** Menu used to name lines and flag those that can no longer be sent; null while it loads. */
   readonly menu: Menu | null
@@ -21,6 +22,13 @@ interface BasketProps {
   readonly onFulfillment: (line: DraftLine, fulfillmentType: FulfillmentType) => void
   readonly onEdit: (line: DraftLine) => void
   readonly onRemove: (line: DraftLine) => void
+}
+
+function rejectionMessage(code: string): string {
+  if (code === 'itemSoldOut') return 'This item is sold out.'
+  if (code === 'optionSoldOut') return 'A selected option is sold out.'
+  if (code.startsWith('option') || code === 'duplicateOptionSelection') return 'Review the selected options and quantities.'
+  return 'The branch could not accept this item. Check its availability and price.'
 }
 
 function storageText(
@@ -53,6 +61,7 @@ function optionSummary(menu: Menu, line: DraftLine): string {
  */
 export function Basket({
   lines,
+  rejection,
   menu,
   persistence,
   saving,
@@ -77,6 +86,9 @@ export function Basket({
       <h2 id={headingId} ref={headingRef} tabIndex={-1}>
         {text.basketHeading}
       </h2>
+      {rejection && <Alert><p>{rejection.code === 'InvalidTableSessionState'
+        ? 'The table is no longer accepting orders. Check its current status.'
+        : 'The branch rejected this order. Review the items before sending again.'}</p></Alert>}
       <p className="muted">{count === 0 ? text.basketEmpty : text.basketCount(count)}</p>
       {lines.length > 0 && (
         <ul className="basket-list" aria-label={text.basketHeading}>
@@ -108,6 +120,9 @@ export function Basket({
                       {text.basketComment}: {line.comment}
                     </span>
                   )}
+                  {Array.from(new Set(rejection?.lines[line.lineId] ?? [])).map(code => (
+                    <span key={code} className="basket-line__problem">{rejectionMessage(code)}</span>
+                  ))}
                   {problem && (
                     <span className="basket-line__problem">
                       {problem === 'itemUnavailable' ? text.basketItemUnavailable : text.basketOptionsInvalid}
