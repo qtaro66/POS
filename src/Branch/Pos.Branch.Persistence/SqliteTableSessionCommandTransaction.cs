@@ -9,7 +9,7 @@ using Pos.Domain.TableSessions;
 
 namespace Pos.Branch.Infrastructure.Sqlite;
 
-internal sealed class SqliteTableSessionCommandTransaction : ITableSessionCommandTransaction
+internal sealed partial class SqliteTableSessionCommandTransaction : ITableSessionCommandTransaction
 {
     private readonly SqliteConnection _connection;
     private readonly SqliteTransaction _transaction;

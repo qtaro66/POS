@@ -15,6 +15,34 @@ public sealed class SqliteTableSessionCommandStoreTests
     private static readonly DateTimeOffset Now = new(2026, 10, 13, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task Cancellation_reserves_available_quantity_once_and_rejects_a_batch_atomically()
+    {
+        await using var database = new TemporaryDatabase();
+        var service = Service(await database.CreateStoreAsync());
+        await database.SeedCatalogAsync("BRANCH-01", "MASTER-1");
+        await service.OpenTableAsync(OpenCommand("OPEN-1", "TS-1", "A04"));
+        Assert.Equal(BranchCommandOutcome.BranchAccepted,
+            (await service.SubmitOrderAsync(SubmitCommand("ORDER-1", "BATCH-1"))).Outcome);
+        var line = await database.ScalarAsync<string>("SELECT order_line_id FROM order_lines ORDER BY line_sequence LIMIT 1;");
+        var quantity = await database.ScalarAsync<long>("SELECT active_quantity FROM order_lines ORDER BY line_sequence LIMIT 1;");
+        var first = OpenCommand("CANCEL-1", "TS-1", "A04").Metadata;
+        var second = OpenCommand("CANCEL-2", "TS-1", "A04").Metadata;
+
+        var invalid = await service.RequestCancellationAsync(second,
+            new Dictionary<string, int> { [line] = 1, ["missing"] = 1 });
+        Assert.Equal("CancellationQuantityUnavailable", invalid.ErrorCode);
+        Assert.Equal(0L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_requests;"));
+
+        var selection = new Dictionary<string, int> { [line] = checked((int)quantity) };
+        var accepted = await service.RequestCancellationAsync(first, selection);
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, accepted.Outcome);
+        Assert.Equal(accepted, await service.RequestCancellationAsync(first, selection));
+        var third = OpenCommand("CANCEL-3", "TS-1", "A04").Metadata;
+        Assert.Equal("CancellationQuantityUnavailable", (await service.RequestCancellationAsync(third, selection)).ErrorCode);
+        Assert.Equal(1L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_request_lines;"));
+    }
+
+    [Fact]
     public async Task Version_twenty_three_upgrade_preserves_existing_cancellation_requests()
     {
         await using var database = new TemporaryDatabase();
