@@ -13,6 +13,9 @@ public sealed record BranchOrderingContext(
 public sealed record BranchOpenTableRequest(int SchemaVersion, BranchOrderingContext Context, string TableId);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record BranchRequestPaymentRequest(int SchemaVersion, BranchOrderingContext Context, long ExpectedVersion);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record BranchSubmitOrderRequest(
     int SchemaVersion, BranchOrderingContext Context,
     IReadOnlyList<BranchOrderLineRequest> Lines);

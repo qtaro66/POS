@@ -19,18 +19,18 @@ function rejectionDetails(value: unknown, order: MobileRequest, code: unknown): 
 export function createSubmitOrderGateway(request: AuthenticatedBranchRequest) {
   return async (device: Parameters<AuthenticatedBranchRequest>[0], employee: Parameters<AuthenticatedBranchRequest>[1],
     order: MobileRequest, query: boolean): Promise<SubmitOrderResult> => {
-    const path = query ? '/commands/' + encodeURIComponent(order.requestId) : '/orders'
+    const path = query ? '/commands/' + encodeURIComponent(order.requestId) : order.command === 'RequestPayment' ? '/tables/request-payment' : '/orders'
     const body = query ? undefined : {
       schemaVersion: 1,
       context: { requestId: order.requestId, branchId: device.branchId, deviceId: order.deviceId,
         employeeId: order.employeeId, tableSessionId: order.tableSessionId, clientCreatedAt: order.clientCreatedAt },
-      lines: order.lines.map(line => ({
+      ...(order.command === 'RequestPayment' ? { expectedVersion: order.expectedVersion } : { lines: order.lines.map(line => ({
         sellableItemId: line.sellableItemId, quantity: line.quantity, comment: line.comment,
         fulfillmentType: line.fulfillmentType ?? 'DineIn',
         options: line.selections.map(option => ({
           optionGroupId: option.optionGroupId, sellableItemId: option.optionId, quantity: option.quantity,
         })),
-      })),
+      })) }),
     }
     const response = await request(device, employee, '/api/v1/ordering' + path, undefined, body)
     const result = (response.value as { result?: { requestId?: string; status?: string; errorCode?: unknown } } | null)?.result

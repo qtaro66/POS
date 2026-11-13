@@ -133,6 +133,7 @@ export interface OrderOutbox {
    * removed and the request added, or nothing changes. Fails if the
    * `requestId` already exists.
    */
+  queuePayment?(key: DraftKey, request: MobileRequest): Promise<void>
   submitDraft(key: DraftKey, request: MobileRequest): Promise<void>
   /** Stores a new state of an existing request; fails for an unknown `requestId`. */
   updateRequest(request: MobileRequest): Promise<void>

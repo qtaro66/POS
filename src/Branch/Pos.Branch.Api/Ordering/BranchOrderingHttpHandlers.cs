@@ -25,6 +25,17 @@ public static class BranchOrderingHttpHandlers
         return Receipt(await runtime.Commands.OpenTableAsync(command, cancellationToken));
     }
 
+    public static async Task<IResult> RequestPaymentAsync(ClaimsPrincipal principal, BranchRequestPaymentRequest request,
+        BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (request.ExpectedVersion < 1) { return InvalidRequest(); }
+        RequestPaymentCommand command;
+        try { command = new(Context(request.SchemaVersion, request.Context, identity), request.ExpectedVersion); }
+        catch (ArgumentException) { return InvalidRequest(); }
+        return Receipt(await runtime.Commands.RequestPaymentAsync(command, cancellationToken));
+    }
+
     public static async Task<IResult> SubmitAsync(ClaimsPrincipal principal, BranchSubmitOrderRequest request,
         BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {

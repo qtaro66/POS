@@ -53,6 +53,10 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)
             .WithName("OpenBranchTable");
+        group.MapPost("/tables/request-payment", BranchOrderingHttpHandlers.RequestPaymentAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
+            .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)
+            .WithName("RequestBranchTablePayment");
         group.MapPost("/orders", BranchOrderingHttpHandlers.SubmitAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)

@@ -5,6 +5,8 @@ import type { ActiveTablesSnapshot, EmployeeSession, PairedDevice } from '../dom
 const money = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'THB' })
 
 interface Props {
+  onRequestPayment?: () => void
+  paymentBlocked?: boolean
   gateway: ActiveTablesGateway
   device: PairedDevice
   employee: EmployeeSession
@@ -12,7 +14,7 @@ interface Props {
   snapshot: ActiveTablesSnapshot
 }
 
-export function TableDetailPanel({ gateway, device, employee, sessionId, snapshot }: Props) {
+export function TableDetailPanel({ gateway, device, employee, sessionId, snapshot, onRequestPayment, paymentBlocked }: Props) {
   const version = snapshot.tables.find(row => row.tableSessionId === sessionId)?.tableVersion
   const [result, setResult] = useState<{ snapshot: ActiveTablesSnapshot; detail: TableDetail | null }>()
   useEffect(() => {
@@ -50,6 +52,11 @@ export function TableDetailPanel({ gateway, device, employee, sessionId, snapsho
           ))}
         </ul>
       )}
+      {onRequestPayment && detail.status === 'Ordering' && !detail.hasOpenCancellationRequest &&
+        detail.lines.some(line => line.quantity > 0) && (
+          <button type="button" className="button" disabled={paymentBlocked || result?.snapshot !== snapshot || detail.tableVersion !== version}
+            onClick={onRequestPayment}>Request payment</button>
+        )}
       {detail.totals && (
         <>
           <h3>{detail.status === 'Ordering' ? 'Current estimate' : 'Bill totals'}</h3>

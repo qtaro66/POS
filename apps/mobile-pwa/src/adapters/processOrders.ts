@@ -6,7 +6,7 @@ import type { EmployeeSession, PairedDevice } from '../domain/types.ts'
 export async function processOrders(
   services: Pick<MobileServices, 'outbox' | 'submitOrder'>,
   device: PairedDevice, employee: EmployeeSession, now: () => Date,
-  draft?: Draft, signal?: AbortSignal,
+  draft?: Draft, signal?: AbortSignal, payment?: { tableSessionId: string; version: number },
 ): Promise<MobileRequest['state'] | undefined> {
   const { outbox, submitOrder } = services
   if (!outbox || !submitOrder) return
@@ -14,6 +14,18 @@ export async function processOrders(
     signal?.throwIfAborted()
     const requests = (await outbox.listRequests()).filter(order =>
       order.deviceId === device.deviceId && order.employeeId === employee.employeeId && isOutstanding(order))
+    if (payment) {
+      if (!outbox.queuePayment || requests.some(order => order.tableSessionId === payment.tableSessionId)) return
+      const at = now()
+      const order: MobileRequest = {
+        requestId: crypto.randomUUID(), command: 'RequestPayment', deviceId: device.deviceId,
+        employeeId: employee.employeeId, tableSessionId: payment.tableSessionId,
+        expectedVersion: payment.version, sessionMasterDataVersion: '', lines: [], state: 'Pending',
+        clientCreatedAt: at.toISOString(), updatedAt: at.toISOString(),
+      }
+      await outbox.queuePayment(order, order)
+      return process(order)
+    }
     if (draft) {
       if (requests.some(order => order.tableSessionId === draft.tableSessionId)) return 'Unknown'
       const order = newSubmitOrderRequest(crypto.randomUUID(), draft, now())
