@@ -17,6 +17,7 @@ public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time
 {
     public SqliteBranchSoldOutQuery SoldOut { get; } = new(databasePath);
     public SqliteBranchSoldOutAdjustmentStore SoldOutAdjustments { get; } = new(databasePath);
+    public SqliteTableSessionCommandStore TableCommands { get; } = new(databasePath);
     public TimeProvider Time { get; } = time;
     public TableSessionCommandService Commands { get; } = new(new SqliteTableSessionCommandStore(databasePath), new Clock(time));
     public IBranchCommandStatusQuery Status { get; } = new SqliteBranchCommandStatusQuery(databasePath);

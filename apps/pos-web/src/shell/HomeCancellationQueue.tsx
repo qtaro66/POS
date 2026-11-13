@@ -8,8 +8,13 @@ const labels = {
   StatusRecorded: 'บันทึกผลตรวจแล้ว',
 }
 
-export function HomeCancellationQueue({ read }: { read: NonNullable<OrderingReadClient['cancellationQueue']> }) {
+export function HomeCancellationQueue({ read, queueInspection }: {
+  read: NonNullable<OrderingReadClient['cancellationQueue']>
+  queueInspection?: OrderingReadClient['queueCancellationInspection']
+}) {
   const [queue, setQueue] = useState<readonly CancellationQueueEntry[] | null>()
+  const [printing, setPrinting] = useState(false)
+  const [printMessage, setPrintMessage] = useState<string>()
   const [refresh, setRefresh] = useState(0)
   useEffect(() => {
     const controller = new AbortController()
@@ -25,12 +30,32 @@ export function HomeCancellationQueue({ read }: { read: NonNullable<OrderingRead
     return () => controller.abort()
   }, [read, refresh])
 
+  async function print(id: string) {
+    if (!queueInspection || printing) return
+    setPrinting(true)
+    setPrintMessage(undefined)
+    try {
+      const result = await queueInspection(id)
+      setPrintMessage(result.kind === 'ok' ? 'เพิ่มใบตรวจสอบเข้าคิวพิมพ์แล้ว' : 'ยืนยันการเข้าคิวพิมพ์ไม่ได้')
+      setRefresh(value => value + 1)
+    } catch {
+      setPrintMessage('ยืนยันการเข้าคิวพิมพ์ไม่ได้')
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   return <section aria-labelledby="cancellation-queue-title">
     <h3 id="cancellation-queue-title">คำขอยกเลิกรายการ</h3>
     <button className="refresh-button" onClick={() => { setQueue(undefined); setRefresh(value => value + 1) }}>อ่านคิวใหม่</button>
     <p role="status">{queue === undefined ? 'กำลังอ่านคิว' : queue === null ? 'อ่านคิวไม่ได้' : queue.length ? 'มีคำขอรอดำเนินการ' : 'ไม่มีคำขอค้าง'}</p>
+    {printMessage && <p role="status">{printMessage}</p>}
     {!!queue?.length && <ul>{queue.map(entry => <li key={entry.cancellationRequestId}>
       <strong>{entry.tableSessionId}</strong> · {labels[entry.status]}
+      {queueInspection && entry.status === 'CancellationRequested' && entry.lines.length > 0 &&
+        <button className="refresh-button" disabled={printing} onClick={() => { void print(entry.cancellationRequestId) }}>
+          พิมพ์ใบตรวจสอบ
+        </button>}
       <ul>{entry.lines.map(line => <li key={line.orderLineId}>{line.displayName} × {line.requestedQuantity}</li>)}</ul>
     </li>)}</ul>}
   </section>

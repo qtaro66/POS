@@ -63,7 +63,8 @@ public sealed record BillPreviewSnapshot(
 public enum PrintJobPurpose
 {
     BillPreview,
-    KitchenOrder
+    KitchenOrder,
+    CancellationInspection
 }
 
 public sealed record PrintTargetStation

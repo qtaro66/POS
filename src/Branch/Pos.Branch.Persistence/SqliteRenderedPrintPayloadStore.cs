@@ -67,6 +67,11 @@ public sealed class SqliteRenderedPrintPayloadStore
                   AND branch_id = $branchId
                   AND production_station_id = $stationId;
                 """,
+            PrintDocumentKind.CancellationInspection => """
+                SELECT content_schema_version, content_json, content_sha256
+                FROM cancellation_inspection_snapshots
+                WHERE snapshot_id = $snapshotId AND branch_id = $branchId AND $stationId = 'Cashier';
+                """,
             _ => throw new InvalidOperationException("Unsupported print document kind.")
         };
         snapshot.Parameters.AddWithValue("$snapshotId", lease.SnapshotId);
@@ -216,6 +221,7 @@ public sealed class SqliteRenderedPrintPayloadStore
     {
         "BillPreview" => PrintDocumentKind.BillPreview,
         "KitchenOrder" => PrintDocumentKind.KitchenOrder,
+        "CancellationInspection" => PrintDocumentKind.CancellationInspection,
         _ => throw new InvalidOperationException($"Unsupported print-job purpose '{purpose}'.")
     };
 

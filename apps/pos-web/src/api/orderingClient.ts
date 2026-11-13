@@ -280,6 +280,15 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       const page = parseSoldOutPage(result.body, offset)
       return page ? { kind: 'ok', value: page } : { kind: 'unavailable', reason: 'protocol' }
     },
+    async queueCancellationInspection(cancellationId: string): Promise<QueryResult<string>> {
+      if (!id(cancellationId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/cancellation-queue/' + encodeURIComponent(cancellationId) + '/inspection', 'POST')
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      const body = result.body
+      return record(body) && body.schemaVersion === 1 && typeof body.printJobId === 'string' && id(body.printJobId)
+        ? { kind: 'ok', value: body.printJobId } : { kind: 'unavailable', reason: 'protocol' }
+    },
     async cancellationQueue(signal?: AbortSignal): Promise<QueryResult<readonly CancellationQueueEntry[]>> {
       const result = await request('/cancellation-queue', 'GET', undefined, signal)
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
