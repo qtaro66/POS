@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MobileServices } from '../adapters/ports.ts'
 import { BottomNav } from '../components/BottomNav.tsx'
 import { Notice } from '../components/Messages.tsx'
@@ -22,6 +22,7 @@ import { ActiveTablesScreen } from './ActiveTablesScreen.tsx'
 import { ItemScreen } from './ItemScreen.tsx'
 import { MenuScreen } from './MenuScreen.tsx'
 import { StatusScreen } from './StatusScreen.tsx'
+import { TableDetailPanel } from './TableDetailPanel.tsx'
 import { TableScreen } from './TableScreen.tsx'
 
 interface AuthenticatedShellProps {
@@ -55,6 +56,13 @@ export function AuthenticatedShell({
     if (next.screen === 'tables' || next.screen === 'status') setMessage(null)
   })
   const tables = useActiveTables(device, services.tables, employee)
+  const refreshTables = tables.refresh
+  const openTableSessionId = route.screen === 'table' ? route.table.tableSessionId : null
+  useEffect(() => {
+    if (!openTableSessionId) return
+    const timer = window.setInterval(refreshTables, 15_000)
+    return () => window.clearInterval(timer)
+  }, [openTableSessionId, refreshTables])
   const tableSessionId = currentTable?.tableSessionId ?? null
   const menu = useMenu(services.menu, device, tableSessionId, employee)
   const readyMenu = menu.state.status === 'ready' ? menu.state.menu : null
@@ -120,6 +128,15 @@ export function AuthenticatedShell({
         <TableScreen
           key={`table:${route.table.tableSessionId}`}
           table={route.table}
+          detail={services.tables.loadDetail && tables.snapshot?.tables.some(row => row.tableSessionId === route.table.tableSessionId) && (
+            <TableDetailPanel
+              gateway={services.tables}
+              device={device}
+              employee={employee}
+              sessionId={route.table.tableSessionId}
+              snapshot={tables.snapshot}
+            />
+          )}
           tables={tables}
           draft={draft}
           persistence={services.drafts.persistence}

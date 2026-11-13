@@ -87,6 +87,7 @@ export const text = {
   tableOpenedAt: 'Opened',
   tableNotListed: (label: string) =>
     `Table ${label} is not in the last list received from the branch. It may have been closed or moved.`,
+  tableSessionClosed: 'This table session is closed.',
   tableDetailsUnavailable:
     'Order lines the branch has accepted and bill totals are not shown on this device yet.',
 

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { DraftRepository } from '../adapters/ports.ts'
 import { Basket } from '../components/Basket.tsx'
 import { LiveMessage } from '../components/LiveMessage.tsx'
@@ -12,6 +13,7 @@ import type { CurrentTable } from '../domain/shellRoute.ts'
 import { tableStatusText, text } from '../strings.ts'
 
 interface TableScreenProps {
+  readonly detail?: ReactNode
   readonly table: CurrentTable
   readonly tables: ActiveTables
   readonly draft: DraftData
@@ -27,13 +29,13 @@ interface TableScreenProps {
 
 /**
  * The table the employee is working on: what the last Branch list reports
- * and this device's basket. Accepted order lines and bill totals need a Branch
- * table-session capability that does not exist yet (backlog MOB-07). Items can
+ * and this device's basket. Accepted order lines and bill totals come from the Branch. Items can
  * be added only while the last list reports the session as `Ordering`, because
  * the Branch locks the bill from `PaymentPending` on (D03, D20.2).
  */
 export function TableScreen({
   table,
+  detail,
   tables,
   draft,
   persistence,
@@ -47,6 +49,7 @@ export function TableScreen({
   const listed = tables.snapshot?.tables.find(
     (candidate) => candidate.tableSessionId === table.tableSessionId,
   )
+  const closed = !listed && tables.snapshot !== null
   const ordering = listed?.status === 'Ordering'
 
   return (
@@ -59,7 +62,9 @@ export function TableScreen({
       }
     >
       <LiveMessage message={message} />
-      {listed ? (
+      {closed ? (
+        <p role="status">{text.tableSessionClosed}</p>
+      ) : listed ? (
         <dl className="facts">
           {listed.openedAt && <div>
             <dt>{text.tableOpenedAt}</dt>
@@ -92,7 +97,7 @@ export function TableScreen({
         listed && <p className="muted">{text.addItemsNotOrdering}</p>
       )}
 
-      {draft.loaded && (
+      {!closed && draft.loaded && (
         <Basket
           lines={draft.draft?.lines ?? []}
           menu={menu}
@@ -105,7 +110,7 @@ export function TableScreen({
           onRemove={onRemove}
         />
       )}
-      <p className="muted">{text.tableDetailsUnavailable}</p>
+      {!closed && (detail || <p className="muted">{text.tableDetailsUnavailable}</p>)}
     </Screen>
   )
 }

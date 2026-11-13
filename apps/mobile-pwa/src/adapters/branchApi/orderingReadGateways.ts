@@ -1,6 +1,6 @@
 import type { MenuItem, MenuOption, OptionGroup } from '../../domain/menu.ts'
 import type { ActiveTable } from '../../domain/types.ts'
-import type { ActiveTablesGateway, MenuGateway } from '../ports.ts'
+import type { ActiveTablesGateway, MenuGateway, TableDetail } from '../ports.ts'
 import type { AuthenticatedBranchRequest } from './http.ts'
 
 function object(value: unknown): Record<string, unknown> {
@@ -21,6 +21,45 @@ function list(value: unknown): unknown[] {
 function integer(value: unknown, minimum: number): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) throw new Error('Invalid Branch read quantity.')
   return value
+}
+
+function amount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Invalid Branch amount.')
+  return value
+}
+
+function tableDetail(value: unknown, sessionId: string): TableDetail {
+  const body = object(value)
+  const session = object(body.session)
+  if (body.schemaVersion !== 1 || session.tableSessionId !== sessionId ||
+      typeof body.hasOpenCancellationRequest !== 'boolean') throw new Error('Invalid Branch table detail.')
+  const totals = body.billPreviewTotals === null ? null : object(body.billPreviewTotals)
+  return {
+    tableVersion: integer(session.tableVersion, 1),
+    status: string(session.status),
+    hasOpenCancellationRequest: body.hasOpenCancellationRequest,
+    lines: list(body.batches).flatMap(batch => list(object(batch).lines).map(candidate => {
+      const line = object(candidate)
+      return {
+        id: string(line.orderLineId), name: string(line.displayName),
+        quantity: integer(line.activeQuantity, 0), unitPrice: amount(line.unitPrice),
+        discount: amount(line.activeDiscountAmount), total: amount(line.activeNetAmount),
+        status: string(line.status), comment: typeof line.comment === 'string' ? line.comment : null,
+        options: list(line.options).map(candidate => {
+          const option = object(candidate)
+          return { name: string(option.displayName), quantity: integer(option.quantityPerItem, 1), unitPrice: amount(option.unitPrice) }
+        }),
+      }
+    })),
+    totals: totals && {
+      'Items': amount(totals.itemGrossAmount),
+      'Line discounts': amount(totals.lineDiscountAmount),
+      'Bill discount': amount(totals.billDiscountAmount),
+      'Service charge': amount(totals.serviceChargeAmount),
+      'VAT included': amount(totals.vatInclusiveAmount),
+      'Net total': amount(totals.netTotal),
+    },
+  }
 }
 
 function catalogItem(value: unknown): { raw: Record<string, unknown>; option: MenuOption } | null {
@@ -56,7 +95,12 @@ function optionGroup(value: unknown): OptionGroup {
 
 export function createOrderingReadGateways(request: AuthenticatedBranchRequest): { tables: ActiveTablesGateway; menu: MenuGateway } {
   return {
-    tables: { async listActiveTables(device, employee, signal) {
+    tables: {
+      async loadDetail(device, employee, sessionId, signal) {
+        const response = await request(device, employee, `/api/v1/ordering/table-sessions/${encodeURIComponent(sessionId)}`, signal)
+        return response.status === 200 ? tableDetail(response.value, sessionId) : null
+      },
+      async listActiveTables(device, employee, signal) {
       if (!employee) return { kind: 'unreachable' }
       const response = await request(device, employee, '/api/v1/ordering/table-sessions', signal)
       if (response.status !== 200) return { kind: 'unreachable' }
