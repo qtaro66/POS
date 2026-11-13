@@ -15,6 +15,33 @@ public sealed class SqliteTableSessionCommandStoreTests
     private static readonly DateTimeOffset Now = new(2026, 10, 13, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task Published_floor_plans_are_branch_scoped_and_reopening_keeps_the_session()
+    {
+        await using var database = new TemporaryDatabase();
+        var store = await database.CreateStoreAsync();
+        var registries = new SqliteTableRegistryStore(database.Path);
+        var query = new SqliteBranchOrderingQuery(database.Path);
+        await registries.ApplyAsync(new(1, "BRANCH-01", "MASTER-1", [new("A04", "Window", "Patio", 0)]), default);
+        await registries.ApplyAsync(new(1, "BRANCH-02", "MASTER-1", [new("B01", "Counter", null, 0)]), default);
+        await registries.ApplyAsync(new(1, "BRANCH-01", "STALE", [new("Z01", "Stale", null, 0)]), default);
+
+        var firstBranch = Assert.Single((await query.FloorPlanAsync("BRANCH-01", default))!.Tables);
+        Assert.Equal("A04", firstBranch.TableId);
+        Assert.Equal("Available", firstBranch.Status);
+        Assert.Equal("B01", Assert.Single((await query.FloorPlanAsync("BRANCH-02", default))!.Tables).TableId);
+
+        var service = Service(store);
+        var opened = await service.OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
+        var reopened = await service.OpenTableAsync(OpenCommand("REQ-2", "TS-2", "A04"));
+        Assert.Equal("TS-1", opened.TableSessionId?.Value);
+        Assert.Equal(opened.TableSessionId, reopened.TableSessionId);
+        var occupied = Assert.Single((await query.FloorPlanAsync("BRANCH-01", default))!.Tables);
+        Assert.Equal("Ordering", occupied.Status);
+        Assert.Equal("TS-1", occupied.TableSessionId);
+        Assert.Equal(1L, occupied.TableVersion);
+    }
+
+    [Fact]
     public async Task Initialize_creates_durable_schema_with_expected_pragmas()
     {
         await using var database = new TemporaryDatabase();
