@@ -90,6 +90,7 @@ export interface TableDetail {
 }
 
 export interface ActiveTablesGateway {
+  openTable?(device: PairedDevice, employee: EmployeeSession, tableId: string, context: { requestId: string; tableSessionId: string; clientCreatedAt: string }): Promise<string>
   loadDetail?(device: PairedDevice, employee: EmployeeSession, sessionId: string, signal: AbortSignal): Promise<TableDetail | null>
   listActiveTables(device: PairedDevice, employee?: EmployeeSession, signal?: AbortSignal): Promise<ActiveTablesOutcome>
 }

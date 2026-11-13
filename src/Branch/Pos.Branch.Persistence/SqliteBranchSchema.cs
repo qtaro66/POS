@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 22;
+    public const int CurrentVersion = 23;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1063,6 +1063,28 @@ internal static class SqliteBranchSchema
         );
         """;
 
+    private const string SchemaVersion23 = """
+        CREATE TABLE IF NOT EXISTS master_data_table_registries (
+            branch_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            PRIMARY KEY (branch_id, master_data_version),
+            FOREIGN KEY (branch_id, master_data_version)
+                REFERENCES master_data_packages (branch_id, master_data_version)
+        );
+
+        CREATE TABLE IF NOT EXISTS master_data_tables (
+            branch_id TEXT NOT NULL,
+            master_data_version TEXT NOT NULL,
+            table_id TEXT NOT NULL CHECK (length(trim(table_id)) > 0),
+            display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
+            zone TEXT NULL,
+            display_order INTEGER NOT NULL CHECK (display_order >= 0),
+            PRIMARY KEY (branch_id, master_data_version, table_id),
+            FOREIGN KEY (branch_id, master_data_version)
+                REFERENCES master_data_table_registries (branch_id, master_data_version)
+        );
+        """;
+
     private const string SchemaVersion22 = """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_cloud_sync_replay_request_identity
             ON cloud_sync_sequence_replay_requests (
@@ -1245,6 +1267,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 22)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion22, cancellationToken);
+        }
+
+        if (storedVersion < 23)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion23, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

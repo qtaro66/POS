@@ -71,6 +71,17 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Ok(Response(receipt));
     }
 
+    public static async Task<IResult> FloorPlanAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        var plan = await runtime.Queries.FloorPlanAsync(identity.BranchId, cancellationToken);
+        return plan is null
+            ? TypedResults.Json(new BranchOrderingError(1, "TableRegistryUnavailable"), statusCode: 503)
+            : TypedResults.Ok(new BranchFloorPlanResponse(1, plan.MasterDataVersion, plan.Tables));
+    }
+
+    public sealed record BranchFloorPlanResponse(int SchemaVersion, string MasterDataVersion, IReadOnlyList<Pos.Application.TableSessions.BranchFloorPlanTable> Tables);
+
     public static async Task<IResult> TablesAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }

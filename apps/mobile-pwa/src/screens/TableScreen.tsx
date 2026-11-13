@@ -49,7 +49,7 @@ export function TableScreen({
   const listed = tables.snapshot?.tables.find(
     (candidate) => candidate.tableSessionId === table.tableSessionId,
   )
-  const closed = !listed && tables.snapshot !== null
+  const closed = !listed && tables.snapshot !== null && !tables.loading && !tables.problem
   const ordering = listed?.status === 'Ordering'
 
   return (

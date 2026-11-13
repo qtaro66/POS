@@ -70,6 +70,7 @@ export interface ActiveTable {
 }
 
 export interface ActiveTablesSnapshot {
+  readonly available?: readonly { tableId: string; tableLabel: string; zone: string | null }[]
   readonly tables: readonly ActiveTable[]
   /** When this device received the snapshot from the Branch Service. */
   readonly receivedAt: string

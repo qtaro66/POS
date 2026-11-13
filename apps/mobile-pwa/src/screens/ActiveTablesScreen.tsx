@@ -7,6 +7,9 @@ import type { EmployeeSession } from '../domain/types.ts'
 import { tableStatusText, text } from '../strings.ts'
 
 interface ActiveTablesScreenProps {
+  readonly onOpenAvailable?: (table: { tableId: string; tableLabel: string }) => void
+  readonly opening?: boolean
+  readonly openFailed?: boolean
   readonly employee: EmployeeSession
   readonly tables: ActiveTables
   readonly onOpenTable: (table: CurrentTable) => void
@@ -17,7 +20,7 @@ interface ActiveTablesScreenProps {
  * session regardless of who opened it (requirement D10.4) and shows statuses
  * exactly as reported by the Branch Service.
  */
-export function ActiveTablesScreen({ employee, tables, onOpenTable }: ActiveTablesScreenProps) {
+export function ActiveTablesScreen({ employee, tables, onOpenTable, onOpenAvailable, opening, openFailed }: ActiveTablesScreenProps) {
   const { snapshot, loading, problem, refresh } = tables
 
   return (
@@ -37,6 +40,22 @@ export function ActiveTablesScreen({ employee, tables, onOpenTable }: ActiveTabl
         )}
       </div>
 
+      {openFailed && <Alert><p>Opening the table could not be confirmed. Select it again to retry.</p></Alert>}
+      {onOpenAvailable && !!snapshot?.available?.length && (
+        <ul className="table-list" aria-label="Available tables">
+          {snapshot.available.map(table => (
+            <li key={table.tableId} className="table-card">
+              <button type="button" className="button" disabled={opening || loading || !!problem}
+                onClick={() => onOpenAvailable(table)}>
+                {text.tableLabel(table.tableLabel)}
+              </button>
+              <span className="badge">Available</span>
+              {table.zone && <span>{table.zone}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {problem && (
         <Alert>
           <p>{problem === 'unreachable' ? text.tablesUnreachable : text.tablesFailed}</p>
@@ -46,7 +65,7 @@ export function ActiveTablesScreen({ employee, tables, onOpenTable }: ActiveTabl
 
       {loading && !snapshot && <p className="muted">{text.tablesLoading}</p>}
 
-      {snapshot && snapshot.tables.length === 0 && <p className="muted">{text.tablesEmpty}</p>}
+      {snapshot && snapshot.tables.length === 0 && !snapshot.available?.length && <p className="muted">{text.tablesEmpty}</p>}
 
       {snapshot && snapshot.tables.length > 0 && (
         <ul className="table-list" aria-label={text.tablesTitle}>

@@ -97,6 +97,23 @@ internal sealed class SqliteTableSessionCommandTransaction : ITableSessionComman
         return await ReadSingleSessionAsync(command, cancellationToken);
     }
 
+    public async Task<bool> IsRegisteredTableAsync(string branchId, string masterDataVersion, TableId tableId, CancellationToken cancellationToken)
+    {
+        using var command = CreateCommand("""
+            SELECT NOT EXISTS (
+                SELECT 1 FROM master_data_table_registries
+                WHERE branch_id = $branchId AND master_data_version = $version
+            ) OR EXISTS (
+                SELECT 1 FROM master_data_tables
+                WHERE branch_id = $branchId AND master_data_version = $version AND table_id = $tableId
+            );
+            """);
+        command.Parameters.AddWithValue("$branchId", branchId);
+        command.Parameters.AddWithValue("$version", masterDataVersion);
+        command.Parameters.AddWithValue("$tableId", tableId.Value);
+        return (long)(await command.ExecuteScalarAsync(cancellationToken))! == 1;
+    }
+
     public async Task<ActiveMasterDataSnapshot?> FindActiveMasterDataSnapshotAsync(
         string branchId,
         CancellationToken cancellationToken)

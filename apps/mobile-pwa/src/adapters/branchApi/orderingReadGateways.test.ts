@@ -15,7 +15,8 @@ function gateways(fetch: FetchLike) {
 }
 
 it('reads only active Branch sessions with both credentials and preserves missing timestamps', async () => {
-  const fetch = vi.fn<FetchLike>().mockResolvedValue({ ok: true, status: 200, json: async () => ({
+  const fetch = vi.fn<FetchLike>().mockResolvedValueOnce({ ok: false, status: 503, json: async () => null })
+    .mockResolvedValue({ ok: true, status: 200, json: async () => ({
     schemaVersion: 1, includesAvailableTables: false,
     sessions: [{ tableId: 'A1', tableSessionId: 'TABLE-A', tableVersion: 1, status: 'Ordering' }],
   }) })
@@ -84,4 +85,25 @@ it('reads authoritative table amounts without exposing payment fields', async ()
     totals: { Items: 50, 'Line discounts': 1, 'Bill discount': 0, 'Service charge': 0, 'VAT included': 3.21, 'Net total': 49 },
   })
   expect(fetch).toHaveBeenCalledWith('https://branch.test/api/v1/ordering/table-sessions/A%3A01', expect.anything())
+})
+
+it('reads available tables and opens one using the Branch-assigned session', async () => {
+  const fetch = vi.fn<FetchLike>()
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      schemaVersion: 1, masterDataVersion: 'V1',
+      tables: [{ tableId: 'A1', displayName: 'Window', zone: 'Patio', status: 'Available' }],
+    }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      result: { requestId: 'R1', status: 'BranchAccepted', tableSessionId: 'EXISTING' },
+    }) })
+  const { tables } = gateways(fetch)
+  expect(await tables.listActiveTables(device, employee)).toMatchObject({
+    kind: 'ok', snapshot: { tables: [], available: [{ tableId: 'A1', tableLabel: 'Window', zone: 'Patio' }] },
+  })
+  const context = { requestId: 'R1', tableSessionId: 'PROPOSED', clientCreatedAt: device.pairedAt }
+  expect(await tables.openTable?.(device, employee, 'A1', context)).toBe('EXISTING')
+  expect(fetch).toHaveBeenLastCalledWith('https://branch.test/api/v1/ordering/tables/open', expect.objectContaining({
+    method: 'POST', body: JSON.stringify({ schemaVersion: 1, tableId: 'A1',
+      context: { ...context, branchId: 'B1', deviceId: 'D1', employeeId: 'E1' } }),
+  }))
 })

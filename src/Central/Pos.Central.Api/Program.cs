@@ -49,4 +49,10 @@ if (branchMtlsEnabled && builder.Configuration.GetValue<bool>("CentralEmployeePe
         .RequireAuthorization(CentralBranchEmployeePermissions.Policy);
 }
 
+if (branchMtlsEnabled && builder.Configuration.GetValue<bool>("CentralTableRegistry:Enabled"))
+{
+    app.MapGet(CentralBranchTableRegistry.Route, CentralBranchTableRegistry.Read)
+        .RequireAuthorization(CentralBranchEmployeePermissions.Policy);
+}
+
 app.Run();
