@@ -18,6 +18,7 @@ using Pos.Branch.Api.Security;
 using Pos.Branch.Api.Synchronization;
 using Pos.Branch.Infrastructure.Sqlite;
 using Pos.Central.Api.Synchronization;
+using Pos.Contracts.Ordering;
 using Pos.Contracts.Security;
 
 namespace Pos.Central.Api.Tests;
@@ -70,7 +71,16 @@ public sealed class CentralEmployeePermissionsMtlsTests
             policy.RequireAuthenticatedUser();
             policy.RequireClaim(CentralCloudClaimTypes.BranchId);
         });
+        var registry = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new TableRegistry(1, "B1", "V1", [new("A1", "Window", "Patio", 0)]),
+            System.Text.Json.JsonSerializerOptions.Web);
+        const string publication = "CentralTableRegistry:Publications:0:";
+        builder.Configuration[publication + "BranchId"] = "B1";
+        builder.Configuration[publication + "Payload"] = Convert.ToBase64String(registry);
+        builder.Configuration[publication + "Sha256"] = Convert.ToHexString(SHA256.HashData(registry));
         await using var app = builder.Build();
+        app.MapGet(CentralBranchTableRegistry.Route, CentralBranchTableRegistry.Read)
+            .RequireAuthorization(CentralBranchEmployeePermissions.Policy);
         app.MapGet(CentralBranchEmployeePermissions.Route, CentralBranchEmployeePermissions.Read)
             .RequireAuthorization(CentralBranchEmployeePermissions.Policy);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -112,6 +122,27 @@ public sealed class CentralEmployeePermissionsMtlsTests
             Assert.Equal(PermissionRefreshOutcome.Updated, await polling.RefreshAsync(timeout.Token));
             await InitializeBranchAsync(databasePath, timeout.Token);
             var runtime = new BranchOrderingRuntime(databasePath, TimeProvider.System);
+            using var registryPolling = new BranchTableRegistryPollingService(
+                clients, new SqliteTableRegistryStore(databasePath), "B1",
+                NullLogger<BranchTableRegistryPollingService>.Instance);
+            await registryPolling.StartAsync(timeout.Token);
+            try
+            {
+                while (await runtime.Queries.FloorPlanAsync("B1", timeout.Token) is null)
+                {
+                    await Task.Delay(25, timeout.Token);
+                }
+            }
+            finally
+            {
+                await registryPolling.StopAsync(CancellationToken.None);
+            }
+            var floor = await runtime.Queries.FloorPlanAsync("B1", timeout.Token);
+            Assert.NotNull(floor);
+            Assert.Equal("V1", floor.MasterDataVersion);
+            var table = Assert.Single(floor.Tables);
+            Assert.Equal(("A1", "Window", "Available"), (table.TableId, table.DisplayName, table.Status));
+            Assert.Null(await runtime.Queries.FloorPlanAsync("B2", timeout.Token));
             var mobile = CreateMobilePrincipal();
             var set = new BranchSoldOutAdjustmentRequest(Guid.NewGuid(), "I1", false, true);
             await AssertAdjustmentAsync(200, set, cache);
