@@ -1,6 +1,6 @@
 export interface PrintAttentionItem {
   readonly printJobId: string; readonly requestId: string; readonly tableSessionId: string; readonly snapshotId: string
-  readonly purpose: 'BillPreview' | 'KitchenOrder'; readonly targetStation: string
+  readonly purpose: 'BillPreview' | 'KitchenOrder' | 'CancellationInspection'; readonly targetStation: string
   readonly status: 'PrintQueued' | 'Failed' | 'Unknown' | 'Dispatching'
   readonly createdAt: string; readonly assignedPrinterId: string | null; readonly nextRetryAt: string | null
   readonly attentionReason: 'AwaitingDispatch' | 'DispatchBlocked' | 'SendFailed' | 'SendOutcomeUnknown' | 'DispatchLeaseExpired'
@@ -22,7 +22,7 @@ function validItem(value: unknown): boolean {
   if (!record(value)) return false
   const reasons: Record<string, readonly string[]> = { PrintQueued: ['AwaitingDispatch', 'DispatchBlocked'], Failed: ['SendFailed'], Unknown: ['SendOutcomeUnknown'], Dispatching: ['DispatchLeaseExpired'] }
   return ['printJobId', 'requestId', 'tableSessionId', 'snapshotId', 'targetStation'].every(key => id(value[key]))
-    && ['BillPreview', 'KitchenOrder'].includes(value.purpose as string)
+    && ['BillPreview', 'KitchenOrder', 'CancellationInspection'].includes(value.purpose as string)
     && Object.hasOwn(reasons, value.status as string) && reasons[value.status as string].includes(value.attentionReason as string)
     && isUtcTimestamp(value.createdAt) && (value.assignedPrinterId === null || id(value.assignedPrinterId))
     && (value.nextRetryAt === null || isUtcTimestamp(value.nextRetryAt))

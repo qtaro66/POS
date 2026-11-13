@@ -16,7 +16,7 @@ public sealed class SqlitePrintDispatchStoreTests
 
         await new SqliteTableSessionCommandStore(database.Path).InitializeAsync();
 
-        Assert.Equal(24L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'print_attempts';
@@ -626,9 +626,21 @@ public sealed class SqlitePrintDispatchStoreTests
 
                 CREATE TABLE print_jobs (
                     print_job_id TEXT NOT NULL PRIMARY KEY,
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    table_session_id TEXT NOT NULL,
+                    snapshot_id TEXT NOT NULL,
+                    purpose TEXT NOT NULL CHECK (purpose IN ('BillPreview', 'KitchenOrder')),
+                    target_station TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
                     next_retry_at TEXT NULL,
-                    created_at TEXT NOT NULL);
+                    last_error TEXT NULL,
+                    blocked_reason TEXT NULL,
+                    created_at TEXT NOT NULL,
+                    original_print_job_id TEXT NULL REFERENCES print_jobs (print_job_id),
+                    is_reprint INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE (branch_id, request_id, purpose, target_station));
 
                 CREATE TABLE cloud_sync_outbox (
                     outbox_id TEXT NOT NULL PRIMARY KEY,

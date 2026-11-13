@@ -82,6 +82,24 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Ok(Response(receipt));
     }
 
+    public static async Task<IResult> QueueCancellationInspectionAsync(ClaimsPrincipal principal, string cancellationId,
+        BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        try { cancellationId = Identifier(cancellationId); }
+        catch (ArgumentException) { return InvalidRequest(); }
+
+        var jobId = await runtime.TableCommands.QueueCancellationInspectionAsync(
+            identity.BranchId, cancellationId, runtime.Time.GetUtcNow(), cancellationToken);
+        return jobId is null ? TypedResults.Conflict(new BranchOrderingError(1, "InspectionUnavailable"))
+            : TypedResults.Ok(new { SchemaVersion = 1, PrintJobId = jobId });
+    }
+
     public static async Task<IResult> CancellationQueueAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }

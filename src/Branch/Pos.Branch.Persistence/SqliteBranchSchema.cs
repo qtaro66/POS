@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 24;
+    public const int CurrentVersion = 25;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -445,6 +445,12 @@ internal static class SqliteBranchSchema
                       AND request_id = NEW.request_id
                       AND table_session_id = NEW.table_session_id)
                 THEN RAISE(ABORT, 'Bill Preview snapshot not found')
+                WHEN NEW.purpose = 'CancellationInspection' AND (
+                    NEW.target_station <> 'Cashier' OR NOT EXISTS (
+                        SELECT 1 FROM cancellation_inspection_snapshots
+                        WHERE snapshot_id = NEW.snapshot_id AND branch_id = NEW.branch_id
+                          AND request_id = NEW.request_id AND table_session_id = NEW.table_session_id))
+                THEN RAISE(ABORT, 'Cancellation inspection snapshot not found or station mismatch')
                 WHEN NEW.purpose = 'KitchenOrder' AND NOT EXISTS (
                     SELECT 1 FROM production_order_snapshots
                     WHERE snapshot_id = NEW.snapshot_id
@@ -468,6 +474,12 @@ internal static class SqliteBranchSchema
                       AND request_id = NEW.request_id
                       AND table_session_id = NEW.table_session_id)
                 THEN RAISE(ABORT, 'Bill Preview snapshot not found')
+                WHEN NEW.purpose = 'CancellationInspection' AND (
+                    NEW.target_station <> 'Cashier' OR NOT EXISTS (
+                        SELECT 1 FROM cancellation_inspection_snapshots
+                        WHERE snapshot_id = NEW.snapshot_id AND branch_id = NEW.branch_id
+                          AND request_id = NEW.request_id AND table_session_id = NEW.table_session_id))
+                THEN RAISE(ABORT, 'Cancellation inspection snapshot not found or station mismatch')
                 WHEN NEW.purpose = 'KitchenOrder' AND NOT EXISTS (
                     SELECT 1 FROM production_order_snapshots
                     WHERE snapshot_id = NEW.snapshot_id
@@ -1063,6 +1075,56 @@ internal static class SqliteBranchSchema
         );
         """;
 
+    private const string SchemaVersion25 = """
+        CREATE TABLE IF NOT EXISTS cancellation_inspection_snapshots (
+            snapshot_id TEXT NOT NULL PRIMARY KEY,
+            branch_id TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            table_session_id TEXT NOT NULL,
+            content_schema_version INTEGER NOT NULL CHECK (content_schema_version = 1),
+            content_json TEXT NOT NULL,
+            content_sha256 TEXT NOT NULL CHECK (length(content_sha256) = 64),
+            UNIQUE (branch_id, request_id)
+        );
+
+        CREATE TABLE print_jobs_v25 (
+            print_job_id TEXT NOT NULL PRIMARY KEY,
+            branch_id TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            table_session_id TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL,
+            purpose TEXT NOT NULL CHECK (purpose IN ('BillPreview', 'KitchenOrder', 'CancellationInspection')),
+            target_station TEXT NOT NULL CHECK (length(trim(target_station)) > 0),
+            status TEXT NOT NULL CHECK (status IN (
+                'PrintQueued', 'Dispatching', 'PrintDispatched', 'Failed', 'Unknown', 'Completed')),
+            attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+            next_retry_at TEXT NULL,
+            last_error TEXT NULL,
+            blocked_reason TEXT NULL,
+            created_at TEXT NOT NULL,
+            original_print_job_id TEXT NULL,
+            is_reprint INTEGER NOT NULL DEFAULT 0 CHECK (is_reprint IN (0, 1)),
+            assigned_printer_id TEXT NULL REFERENCES printer_profiles (printer_id),
+            lease_owner TEXT NULL CHECK (lease_owner IS NULL OR length(trim(lease_owner)) > 0),
+            lease_expires_at TEXT NULL,
+            FOREIGN KEY (original_print_job_id) REFERENCES print_jobs_v25 (print_job_id),
+            UNIQUE (branch_id, request_id, purpose, target_station)
+        );
+
+        INSERT INTO print_jobs_v25 (
+            print_job_id, branch_id, request_id, table_session_id, snapshot_id, purpose,
+            target_station, status, attempt_count, next_retry_at, last_error, blocked_reason,
+            created_at, original_print_job_id, is_reprint, assigned_printer_id, lease_owner, lease_expires_at)
+        SELECT print_job_id, branch_id, request_id, table_session_id, snapshot_id, purpose,
+               target_station, status, attempt_count, next_retry_at, last_error, blocked_reason,
+               created_at, original_print_job_id, is_reprint, assigned_printer_id, lease_owner, lease_expires_at
+        FROM print_jobs;
+
+        DROP TABLE print_jobs;
+        ALTER TABLE print_jobs_v25 RENAME TO print_jobs;
+        CREATE INDEX ix_print_jobs_dispatch ON print_jobs (status, next_retry_at, created_at);
+        """;
+
     private const string SchemaVersion24 = """
         CREATE TABLE IF NOT EXISTS cancellation_request_lines (
             branch_id TEXT NOT NULL,
@@ -1147,6 +1209,30 @@ internal static class SqliteBranchSchema
         settingsCommand.CommandText = "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;";
         await settingsCommand.ExecuteNonQueryAsync(cancellationToken);
 
+        settingsCommand.CommandText = "PRAGMA foreign_keys;";
+        var foreignKeysEnabled = (long)(await settingsCommand.ExecuteScalarAsync(cancellationToken))! == 1;
+        if (foreignKeysEnabled)
+        {
+            settingsCommand.CommandText = "PRAGMA foreign_keys = OFF;";
+            await settingsCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        try
+        {
+            await MigrateAsync(connection, cancellationToken);
+        }
+        finally
+        {
+            if (foreignKeysEnabled)
+            {
+                settingsCommand.CommandText = "PRAGMA foreign_keys = ON;";
+                await settingsCommand.ExecuteNonQueryAsync(CancellationToken.None);
+            }
+        }
+    }
+
+    private static async Task MigrateAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
         await using var transaction = connection.BeginTransaction(deferred: false);
         var storedVersion = await ReadVersionAsync(connection, transaction, cancellationToken);
         if (storedVersion > CurrentVersion || storedVersion < 0)
@@ -1294,6 +1380,20 @@ internal static class SqliteBranchSchema
         if (storedVersion < 24)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion24, cancellationToken);
+        }
+
+        if (storedVersion < 25)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion25, cancellationToken);
+            await ExecuteAsync(connection, transaction, SchemaVersion7PrintJobGuards, cancellationToken);
+            await ExecuteAsync(connection, transaction, SchemaVersion9, cancellationToken);
+            using var check = connection.CreateCommand();
+            check.Transaction = transaction;
+            check.CommandText = "PRAGMA foreign_key_check;";
+            if (await check.ExecuteScalarAsync(cancellationToken) is not null)
+            {
+                throw new InvalidOperationException("Branch migration would leave invalid foreign keys.");
+            }
         }
 
         if (storedVersion != CurrentVersion)
