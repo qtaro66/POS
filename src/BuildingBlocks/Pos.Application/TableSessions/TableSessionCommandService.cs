@@ -98,6 +98,41 @@ public sealed class TableSessionCommandService
         }, cancellationToken);
     }
 
+    public Task<BranchCommandReceipt> RequestCancellationAsync(
+        BranchCommandMetadata metadata,
+        IReadOnlyDictionary<string, int> quantities,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(quantities);
+
+        return _store.ExecuteAtomicallyAsync(async (transaction, token) =>
+        {
+            var duplicate = await transaction.FindReceiptAsync(metadata.BranchId, metadata.RequestId, token);
+            if (duplicate is not null)
+            {
+                return duplicate;
+            }
+
+            var receivedAt = _clock.UtcNow;
+            var session = await transaction.FindSessionAsync(metadata.BranchId, metadata.TableSessionId, token);
+            if (session is null || session.Status != TableSessionStatus.Ordering)
+            {
+                return await PersistRejectionAsync(transaction, metadata, receivedAt, "InvalidTableSessionState", token, session);
+            }
+
+            if (!await transaction.TryReserveCancellationAsync(
+                metadata.BranchId, metadata.TableSessionId.Value, metadata.RequestId, quantities, token))
+            {
+                return await PersistRejectionAsync(transaction, metadata, receivedAt, "CancellationQuantityUnavailable", token, session);
+            }
+
+            var receipt = Accepted(metadata, session, receivedAt);
+            await transaction.AddReceiptAsync(receipt, token);
+            return receipt;
+        }, cancellationToken);
+    }
+
     public Task<BranchCommandReceipt> RequestPaymentAsync(
         RequestPaymentCommand command,
         CancellationToken cancellationToken = default)
