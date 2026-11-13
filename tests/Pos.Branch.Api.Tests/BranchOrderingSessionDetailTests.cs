@@ -7,6 +7,29 @@ namespace Pos.Branch.Api.Tests;
 public sealed partial class BranchOrderingHttpApiTests
 {
     [Fact]
+    public async Task Request_payment_uses_a_durable_receipt_and_enqueues_one_preview()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        Assert.Equal(200, (await fixture.Call("OpenBranchTable", Open("OPEN-1", "SESSION-1", "A01"))).Status);
+        Assert.Equal(200, (await fixture.Call("SubmitBranchOrder", Submit("ORDER-1"))).Status);
+        var detail = await fixture.Call("GetBranchOrderingSessionDetail", routeValue: "SESSION-1");
+        var request = new
+        {
+            schemaVersion = 1,
+            context = Context("PAY-1", "SESSION-1"),
+            expectedVersion = detail.Body.GetProperty("session").GetProperty("tableVersion").GetInt64()
+        };
+        var first = await fixture.Call("RequestBranchTablePayment", request);
+        var retry = await fixture.Call("RequestBranchTablePayment", request);
+        var queried = await fixture.Call("GetOrderingCommandStatus", routeValue: "PAY-1");
+        Assert.Equal(200, first.Status);
+        Assert.Equal(200, retry.Status);
+        Assert.Equal(200, queried.Status);
+        Assert.Equal("PaymentPending", queried.Body.GetProperty("result").GetProperty("tableSessionStatus").GetString());
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM bill_preview_snapshots;"));
+    }
+
+    [Fact]
     public async Task Session_detail_of_empty_open_table_has_no_bill_and_creates_no_preview_or_jobs()
     {
         await using var fixture = await Fixture.CreateAsync();

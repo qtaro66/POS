@@ -111,6 +111,21 @@ export class IndexedDbOrderStore implements DraftRepository, OrderOutbox {
     return value ?? null
   }
 
+  async queuePayment(key: DraftKey, request: MobileRequest): Promise<void> {
+    const database = await this.open()
+    const transaction = database.transaction([DRAFTS, REQUESTS], 'readwrite')
+    const done = transactionDone(transaction)
+    const draft = await requestResult(transaction.objectStore(DRAFTS).get(draftKeyPath(key))) as Draft | undefined
+    if (draft?.lines.length) {
+      transaction.abort()
+      await done.catch(() => undefined)
+      throw new Error('Send or discard the draft before requesting payment.')
+    }
+    transaction.objectStore(REQUESTS).add(request)
+    await done
+    this.changed()
+  }
+
   async submitDraft(key: DraftKey, request: MobileRequest): Promise<void> {
     const database = await this.open()
     // One transaction: the Draft is never lost and the order never appears twice.
@@ -140,7 +155,7 @@ export class IndexedDbOrderStore implements DraftRepository, OrderOutbox {
       await done.catch(() => undefined)
       throw new Error(`No outbox request ${request.requestId} to update.`)
     }
-    if (request.state === 'Rejected') {
+    if (request.command === 'SubmitOrder' && request.state === 'Rejected') {
       const drafts = transaction.objectStore(DRAFTS)
       const key = draftKeyPath(request)
       if (await requestResult(drafts.getKey(key)) === undefined) {

@@ -110,7 +110,7 @@ export function AuthenticatedShell({
     function resume() {
       if (document.visibilityState === 'hidden') return
       void processOrders(services, device, employee, now, undefined, controller.signal)
-        .then(reloadDraft, () => undefined)
+        .then(() => { reloadDraft(); refreshTables() }, () => undefined)
     }
     resume()
     document.addEventListener('visibilitychange', resume)
@@ -120,7 +120,7 @@ export function AuthenticatedShell({
       document.removeEventListener('visibilitychange', resume)
       window.removeEventListener('online', resume)
     }
-  }, [services, device, employee, now, reloadDraft])
+  }, [services, device, employee, now, reloadDraft, refreshTables])
 
   async function sendOrder() {
     if (sendingRef.current || !draft.draft || draft.saving || draft.saveFailed) return
@@ -136,6 +136,27 @@ export function AuthenticatedShell({
       setMessage('Order status could not be confirmed. Check the outbox before trying again.')
     } finally {
       reloadDraft()
+      sendingRef.current = false
+      setSending(false)
+    }
+  }
+
+  async function requestPayment() {
+    const table = tables.snapshot?.tables.find(row => row.tableSessionId === tableSessionId)
+    if (!table || table.status !== 'Ordering' || draft.draft?.lines.length || sendingRef.current) return
+    sendingRef.current = true
+    setSending(true)
+    try {
+      const result = await processOrders(services, device, employee, now, undefined, undefined, {
+        tableSessionId: table.tableSessionId, version: table.tableVersion,
+      })
+      setMessage(result === 'BranchAccepted' ? 'Payment requested.'
+        : result === 'Rejected' ? 'The branch rejected the payment request. Check the latest table status.'
+        : 'Payment request status is unconfirmed. Check the outbox.')
+    } catch {
+      setMessage('Payment request status could not be confirmed. Check the outbox.')
+    } finally {
+      tables.refresh()
       sendingRef.current = false
       setSending(false)
     }
@@ -205,6 +226,8 @@ export function AuthenticatedShell({
               employee={employee}
               sessionId={route.table.tableSessionId}
               snapshot={tables.snapshot}
+              onRequestPayment={services.outbox?.queuePayment && services.submitOrder ? requestPayment : undefined}
+              paymentBlocked={sending || !draft.loaded || draft.saving || draft.saveFailed || !!draft.draft?.lines.length || tables.loading || !!tables.problem}
             />
           )}
           tables={tables}
