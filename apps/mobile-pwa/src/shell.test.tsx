@@ -57,6 +57,31 @@ function heading() {
   return screen.getByRole('heading', { level: 1 })
 }
 
+it('shows and selects a table within the fixture performance target', async () => {
+  const { user } = renderShell()
+  await user.type(screen.getByLabelText('PIN'), FIXTURE_ACCEPTED_PIN)
+  const login = screen.getByRole('button', { name: 'Log in' })
+  const start = performance.now()
+  await act(async () => login.click())
+  const elapsedToShow = performance.now() - start
+
+  const samples = []
+  for (let sample = 0; sample < 30; sample++) {
+    const table = within(screen.getByRole('list', { name: 'Active tables' })).getByRole('button', { name: 'Table A1' })
+    const before = performance.now()
+    await act(async () => table.click())
+    samples.push(performance.now() - before)
+    expect(heading().textContent).toBe('Table A1')
+    const tables = within(mainNav()).getByRole('button', { name: 'Tables' })
+    await act(async () => tables.click())
+  }
+  samples.sort((a, b) => a - b)
+  const p95 = samples[Math.ceil(samples.length * 0.95) - 1]
+  console.info('Fixture table list render (ms):', elapsedToShow.toFixed(1), 'selection p95 (ms):', p95.toFixed(1))
+  expect(elapsedToShow).toBeLessThanOrEqual(500)
+  expect(p95).toBeLessThanOrEqual(500)
+})
+
 describe('authenticated shell navigation', () => {
   it('shows the main navigation only after login, with Tables as the current screen', async () => {
     const { user } = renderShell()
