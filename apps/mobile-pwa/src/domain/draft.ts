@@ -7,7 +7,10 @@ import { itemProblems, type OptionSelection } from './optionRules.ts'
  * Draft on this device; they are not Branch commands (D12.3, D12.4). A Draft
  * is never an order the Branch accepted.
  */
+export type FulfillmentType = 'DineIn' | 'Takeaway'
+
 export interface DraftLine {
+  readonly fulfillmentType?: FulfillmentType
   /** Created on this device; identifies the line while it is edited. */
   readonly lineId: string
   readonly sellableItemId: string

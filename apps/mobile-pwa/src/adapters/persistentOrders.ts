@@ -20,5 +20,5 @@ export async function withPersistentOrders(
     // An unreadable store must not stop the app; the basket reports save failures itself.
   }
   await syncStatus.refresh()
-  return { ...services, drafts: store, syncStatus }
+  return { ...services, drafts: store, outbox: store, syncStatus }
 }
