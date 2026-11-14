@@ -15,7 +15,12 @@ import type { DraftLine } from './draft.ts'
 export type MobileRequestState = 'Pending' | 'Submitted' | 'BranchAccepted' | 'Rejected' | 'Unknown'
 
 /** Commands Mobile may send (D12.4). Only `SubmitOrder` is held in the outbox so far. */
-export type MobileCommand = 'SubmitOrder' | 'RequestPayment'
+export type MobileCommand = 'SubmitOrder' | 'RequestPayment' | 'RequestCancellation'
+
+export interface CancellationSelection {
+  readonly orderLineId: string
+  readonly quantity: number
+}
 
 export interface OrderRejection {
   readonly code?: string
@@ -23,6 +28,7 @@ export interface OrderRejection {
 }
 
 export interface MobileRequest {
+  readonly cancellationLines?: readonly CancellationSelection[]
   readonly expectedVersion?: number
   readonly rejection?: OrderRejection
   readonly requestId: string

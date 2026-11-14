@@ -141,6 +141,26 @@ export function AuthenticatedShell({
     }
   }
 
+  async function requestCancellation(lines: readonly import('../domain/mobileRequest.ts').CancellationSelection[]) {
+    if (!tableSessionId || sendingRef.current) return false
+    sendingRef.current = true
+    setSending(true)
+    try {
+      const state = await processOrders(services, device, employee, now, undefined, undefined, undefined, { tableSessionId, lines })
+      setMessage(state === 'BranchAccepted' ? 'Cancellation request sent to the cashier.'
+        : state === 'Rejected' ? 'Cancellation request rejected. Check the available quantities.'
+        : 'Cancellation request status is unconfirmed. Check the outbox.')
+      return state === 'BranchAccepted'
+    } catch {
+      setMessage('Cancellation request status could not be confirmed. Check the outbox.')
+      return false
+    } finally {
+      tables.refresh()
+      sendingRef.current = false
+      setSending(false)
+    }
+  }
+
   async function requestPayment() {
     const table = tables.snapshot?.tables.find(row => row.tableSessionId === tableSessionId)
     if (!table || table.status !== 'Ordering' || draft.draft?.lines.length || sendingRef.current) return
@@ -227,6 +247,8 @@ export function AuthenticatedShell({
               sessionId={route.table.tableSessionId}
               snapshot={tables.snapshot}
               onRequestPayment={services.outbox?.queuePayment && services.submitOrder ? requestPayment : undefined}
+              onCancellation={services.outbox?.queueCancellation && services.submitOrder ? requestCancellation : undefined}
+              cancellationBlocked={sending || tables.loading || !!tables.problem}
               paymentBlocked={sending || !draft.loaded || draft.saving || draft.saveFailed || !!draft.draft?.lines.length || tables.loading || !!tables.problem}
             />
           )}

@@ -37,6 +37,7 @@ function tableDetail(value: unknown, sessionId: string): TableDetail {
   return {
     tableVersion: integer(session.tableVersion, 1),
     status: string(session.status),
+    ...(body.canRequestCancellation === true ? { canRequestCancellation: true } : {}),
     hasOpenCancellationRequest: body.hasOpenCancellationRequest,
     lines: list(body.batches).flatMap(batch => list(object(batch).lines).map(candidate => {
       const line = object(candidate)
