@@ -6,6 +6,7 @@ using Pos.Application.Security;
 using Pos.Branch.Api.Ordering;
 using Pos.Branch.Api.Security;
 using Pos.Branch.Infrastructure.Sqlite;
+using Pos.Contracts.Ordering;
 
 if (args.Length != 1 || !File.Exists(Path.Combine(args[0], "index.html")))
 {
@@ -29,8 +30,8 @@ try
             INSERT INTO master_data_packages VALUES ($branch,'TEST',1,$hash,$now,$now,'Active');
             INSERT INTO master_data_billing_policy VALUES ($branch,'TEST','TEST-CALC','0','0',2,'AwayFromZero');
             INSERT INTO master_data_sellable_items
-              (branch_id,master_data_version,sellable_item_id,item_kind,display_name,resolved_price,central_active,branch_catalog_enabled)
-              VALUES ($branch,'TEST','ITEM-1','Item','Browser test item','100',1,1);
+              (branch_id,master_data_version,sellable_item_id,item_kind,display_name,resolved_price,central_active,branch_catalog_enabled,production_station_id)
+              VALUES ($branch,'TEST','ITEM-1','Item','Browser test item','100',1,1,'TEST-KITCHEN');
             """;
         command.Parameters.AddWithValue("$branch", Branch);
         command.Parameters.AddWithValue("$employee", Employee);
@@ -38,6 +39,11 @@ try
         command.Parameters.AddWithValue("$hash", new string('A', 64));
         await command.ExecuteNonQueryAsync();
     }
+
+    await new SqliteTableRegistryStore(database).ApplyAsync(
+        new TableRegistry(1, Branch, "TEST",
+            [new("A01", "Browser table A01", "Test zone", 1), new("A02", "Browser table A02", "Test zone", 2)]),
+        CancellationToken.None);
 
     using var key = RSA.Create(2048);
     var request = new CertificateRequest("CN=PC POS browser fixture", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -106,9 +112,11 @@ try
     app.MapBranchOrderingIfEnabled(builder.Configuration);
 
     var pairing = await app.Services.GetRequiredService<BranchPairingTokenIssuanceService>().IssueAsync(Branch, Employee);
+    var secondPairing = await app.Services.GetRequiredService<BranchPairingTokenIssuanceService>().IssueAsync(Branch, "TEST-PAIRING-OPERATOR");
     await app.StartAsync();
     Console.WriteLine($"Fixture PIN: {pin}");
     Console.WriteLine($"Fixture pairing: {origin}/#pair?v=1&branchId={Branch}&pairingId={pairing.PairingId}&token={pairing.Token}");
+    Console.WriteLine($"Fixture second pairing: {origin}/#pair?v=1&branchId={Branch}&pairingId={secondPairing.PairingId}&token={secondPairing.Token}");
     await app.WaitForShutdownAsync();
 }
 finally
