@@ -7,9 +7,10 @@ const fields = [
   ['completed', 'เสร็จแล้ว'], ['notApplicable', 'ไม่มีกระบวนการผลิต'],
 ] as const
 
-export function CancellationProductionForm({ entry, record, onSaved }: {
+export function CancellationProductionForm({ entry, record, onSaved, confirming = false }: {
   entry: CancellationQueueEntry
-  record: NonNullable<OrderingReadClient['recordCancellationProduction']>
+  record: NonNullable<OrderingReadClient['recordCancellationProduction' | 'confirmCancellation']>
+  confirming?: boolean
   onSaved: () => void
 }) {
   const [busy, setBusy] = useState(false)
@@ -25,7 +26,11 @@ export function CancellationProductionForm({ entry, record, onSaved }: {
       completed: Number(data.get(index + '-completed')),
       notApplicable: Number(data.get(index + '-notApplicable')),
     }))
-    if (lines.some((line, index) => fields.reduce((sum, [key]) => sum + line[key], 0) !== entry.lines[index].requestedQuantity)) {
+    if (confirming && !lines.some(line => fields.some(([key]) => line[key] > 0))) {
+      setError('เลือกจำนวนที่จะยกเลิกอย่างน้อยหนึ่งรายการ')
+      return
+    }
+    if (!confirming && lines.some((line, index) => fields.reduce((sum, [key]) => sum + line[key], 0) !== entry.lines[index].requestedQuantity)) {
       setError('ผลรวมแต่ละรายการต้องเท่ากับจำนวนที่ขอตรวจสอบ')
       return
     }
@@ -46,10 +51,10 @@ export function CancellationProductionForm({ entry, record, onSaved }: {
       <legend>{line.displayName} × {line.requestedQuantity}</legend>
       {fields.map(([key, label]) => <label key={key}>{label}
         <input type="number" name={index + '-' + key} defaultValue={0} min={0}
-          max={line.requestedQuantity} step={1} required />
+          max={confirming ? line.checked?.[key] ?? 0 : line.requestedQuantity} step={1} required />
       </label>)}
     </fieldset>)}
     {error && <p role="alert">{error}</p>}
-    <button className="refresh-button" disabled={busy}>บันทึกผลตรวจ</button>
+    <button className="refresh-button" disabled={busy}>{confirming ? 'ยืนยันการยกเลิก' : 'บันทึกผลตรวจ'}</button>
   </form>
 }

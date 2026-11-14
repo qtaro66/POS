@@ -177,7 +177,7 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Conflict(new BranchOrderingError(1, "CancellationNotReadyForResolution"));
     }
 
-    public static async Task<IResult> CancellationQueueAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    public static async Task<IResult> CancellationQueueAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, IConfiguration configuration, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
         if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
@@ -185,7 +185,7 @@ public static class BranchOrderingHttpHandlers
             return TypedResults.StatusCode(403);
         }
 
-        return TypedResults.Ok(new { SchemaVersion = 1, Requests = await runtime.Queries.CancellationQueueAsync(identity.BranchId, cancellationToken) });
+        return TypedResults.Ok(new { SchemaVersion = 1, CanConfirm = configuration.GetValue<bool>("BranchOrdering:EnableCancellationConfirmation"), Requests = await runtime.Queries.CancellationQueueAsync(identity.BranchId, cancellationToken) });
     }
 
     public static async Task<IResult> FloorPlanAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)

@@ -280,6 +280,16 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       const page = parseSoldOutPage(result.body, offset)
       return page ? { kind: 'ok', value: page } : { kind: 'unavailable', reason: 'protocol' }
     },
+    async confirmCancellation(cancellationId: string, lines: readonly ProductionCheck[]): Promise<QueryResult<'Confirmed' | 'PartiallyConfirmed'>> {
+      if (!id(cancellationId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/cancellation-queue/' + encodeURIComponent(cancellationId) + '/confirm',
+        'POST', JSON.stringify({ schemaVersion: 1, lines }))
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      const body = result.body
+      return record(body) && body.schemaVersion === 1 && (body.status === 'Confirmed' || body.status === 'PartiallyConfirmed')
+        ? { kind: 'ok', value: body.status } : { kind: 'unavailable', reason: 'protocol' }
+    },
     async rejectCancellation(cancellationId: string): Promise<QueryResult<'Rejected'>> {
       if (!id(cancellationId)) return { kind: 'unavailable', reason: 'protocol' }
       const result = await request('/cancellation-queue/' + encodeURIComponent(cancellationId) + '/reject', 'POST')
@@ -319,7 +329,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
               Number.isSafeInteger(line.requestedQuantity) && line.requestedQuantity > 0))) {
         return { kind: 'unavailable', reason: 'protocol' }
       }
-      return { kind: 'ok', value: body.requests as CancellationQueueEntry[] }
+      return { kind: 'ok', value: (body.requests as CancellationQueueEntry[]).map(entry => ({ ...entry, canConfirm: body.canConfirm === true })) }
     },
     async branchReadiness(signal?: AbortSignal): Promise<QueryResult<{ checkedAt: string; orderingDatabaseReady: boolean }>> {
       const result = await request('/branch-readiness', 'GET', undefined, signal)
@@ -435,7 +445,8 @@ export interface CancellationQueueEntry {
   readonly cancellationRequestId: string
   readonly tableSessionId: string
   readonly status: 'CancellationRequested' | 'ProductionStatusChecking' | 'StatusRecorded'
-  readonly lines: readonly { orderLineId: string; displayName: string; requestedQuantity: number }[]
+  readonly canConfirm?: boolean
+  readonly lines: readonly { orderLineId: string; displayName: string; requestedQuantity: number; checked?: ProductionCheck | null }[]
 }
 
 export interface ProductionCheck {
