@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pos.Application.TableSessions;
 using Pos.Domain.Payments;
 using Pos.Domain.TableSessions;
 
@@ -20,6 +21,8 @@ internal sealed partial class SqliteTableSessionCommandTransaction
             return result.TableSessionId == sessionId && result.EmployeeId == employeeId && result.DeviceId == deviceId &&
                 result.TenderedAmount == tendered && result.ExpectedVersion == expectedVersion ? result : null;
         }
+
+        if (await FindReceiptAsync(branchId, requestId, token) is not null) { return null; }
 
         read.CommandText = """
             SELECT shift.shift_id, shift.store_session_id, shift.business_date, preview.content_json
@@ -72,6 +75,9 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         write.Parameters.AddWithValue("$receipt", sale.ReceiptNumber);
         write.Parameters.AddWithValue("$now", FormatTimestamp(now));
         await write.ExecuteNonQueryAsync(token);
+        await AddAuditAsync(new($"{branchId}:{requestId}:audit:1", branchId, requestId, session.Transitions[^1]), token);
+        await AddCloudOutboxAsync(new($"{branchId}:{requestId}:cloud:1", branchId, requestId,
+            session.Id, TableSessionAction.CompletePayment, session.Version, now), token);
         return sale;
     }
 
