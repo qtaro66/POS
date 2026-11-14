@@ -133,7 +133,7 @@ public static class BranchOrderingHttpHandlers
     }
 
     public static async Task<IResult> ConfirmCancellationAsync(ClaimsPrincipal principal, string cancellationId,
-        CancellationProductionRequest request, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+        CancellationProductionRequest request, BranchOrderingRuntime runtime, IConfiguration configuration, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
         if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
@@ -155,8 +155,11 @@ public static class BranchOrderingHttpHandlers
         }
         catch (ArgumentException) { return InvalidRequest(); }
 
+        var untrackedItems = configuration.GetSection("BranchOrdering:UntrackedCancellationItems")
+            .GetSection(identity.BranchId).GetChildren()
+            .Select(entry => entry.Value).OfType<string>().ToHashSet(StringComparer.Ordinal);
         var status = await runtime.TableCommands.ConfirmCancellationAsync(
-            identity.BranchId, cancellationId, identity.EmployeeId, runtime.Time.GetUtcNow(), quantities, cancellationToken);
+            identity.BranchId, cancellationId, identity.EmployeeId, runtime.Time.GetUtcNow(), quantities, untrackedItems, cancellationToken);
         return status is null ? TypedResults.Conflict(new BranchOrderingError(1, "CancellationNotReadyForConfirmation"))
             : TypedResults.Ok(new { SchemaVersion = 1, Status = status });
     }

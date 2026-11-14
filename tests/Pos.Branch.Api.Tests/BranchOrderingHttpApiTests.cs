@@ -267,6 +267,7 @@ public sealed partial class BranchOrderingHttpApiTests
                 """);
             _configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["BranchOrdering:Enabled"] = "true", ["BranchOrdering:EnableCancellationConfirmation"] = cancellationEnabled.ToString(), ["BranchOrdering:EnableMobileCancellationRequests"] = cancellationEnabled.ToString() }).Build();
             var builder = WebApplication.CreateBuilder();
+            builder.Configuration["BranchOrdering:UntrackedCancellationItems:BRANCH-01:0"] = "ITEM-1";
             builder.Services.AddSingleton(new BranchOrderingRuntime(Path, TimeProvider.System));
             _app = builder.Build();
             _app.MapBranchOrderingIfEnabled(_configuration);
