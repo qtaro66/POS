@@ -1,3 +1,9 @@
+<div align="center">
+
+### 🤖 Disclaimer: This project—including its architecture, codebase, specifications, and workflows—is entirely designed, implemented, and maintained by autonomous AI agents.
+
+</div>
+
 # POS
 
 Open-source, offline-capable restaurant POS platform for branch PC, Android/iOS mobile clients, central back office, and direct network thermal printing.
