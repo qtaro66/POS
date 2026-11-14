@@ -280,6 +280,15 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       const page = parseSoldOutPage(result.body, offset)
       return page ? { kind: 'ok', value: page } : { kind: 'unavailable', reason: 'protocol' }
     },
+    async recordCancellationProduction(cancellationId: string, lines: readonly ProductionCheck[]): Promise<QueryResult<'StatusRecorded'>> {
+      if (!id(cancellationId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/cancellation-queue/' + encodeURIComponent(cancellationId) + '/production-status',
+        'POST', JSON.stringify({ schemaVersion: 1, lines }))
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      return record(result.body) && result.body.schemaVersion === 1 && result.body.status === 'StatusRecorded'
+        ? { kind: 'ok', value: 'StatusRecorded' } : { kind: 'unavailable', reason: 'protocol' }
+    },
     async queueCancellationInspection(cancellationId: string): Promise<QueryResult<string>> {
       if (!id(cancellationId)) return { kind: 'unavailable', reason: 'protocol' }
       const result = await request('/cancellation-queue/' + encodeURIComponent(cancellationId) + '/inspection', 'POST')
@@ -419,4 +428,12 @@ export interface CancellationQueueEntry {
   readonly tableSessionId: string
   readonly status: 'CancellationRequested' | 'ProductionStatusChecking' | 'StatusRecorded'
   readonly lines: readonly { orderLineId: string; displayName: string; requestedQuantity: number }[]
+}
+
+export interface ProductionCheck {
+  readonly orderLineId: string
+  readonly notStarted: number
+  readonly inProgress: number
+  readonly completed: number
+  readonly notApplicable: number
 }

@@ -1,3 +1,4 @@
+import { CancellationProductionForm } from './CancellationProductionForm.tsx'
 import { useEffect, useState } from 'react'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 import type { CancellationQueueEntry } from '../api/orderingClient.ts'
@@ -8,8 +9,9 @@ const labels = {
   StatusRecorded: 'บันทึกผลตรวจแล้ว',
 }
 
-export function HomeCancellationQueue({ read, queueInspection }: {
+export function HomeCancellationQueue({ read, queueInspection, recordProduction }: {
   read: NonNullable<OrderingReadClient['cancellationQueue']>
+  recordProduction?: OrderingReadClient['recordCancellationProduction']
   queueInspection?: OrderingReadClient['queueCancellationInspection']
 }) {
   const [queue, setQueue] = useState<readonly CancellationQueueEntry[] | null>()
@@ -56,6 +58,11 @@ export function HomeCancellationQueue({ read, queueInspection }: {
         <button className="refresh-button" disabled={printing} onClick={() => { void print(entry.cancellationRequestId) }}>
           พิมพ์ใบตรวจสอบ
         </button>}
+      {recordProduction && entry.status === 'ProductionStatusChecking' && entry.lines.length > 0 &&
+        <CancellationProductionForm entry={entry} record={recordProduction} onSaved={() => {
+          setPrintMessage('บันทึกผลตรวจแล้ว')
+          setRefresh(value => value + 1)
+        }} />}
       <ul>{entry.lines.map(line => <li key={line.orderLineId}>{line.displayName} × {line.requestedQuantity}</li>)}</ul>
     </li>)}</ul>}
   </section>

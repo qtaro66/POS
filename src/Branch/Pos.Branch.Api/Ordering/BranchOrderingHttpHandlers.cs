@@ -100,6 +100,38 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Ok(new { SchemaVersion = 1, PrintJobId = jobId });
     }
 
+    public sealed record CancellationProductionLine(string OrderLineId, int? NotStarted, int? InProgress, int? Completed, int? NotApplicable);
+    public sealed record CancellationProductionRequest(int SchemaVersion, IReadOnlyList<CancellationProductionLine>? Lines);
+
+    public static async Task<IResult> RecordCancellationProductionAsync(ClaimsPrincipal principal, string cancellationId,
+        CancellationProductionRequest request, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        if (request.SchemaVersion != 1 || request.Lines is not { Count: > 0 }) { return InvalidRequest(); }
+        var checks = new List<Pos.Application.TableSessions.CancellationProductionCheck>();
+        try
+        {
+            cancellationId = Identifier(cancellationId);
+            foreach (var line in request.Lines)
+            {
+                if (line is null || line.NotStarted is not int notStarted || line.InProgress is not int inProgress ||
+                    line.Completed is not int completed || line.NotApplicable is not int notApplicable) { return InvalidRequest(); }
+                checks.Add(new(Identifier(line.OrderLineId), notStarted, inProgress, completed, notApplicable));
+            }
+        }
+        catch (ArgumentException) { return InvalidRequest(); }
+
+        var recorded = await runtime.TableCommands.RecordCancellationProductionAsync(
+            identity.BranchId, cancellationId, identity.EmployeeId, runtime.Time.GetUtcNow(), checks, cancellationToken);
+        return recorded ? TypedResults.Ok(new { SchemaVersion = 1, Status = "StatusRecorded" })
+            : TypedResults.Conflict(new BranchOrderingError(1, "InvalidCancellationProductionStatus"));
+    }
+
     public static async Task<IResult> CancellationQueueAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }

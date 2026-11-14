@@ -47,6 +47,15 @@ public sealed class SqliteTableSessionCommandStoreTests
         Assert.Null(await store.QueueCancellationInspectionAsync("BRANCH-02", "CANCEL-1", Now, default));
         Assert.Equal(1L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM print_jobs WHERE purpose = 'CancellationInspection';"));
         Assert.Equal("ProductionStatusChecking", await database.ScalarAsync<string>("SELECT status FROM cancellation_requests;"));
+        var hasProduction = await database.ScalarAsync<long>("SELECT production_station_id IS NOT NULL FROM order_lines ORDER BY line_sequence LIMIT 1;") == 1;
+        var count = checked((int)quantity);
+        CancellationProductionCheck check = new(line, hasProduction ? count : 0, 0, 0, hasProduction ? 0 : count);
+        Assert.False(await store.RecordCancellationProductionAsync("BRANCH-02", "CANCEL-1", "EMP", Now, [check], default));
+        Assert.False(await store.RecordCancellationProductionAsync("BRANCH-01", "CANCEL-1", "EMP", Now, [check with { Completed = 1 }], default));
+        Assert.True(await store.RecordCancellationProductionAsync("BRANCH-01", "CANCEL-1", "EMP", Now, [check], default));
+        Assert.True(await store.RecordCancellationProductionAsync("BRANCH-01", "CANCEL-1", "EMP", Now, [check], default));
+        Assert.Equal("StatusRecorded", await database.ScalarAsync<string>("SELECT status FROM cancellation_requests;"));
+        Assert.Equal(1L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_production_checks;"));
     }
 
     [Fact]
@@ -62,7 +71,7 @@ public sealed class SqliteTableSessionCommandStoreTests
 
         await store.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_requests;"));
         Assert.Equal(0L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_request_lines;"));
     }
@@ -100,7 +109,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("wal", await database.ScalarAsync<string>("PRAGMA journal_mode;"));
         Assert.Equal(2L, await database.ScalarAsync<long>("PRAGMA synchronous;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
@@ -544,7 +553,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("cloud_sync_outbox"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM pragma_table_info('cloud_sync_outbox')
@@ -591,7 +600,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("table_sessions"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_preview_snapshots';"));
@@ -629,7 +638,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -662,7 +671,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>(
             "SELECT master_data_version FROM table_session_billing_policy WHERE table_session_id = 'TS-1';"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
@@ -699,7 +708,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("MASTER-1", await database.ScalarAsync<string>("""
             SELECT master_data_version FROM master_data_packages
             WHERE branch_id = 'BRANCH-01' AND lifecycle_status = 'Active';
@@ -740,7 +749,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>(
             "SELECT branch_sequence FROM order_batches WHERE order_batch_id = 'LEGACY-BATCH';"));
         Assert.Equal(
@@ -812,7 +821,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.CountAsync("bill_preview_snapshots"));
         Assert.Equal(1L, await database.CountAsync("print_jobs"));
         Assert.Equal("Cashier", await database.ScalarAsync<string>(
@@ -852,7 +861,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             new StaticBillPreviewContentSource());
         await migratedStore.InitializeAsync();
 
-        Assert.Equal(25L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'printer_profiles';
@@ -1429,14 +1438,14 @@ public sealed class SqliteTableSessionCommandStoreTests
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 26;");
+        await database.ExecuteAsync("PRAGMA user_version = 27;");
         var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 26", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(26L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 27", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(27L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]
