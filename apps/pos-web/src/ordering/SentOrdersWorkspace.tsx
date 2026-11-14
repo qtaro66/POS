@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { CashSaleForm } from './CashSaleForm.tsx'
 import type { AcceptedBatch, SessionDetail, SessionStatus } from '../api/orderingContracts.ts'
 import { createOrderingReadController } from './readController.ts'
 import type { OrderingReadClient } from './readController.ts'
@@ -92,6 +93,8 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       {!inSession && <button className="workspace-open" onClick={() => { moveFocus.current = true; setEntry({ owner: controller, sessionId: detail.session.tableSessionId }) }}>{s.openTableWorkspace}</button>}</header>
       {detail.hasOpenCancellationRequest && <p className="cancellation-notice" role="status">{s.cancellationPending}</p>}
       <div className="batch-list" role="region" aria-label={s.batches} tabIndex={0}>{detail.batches.length === 0 ? <p className="empty-state">{s.noOrders}</p> : detail.batches.map((batch, index) => <Batch key={batch.orderBatchId} batch={batch} index={index} />)}</div>
+      {!preview && client.cashStep && detail.billPreviewTotals && <CashSaleForm key={detail.session.tableSessionId}
+        detail={detail} send={client.cashStep} refresh={() => { void controller.refresh() }} />}
       <Totals detail={detail} compact={inSession} /></>}
   </section>
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}

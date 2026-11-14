@@ -38,6 +38,29 @@ public static class BranchOrderingHttpHandlers
         return Receipt(await runtime.Commands.OpenTableAsync(command, cancellationToken));
     }
 
+    public sealed record CashSaleRequest(int SchemaVersion, BranchOrderingContext Context, long ExpectedVersion, decimal TenderedAmount);
+
+    public static async Task<IResult> CompleteCashSaleAsync(ClaimsPrincipal principal, CashSaleRequest request,
+        BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        if (request.ExpectedVersion < 1 || request.TenderedAmount < 0 ||
+            decimal.Round(request.TenderedAmount, 2) != request.TenderedAmount) { return InvalidRequest(); }
+        Pos.Application.TableSessions.BranchCommandMetadata metadata;
+        try { metadata = Context(request.SchemaVersion, request.Context, identity); }
+        catch (ArgumentException) { return InvalidRequest(); }
+        var sale = await runtime.TableCommands.CompleteCashSaleAsync(identity.BranchId, metadata.TableSessionId.Value,
+            metadata.RequestId, identity.EmployeeId, identity.DeviceId, runtime.Time.GetUtcNow(),
+            request.ExpectedVersion, request.TenderedAmount, cancellationToken);
+        return sale is null ? TypedResults.Conflict(new BranchOrderingError(1, "CashSaleUnavailable"))
+            : TypedResults.Ok(sale);
+    }
+
     public static async Task<IResult> RequestPaymentAsync(ClaimsPrincipal principal, BranchRequestPaymentRequest request,
         BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {

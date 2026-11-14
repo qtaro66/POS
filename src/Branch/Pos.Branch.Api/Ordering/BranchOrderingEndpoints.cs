@@ -56,6 +56,12 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)
             .WithName("OpenBranchTable");
+        if (configuration.GetValue<bool>("BranchOrdering:EnableCashSaleTest"))
+        {
+            group.MapPost("/tables/complete-cash-sale", BranchOrderingHttpHandlers.CompleteCashSaleAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
+                .WithName("CompleteBranchCashSale");
+        }
         group.MapPost("/tables/request-payment", BranchOrderingHttpHandlers.RequestPaymentAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)

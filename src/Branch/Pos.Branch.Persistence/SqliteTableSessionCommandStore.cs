@@ -85,6 +85,14 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
             ((SqliteTableSessionCommandTransaction)transaction).QueueCancellationInspectionAsync(branchId, cancellationId, now, token),
             cancellationToken);
 
+    public Task<CashSaleResult?> CompleteCashSaleAsync(
+        string branchId, string sessionId, string requestId, string employeeId, string deviceId,
+        DateTimeOffset now, long expectedVersion, decimal tendered, CancellationToken cancellationToken) =>
+        ExecuteAtomicallyAsync((transaction, token) =>
+            ((SqliteTableSessionCommandTransaction)transaction).CompleteCashSaleAsync(
+                branchId, sessionId, requestId, employeeId, deviceId, now, expectedVersion, tendered, token),
+            cancellationToken);
+
     public async Task<TResult> ExecuteAtomicallyAsync<TResult>(
         Func<ITableSessionCommandTransaction, CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken)

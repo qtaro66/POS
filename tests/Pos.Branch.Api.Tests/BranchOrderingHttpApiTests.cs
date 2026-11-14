@@ -265,7 +265,7 @@ public sealed partial class BranchOrderingHttpApiTests
                 INSERT INTO master_data_option_groups VALUES ('BRANCH-01','OLD','ITEM-1','GROUP-1','Choose','SubItem',1,1,0,1,0);
                 INSERT INTO master_data_option_group_items VALUES ('BRANCH-01','OLD','ITEM-1','GROUP-1','OPT-1',0,0);
                 """);
-            _configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["BranchOrdering:Enabled"] = "true", ["BranchOrdering:EnableCancellationConfirmation"] = cancellationEnabled.ToString(), ["BranchOrdering:EnableMobileCancellationRequests"] = cancellationEnabled.ToString() }).Build();
+            _configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["BranchOrdering:EnableCashSaleTest"] = "true", ["BranchOrdering:Enabled"] = "true", ["BranchOrdering:EnableCancellationConfirmation"] = cancellationEnabled.ToString(), ["BranchOrdering:EnableMobileCancellationRequests"] = cancellationEnabled.ToString() }).Build();
             var builder = WebApplication.CreateBuilder();
             builder.Configuration["BranchOrdering:UntrackedCancellationItems:BRANCH-01:0"] = "ITEM-1";
             builder.Services.AddSingleton(new BranchOrderingRuntime(Path, TimeProvider.System));
