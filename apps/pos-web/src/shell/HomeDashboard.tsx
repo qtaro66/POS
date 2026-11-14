@@ -29,7 +29,7 @@ export function HomeDashboard({ state, onRefresh, openTables, openSystem, client
       </div>)}
     </dl>
     <button className="refresh-button" onClick={() => openTables()}>เปิดรายการโต๊ะ</button>
-    {client.cancellationQueue && <HomeCancellationQueue read={client.cancellationQueue} queueInspection={client.queueCancellationInspection} recordProduction={client.recordCancellationProduction} rejectCancellation={client.rejectCancellation} />}
+    {client.cancellationQueue && <HomeCancellationQueue read={client.cancellationQueue} queueInspection={client.queueCancellationInspection} recordProduction={client.recordCancellationProduction} rejectCancellation={client.rejectCancellation} confirmCancellation={client.confirmCancellation} />}
     <HomeSoldOut read={client.soldOut} adjust={canAdjust ? client.adjustSoldOut : undefined} />
     <BranchReadinessPanel read={client.branchReadiness} />
     <HomeCloudStatus port={client} freshness={freshness} refreshPermissions={canAdjust ? client.refreshEmployeePermissions : undefined} openDetails={() => openSystem('cloud-outbox-title')} />

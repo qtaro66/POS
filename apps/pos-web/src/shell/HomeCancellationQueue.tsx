@@ -9,8 +9,9 @@ const labels = {
   StatusRecorded: 'บันทึกผลตรวจแล้ว',
 }
 
-export function HomeCancellationQueue({ read, queueInspection, recordProduction, rejectCancellation }: {
+export function HomeCancellationQueue({ read, queueInspection, recordProduction, rejectCancellation, confirmCancellation }: {
   read: NonNullable<OrderingReadClient['cancellationQueue']>
+  confirmCancellation?: OrderingReadClient['confirmCancellation']
   rejectCancellation?: OrderingReadClient['rejectCancellation']
   recordProduction?: OrderingReadClient['recordCancellationProduction']
   queueInspection?: OrderingReadClient['queueCancellationInspection']
@@ -76,6 +77,12 @@ export function HomeCancellationQueue({ read, queueInspection, recordProduction,
       {recordProduction && entry.status === 'ProductionStatusChecking' && entry.lines.length > 0 &&
         <CancellationProductionForm entry={entry} record={recordProduction} onSaved={() => {
           setPrintMessage('บันทึกผลตรวจแล้ว')
+          setRefresh(value => value + 1)
+        }} />}
+      {confirmCancellation && entry.canConfirm && entry.status === 'StatusRecorded' && entry.lines.length > 0 &&
+        entry.lines.every(line => line.checked) &&
+        <CancellationProductionForm key="confirm" entry={entry} record={confirmCancellation} confirming onSaved={() => {
+          setPrintMessage('ยืนยันการยกเลิกแล้ว')
           setRefresh(value => value + 1)
         }} />}
       {rejectCancellation && entry.status === 'StatusRecorded' &&

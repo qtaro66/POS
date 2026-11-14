@@ -55,6 +55,8 @@ public sealed class SqliteTableSessionCommandStoreTests
         Assert.True(await store.RecordCancellationProductionAsync("BRANCH-01", "CANCEL-1", "EMP", Now, [check], default));
         Assert.True(await store.RecordCancellationProductionAsync("BRANCH-01", "CANCEL-1", "EMP", Now, [check], default));
         Assert.Equal("StatusRecorded", await database.ScalarAsync<string>("SELECT status FROM cancellation_requests;"));
+        var queue = await new SqliteBranchOrderingQuery(database.Path).CancellationQueueAsync("BRANCH-01", default);
+        Assert.Equal(check, Assert.Single(Assert.Single(queue).Lines).Checked);
         Assert.Equal(1L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_production_checks;"));
         Assert.False(await store.RejectCancellationAsync("BRANCH-02", "CANCEL-1", default));
         Assert.True(await store.RejectCancellationAsync("BRANCH-01", "CANCEL-1", default));
