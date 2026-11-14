@@ -59,3 +59,19 @@ Run the smoke test sequentially with `-Scenario Balanced`, `-Scenario Short`,
 and `-Scenario Over` to exercise counted cash of 700, 690, and 710 against
 an expected 700. Short uses exact tender; Balanced and Over use overpayment.
 Every run rejects insufficient tender and verifies restart and reconnect.
+
+## Automated Edge acceptance
+
+With Microsoft Edge and Playwright 1.65.0 available to Node, run from the
+repository root after stopping other fixtures on port 17443.
+
+```pwsh
+npm run build --workspace apps/pos-web -- --mode browser-fixture
+dotnet build tests/Pos.PcPos.BrowserHost
+node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist
+```
+
+The script opens the table through the authenticated Branch API because the
+PC POS table list exposes active sessions. It then uses browser controls for
+item selection, quantity, order submission, cash, receipt and shift close.
+The observer explicitly refreshes the table list after settlement.
