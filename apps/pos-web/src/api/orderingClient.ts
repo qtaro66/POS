@@ -416,6 +416,10 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
+    async simulateReceipt(receiptNumber: string, fail: boolean) {
+      return request('/test-cash-cycle/receipts/' + encodeURIComponent(receiptNumber) + '/simulate',
+        'POST', JSON.stringify({ fail }))
+    },
     async testCashCycle(operation: 'open' | 'close', shiftId: string, cash: number, pin: string) {
       return request('/test-cash-cycle', 'POST', JSON.stringify({operation, shiftId, cash, pin}))
     },

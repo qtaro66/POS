@@ -2,6 +2,10 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 public sealed partial class SqliteTableSessionCommandStore
 {
+    public Task<TestReceiptSimulation?> SimulateReceiptAsync(string branchId, string receiptNumber, bool fail, CancellationToken token) =>
+        ExecuteAtomicallyAsync((transaction, cancellation) =>
+            ((SqliteTableSessionCommandTransaction)transaction).SimulateReceiptAsync(branchId, receiptNumber, fail, cancellation), token);
+
     public Task<string?> RenderTestReceiptAsync(string branchId, string receiptNumber, CancellationToken token) =>
         ExecuteAtomicallyAsync((transaction, cancellation) =>
             ((SqliteTableSessionCommandTransaction)transaction).RenderTestReceiptAsync(branchId, receiptNumber, cancellation), token);
@@ -20,10 +24,50 @@ public sealed partial class SqliteTableSessionCommandStore
         }, token);
 }
 
+public sealed record TestReceiptSimulation(string Status, string? Text);
+
 public sealed record TestCashClose(decimal ExpectedCash, decimal CountedCash, decimal Difference, string? EmployeeId = null, DateTimeOffset? ClosedAt = null);
 
 internal sealed partial class SqliteTableSessionCommandTransaction
 {
+    internal async Task<TestReceiptSimulation?> SimulateReceiptAsync(string branchId, string receiptNumber, bool fail, CancellationToken token)
+    {
+        using var command = CreateCommand("""
+            CREATE TABLE IF NOT EXISTS test_receipt_simulation_results (
+                branch_id TEXT NOT NULL, receipt_number TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('Simulated', 'Failed')), content TEXT NULL,
+                PRIMARY KEY (branch_id, receipt_number),
+                FOREIGN KEY (branch_id, receipt_number) REFERENCES simulated_cash_receipt_jobs (branch_id, receipt_number)
+            );
+            """);
+        await command.ExecuteNonQueryAsync(token);
+        command.CommandText = """
+            SELECT status, content FROM test_receipt_simulation_results
+            WHERE branch_id = $branch AND receipt_number = $receipt;
+            """;
+        command.Parameters.AddWithValue("$branch", branchId);
+        command.Parameters.AddWithValue("$receipt", receiptNumber);
+        await using (var result = await command.ExecuteReaderAsync(token))
+        {
+            if (await result.ReadAsync(token))
+            {
+                return new(result.GetString(0), result.IsDBNull(1) ? null : result.GetString(1));
+            }
+        }
+
+        var text = await RenderTestReceiptAsync(branchId, receiptNumber, token);
+        if (text is null) { return null; }
+        var outcome = fail ? new TestReceiptSimulation("Failed", null) : new TestReceiptSimulation("Simulated", text);
+        command.CommandText = """
+            INSERT INTO test_receipt_simulation_results (branch_id, receipt_number, status, content)
+            VALUES ($branch, $receipt, $status, $content);
+            """;
+        command.Parameters.AddWithValue("$status", outcome.Status);
+        command.Parameters.AddWithValue("$content", (object?)outcome.Text ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(token);
+        return outcome;
+    }
+
     internal async Task<string?> RenderTestReceiptAsync(string branchId, string receiptNumber, CancellationToken token)
     {
         using var read = CreateCommand("""
