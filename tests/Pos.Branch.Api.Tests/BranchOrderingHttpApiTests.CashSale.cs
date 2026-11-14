@@ -31,7 +31,9 @@ public sealed partial class BranchOrderingHttpApiTests
             tenderedAmount = 300m
         };
         Assert.Equal(409, (await fixture.Call("CompleteBranchCashSale", request, principal: cashier)).Status);
-        await fixture.Execute("INSERT INTO cash_sale_open_shifts VALUES ('BRANCH-01', 'SHIFT-1', 'STORE-1', '2026-10-31');");
+        var store = new SqliteTableSessionCommandStore(fixture.Path);
+        Assert.True(await store.OpenTestCashCycleAsync("BRANCH-01", "SHIFT-1", "STORE-1", new DateOnly(2026, 10, 31), default));
+        Assert.False(await store.OpenTestCashCycleAsync("BRANCH-01", "SHIFT-2", "STORE-2", new DateOnly(2026, 10, 31), default));
         Assert.Equal(403, (await fixture.Call("CompleteBranchCashSale", request)).Status);
         var first = await fixture.Call("CompleteBranchCashSale", request, principal: cashier);
         Assert.Equal(200, first.Status);
@@ -45,5 +47,10 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal("QueuedForSimulation", replay.Body.GetProperty("printStatus").GetString());
         Assert.Equal(720m, await new SqliteTableSessionCommandStore(fixture.Path).ReadExpectedTestCashAsync("BRANCH-01", 500m, default));
         Assert.Equal("Completed", await fixture.Scalar("SELECT status FROM table_sessions;"));
+        Assert.Null(await store.CloseTestCashCycleAsync("BRANCH-01", "OTHER", 500m, 710m, default));
+        Assert.Equal(new TestCashClose(720m, 710m, -10m),
+            await store.CloseTestCashCycleAsync("BRANCH-01", "SHIFT-1", 500m, 710m, default));
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM test_cash_close_history;"));
+        Assert.Null(await store.ReadExpectedTestCashAsync("BRANCH-01", 500m, default));
     }
 }
