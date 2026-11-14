@@ -7,7 +7,7 @@ export async function processOrders(
   services: Pick<MobileServices, 'outbox' | 'submitOrder'>,
   device: PairedDevice, employee: EmployeeSession, now: () => Date,
   draft?: Draft, signal?: AbortSignal, payment?: { tableSessionId: string; version: number },
-  cancellation?: { tableSessionId: string; lines: readonly CancellationSelection[] },
+  cancellation?: { tableSessionId: string; lines: readonly CancellationSelection[]; reason?: string },
 ): Promise<MobileRequest['state'] | undefined> {
   const { outbox, submitOrder } = services
   if (!outbox || !submitOrder) return
@@ -21,7 +21,7 @@ export async function processOrders(
       const order: MobileRequest = {
         requestId: crypto.randomUUID(), command: 'RequestCancellation', deviceId: device.deviceId,
         employeeId: employee.employeeId, tableSessionId: cancellation.tableSessionId,
-        cancellationLines: cancellation.lines, sessionMasterDataVersion: '', lines: [], state: 'Pending',
+        cancellationLines: cancellation.lines, cancellationReason: cancellation.reason, sessionMasterDataVersion: '', lines: [], state: 'Pending',
         clientCreatedAt: at, updatedAt: at,
       }
       await outbox.queueCancellation(order)

@@ -4,7 +4,7 @@ internal sealed partial class SqliteTableSessionCommandTransaction
 {
     public async Task<bool> TryReserveCancellationAsync(
         string branchId, string sessionId, string cancellationId,
-        IReadOnlyDictionary<string, int> quantities, CancellationToken cancellationToken)
+        IReadOnlyDictionary<string, int> quantities, CancellationToken cancellationToken, string? reason = null)
     {
         if (quantities.Count == 0 || quantities.Values.Any(quantity => quantity <= 0))
         {
@@ -45,6 +45,18 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         request.Parameters.AddWithValue("$request", cancellationId);
         request.Parameters.AddWithValue("$session", sessionId);
         await request.ExecuteNonQueryAsync(cancellationToken);
+
+        if (reason is not null)
+        {
+            using var note = CreateCommand("""
+                INSERT INTO cancellation_request_reasons (branch_id, cancellation_request_id, reason)
+                VALUES ($branch, $request, $reason);
+                """);
+            note.Parameters.AddWithValue("$branch", branchId);
+            note.Parameters.AddWithValue("$request", cancellationId);
+            note.Parameters.AddWithValue("$reason", reason);
+            await note.ExecuteNonQueryAsync(cancellationToken);
+        }
 
         using var reserve = CreateCommand("""
             INSERT INTO cancellation_request_lines (branch_id, cancellation_request_id, order_line_id, requested_quantity)

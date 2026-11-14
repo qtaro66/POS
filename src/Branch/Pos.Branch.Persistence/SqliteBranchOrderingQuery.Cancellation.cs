@@ -19,12 +19,13 @@ public sealed partial class SqliteBranchOrderingQuery
                 LIMIT 100
             )
             SELECT p.cancellation_request_id, p.table_session_id, p.status,
-                   r.order_line_id, l.display_name, r.requested_quantity, c.not_started, c.in_progress, c.completed, c.not_applicable
+                   r.order_line_id, l.display_name, r.requested_quantity, c.not_started, c.in_progress, c.completed, c.not_applicable, n.reason
             FROM pending p
             LEFT JOIN cancellation_request_lines r USING (branch_id, cancellation_request_id)
             LEFT JOIN order_lines l ON l.branch_id = r.branch_id AND l.order_line_id = r.order_line_id
             LEFT JOIN cancellation_production_checks c ON c.branch_id = r.branch_id
                 AND c.cancellation_request_id = r.cancellation_request_id AND c.order_line_id = r.order_line_id
+            LEFT JOIN cancellation_request_reasons n ON n.branch_id = p.branch_id AND n.cancellation_request_id = p.cancellation_request_id
             ORDER BY p.cancellation_request_id, r.order_line_id;
             """;
         command.Parameters.AddWithValue("$branch", branchId);
@@ -37,7 +38,7 @@ public sealed partial class SqliteBranchOrderingQuery
             if (entries.Count == 0 || entries[^1].CancellationRequestId != id)
             {
                 lines = [];
-                entries.Add(new(id, reader.GetString(1), reader.GetString(2), lines));
+                entries.Add(new(id, reader.GetString(1), reader.GetString(2), lines, reader.IsDBNull(10) ? null : reader.GetString(10)));
             }
 
             if (!reader.IsDBNull(3))

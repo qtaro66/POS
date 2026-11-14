@@ -141,12 +141,12 @@ export function AuthenticatedShell({
     }
   }
 
-  async function requestCancellation(lines: readonly import('../domain/mobileRequest.ts').CancellationSelection[]) {
+  async function requestCancellation(lines: readonly import('../domain/mobileRequest.ts').CancellationSelection[], reason?: string) {
     if (!tableSessionId || sendingRef.current) return false
     sendingRef.current = true
     setSending(true)
     try {
-      const state = await processOrders(services, device, employee, now, undefined, undefined, undefined, { tableSessionId, lines })
+      const state = await processOrders(services, device, employee, now, undefined, undefined, undefined, { tableSessionId, lines, reason })
       setMessage(state === 'BranchAccepted' ? 'Cancellation request sent to the cashier.'
         : state === 'Rejected' ? 'Cancellation request rejected. Check the available quantities.'
         : 'Cancellation request status is unconfirmed. Check the outbox.')

@@ -101,7 +101,7 @@ public sealed class TableSessionCommandService
     public Task<BranchCommandReceipt> RequestCancellationAsync(
         BranchCommandMetadata metadata,
         IReadOnlyDictionary<string, int> quantities,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string? reason = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(quantities);
@@ -122,7 +122,7 @@ public sealed class TableSessionCommandService
             }
 
             if (!await transaction.TryReserveCancellationAsync(
-                metadata.BranchId, metadata.TableSessionId.Value, metadata.RequestId, quantities, token))
+                metadata.BranchId, metadata.TableSessionId.Value, metadata.RequestId, quantities, token, reason))
             {
                 return await PersistRejectionAsync(transaction, metadata, receivedAt, "CancellationQuantityUnavailable", token, session);
             }

@@ -69,6 +69,7 @@ export function HomeCancellationQueue({ read, queueInspection, recordProduction,
     <p role="status">{queue === undefined ? 'กำลังอ่านคิว' : queue === null ? 'อ่านคิวไม่ได้' : queue.length ? 'มีคำขอรอดำเนินการ' : 'ไม่มีคำขอค้าง'}</p>
     {printMessage && <p role="status">{printMessage}</p>}
     {!!queue?.length && <ul>{queue.map(entry => <li key={entry.cancellationRequestId}>
+      {typeof entry.reason === 'string' && <p>เหตุผล: {entry.reason}</p>}
       <strong>{entry.tableSessionId}</strong> · {labels[entry.status]}
       {queueInspection && entry.status === 'CancellationRequested' && entry.lines.length > 0 &&
         <button className="refresh-button" disabled={printing} onClick={() => { void print(entry.cancellationRequestId) }}>

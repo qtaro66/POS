@@ -28,6 +28,7 @@ export interface OrderRejection {
 }
 
 export interface MobileRequest {
+  readonly cancellationReason?: string
   readonly cancellationLines?: readonly CancellationSelection[]
   readonly expectedVersion?: number
   readonly rejection?: OrderRejection
