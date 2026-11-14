@@ -56,6 +56,12 @@ public sealed class SqliteTableSessionCommandStoreTests
         Assert.True(await store.RecordCancellationProductionAsync("BRANCH-01", "CANCEL-1", "EMP", Now, [check], default));
         Assert.Equal("StatusRecorded", await database.ScalarAsync<string>("SELECT status FROM cancellation_requests;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_production_checks;"));
+        Assert.False(await store.RejectCancellationAsync("BRANCH-02", "CANCEL-1", default));
+        Assert.True(await store.RejectCancellationAsync("BRANCH-01", "CANCEL-1", default));
+        Assert.True(await store.RejectCancellationAsync("BRANCH-01", "CANCEL-1", default));
+        Assert.Equal(quantity, await database.ScalarAsync<long>("SELECT active_quantity FROM order_lines ORDER BY line_sequence LIMIT 1;"));
+        Assert.Equal(BranchCommandOutcome.BranchAccepted, (await service.RequestCancellationAsync(
+            OpenCommand("CANCEL-4", "TS-1", "A04").Metadata, selection)).Outcome);
     }
 
     [Fact]

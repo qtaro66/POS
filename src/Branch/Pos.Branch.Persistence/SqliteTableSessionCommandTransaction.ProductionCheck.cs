@@ -4,6 +4,27 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal sealed partial class SqliteTableSessionCommandTransaction
 {
+    internal async Task<bool> RejectCancellationAsync(string branchId, string requestId, CancellationToken token)
+    {
+        using var command = CreateCommand("""
+            UPDATE cancellation_requests SET status = 'Rejected'
+            WHERE branch_id = $branch AND cancellation_request_id = $request AND status = 'StatusRecorded'
+              AND EXISTS (
+                SELECT 1 FROM table_sessions s
+                WHERE s.branch_id = cancellation_requests.branch_id
+                  AND s.table_session_id = cancellation_requests.table_session_id AND s.status = 'Ordering');
+            """);
+        command.Parameters.AddWithValue("$branch", branchId);
+        command.Parameters.AddWithValue("$request", requestId);
+        if (await command.ExecuteNonQueryAsync(token) == 1) { return true; }
+
+        command.CommandText = """
+            SELECT 1 FROM cancellation_requests
+            WHERE branch_id = $branch AND cancellation_request_id = $request AND status = 'Rejected';
+            """;
+        return await command.ExecuteScalarAsync(token) is not null;
+    }
+
     internal async Task<bool> RecordCancellationProductionAsync(string branchId, string requestId, string employeeId,
         DateTimeOffset now, IReadOnlyList<CancellationProductionCheck> checks, CancellationToken token)
     {

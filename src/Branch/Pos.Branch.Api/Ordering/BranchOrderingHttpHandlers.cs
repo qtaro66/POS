@@ -132,6 +132,22 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Conflict(new BranchOrderingError(1, "InvalidCancellationProductionStatus"));
     }
 
+    public static async Task<IResult> RejectCancellationAsync(ClaimsPrincipal principal, string cancellationId,
+        BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        try { cancellationId = Identifier(cancellationId); }
+        catch (ArgumentException) { return InvalidRequest(); }
+        return await runtime.TableCommands.RejectCancellationAsync(identity.BranchId, cancellationId, cancellationToken)
+            ? TypedResults.Ok(new { SchemaVersion = 1, Status = "Rejected" })
+            : TypedResults.Conflict(new BranchOrderingError(1, "CancellationNotReadyForResolution"));
+    }
+
     public static async Task<IResult> CancellationQueueAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }

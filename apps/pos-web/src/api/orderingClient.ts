@@ -280,6 +280,14 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       const page = parseSoldOutPage(result.body, offset)
       return page ? { kind: 'ok', value: page } : { kind: 'unavailable', reason: 'protocol' }
     },
+    async rejectCancellation(cancellationId: string): Promise<QueryResult<'Rejected'>> {
+      if (!id(cancellationId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/cancellation-queue/' + encodeURIComponent(cancellationId) + '/reject', 'POST')
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      return record(result.body) && result.body.schemaVersion === 1 && result.body.status === 'Rejected'
+        ? { kind: 'ok', value: 'Rejected' } : { kind: 'unavailable', reason: 'protocol' }
+    },
     async recordCancellationProduction(cancellationId: string, lines: readonly ProductionCheck[]): Promise<QueryResult<'StatusRecorded'>> {
       if (!id(cancellationId)) return { kind: 'unavailable', reason: 'protocol' }
       const result = await request('/cancellation-queue/' + encodeURIComponent(cancellationId) + '/production-status',
