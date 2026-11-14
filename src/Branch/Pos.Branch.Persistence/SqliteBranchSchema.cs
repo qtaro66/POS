@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 28;
+    public const int CurrentVersion = 29;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1450,6 +1450,37 @@ internal static class SqliteBranchSchema
                     PRIMARY KEY (branch_id, cancellation_request_id),
                     FOREIGN KEY (branch_id, cancellation_request_id)
                         REFERENCES cancellation_requests (branch_id, cancellation_request_id)
+                );
+                """, cancellationToken);
+        }
+
+        if (storedVersion < 29)
+        {
+            await ExecuteAsync(connection, transaction, """
+                CREATE TABLE IF NOT EXISTS cash_sale_open_shifts (
+                    branch_id TEXT NOT NULL PRIMARY KEY,
+                    shift_id TEXT NOT NULL,
+                    store_session_id TEXT NOT NULL,
+                    business_date TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS cash_sales (
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    table_session_id TEXT NOT NULL,
+                    result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+                    bill_snapshot_json TEXT NOT NULL CHECK (json_valid(bill_snapshot_json)),
+                    PRIMARY KEY (branch_id, request_id),
+                    UNIQUE (branch_id, table_session_id),
+                    FOREIGN KEY (branch_id, table_session_id) REFERENCES table_sessions (branch_id, table_session_id)
+                );
+                CREATE TABLE IF NOT EXISTS simulated_cash_receipt_jobs (
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    receipt_number TEXT NOT NULL,
+                    queued_at TEXT NOT NULL,
+                    PRIMARY KEY (branch_id, request_id),
+                    UNIQUE (branch_id, receipt_number),
+                    FOREIGN KEY (branch_id, request_id) REFERENCES cash_sales (branch_id, request_id)
                 );
                 """, cancellationToken);
         }

@@ -416,6 +416,13 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
+    async cashStep(action: 'request-payment' | 'complete-cash-sale', tableSessionId: string, expectedVersion: number, requestId: string, clientCreatedAt: string, tenderedAmount?: number) {
+      return request('/tables/' + action, 'POST', JSON.stringify({
+        schemaVersion: 1, context: { requestId, tableSessionId, clientCreatedAt, branchId: session.branchId,
+          deviceId: session.deviceId, employeeId: session.employeeId },
+        expectedVersion, tenderedAmount,
+      }))
+    },
     async activeTables(signal?: AbortSignal): Promise<QueryResult<ActiveTables>> {
       const result = await request('/table-sessions', 'GET', undefined, signal)
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }

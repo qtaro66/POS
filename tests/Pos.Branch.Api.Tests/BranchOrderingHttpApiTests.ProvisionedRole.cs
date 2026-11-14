@@ -116,6 +116,10 @@ public sealed partial class BranchOrderingHttpApiTests
         using var denied = await client.PostAsJsonAsync("/api/v1/ordering/sold-out/adjustments",
             new BranchSoldOutAdjustmentRequest(Guid.NewGuid(), "ITEM-1", true, false), timeout.Token);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using var ended = await client.PostAsync("/api/v1/ordering/session/end", null, timeout.Token);
+        Assert.Equal(HttpStatusCode.NoContent, ended.StatusCode);
+        using var afterLock = await client.GetAsync("/api/v1/ordering/table-sessions", timeout.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, afterLock.StatusCode);
     }
 
     private sealed class TestPinValidator : IBranchEmployeePinValidator

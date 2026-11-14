@@ -49,10 +49,19 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(0))
             .Produces<BranchCloudOutboxStatusResponse>().Produces<BranchCloudOutboxStatusError>(400).Produces<BranchCloudOutboxStatusError>(503)
             .WithName("GetBranchCloudOutboxStatus");
+        group.MapPost("/session/end", BranchOrderingHttpHandlers.EndSessionAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0))
+            .WithName("EndBranchOrderingSession");
         group.MapPost("/tables/open", BranchOrderingHttpHandlers.OpenAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)
             .WithName("OpenBranchTable");
+        if (configuration.GetValue<bool>("BranchOrdering:EnableCashSaleTest"))
+        {
+            group.MapPost("/tables/complete-cash-sale", BranchOrderingHttpHandlers.CompleteCashSaleAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
+                .WithName("CompleteBranchCashSale");
+        }
         group.MapPost("/tables/request-payment", BranchOrderingHttpHandlers.RequestPaymentAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)

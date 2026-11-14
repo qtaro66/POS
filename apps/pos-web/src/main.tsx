@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import Terminal from './Terminal.tsx'
 
 const root = createRoot(document.getElementById('root')!)
 const preview = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('preview') : null
@@ -26,5 +27,5 @@ if (import.meta.env.DEV && preview === 'ordering') {
       : <App client={createPreviewReadClient()} branchLabel="สาขาตัวอย่าง 01" preview />}</StrictMode>)
   }).catch(() => root.render(<StrictMode><App /></StrictMode>))
 } else {
-  root.render(<StrictMode><App /></StrictMode>)
+  root.render(<StrictMode><Terminal /></StrictMode>)
 }

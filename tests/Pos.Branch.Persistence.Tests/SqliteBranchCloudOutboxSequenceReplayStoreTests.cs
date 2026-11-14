@@ -453,7 +453,7 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
         await database.InitializeAsync();
         await database.ExecuteAsync(FailureInsert());
 
-        Assert.Equal("28", await database.TextAsync("SELECT CAST(user_version AS TEXT) FROM pragma_user_version;"));
+        Assert.Equal("29", await database.TextAsync("SELECT CAST(user_version AS TEXT) FROM pragma_user_version;"));
         Assert.Equal("WORKER-01", await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));
         Assert.Equal("2026-10-30T04:00:00.0000000+00:00", await database.ReadAcknowledgedAtAsync());
     }
@@ -587,7 +587,7 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
         var result = new SqliteBranchCloudReplayReadinessProbe().Check(database.Path);
 
         Assert.True(result.IsReady);
-        Assert.Equal(28, result.ActualSchemaVersion);
+        Assert.Equal(29, result.ActualSchemaVersion);
         Assert.Empty(result.MissingTables);
         Assert.Empty(result.MissingColumns);
         Assert.Equal("WORKER-01", await database.TextAsync("SELECT lease_owner FROM cloud_sync_sequence_replay_leases;"));

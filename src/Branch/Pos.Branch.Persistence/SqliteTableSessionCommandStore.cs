@@ -38,6 +38,25 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
 
     public string DatabasePath => _connections.DatabasePath;
 
+    public async Task EndEmployeeSessionAsync(string branchId, string deviceId, string employeeId,
+        string sessionId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connections.OpenAsync(cancellationToken);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE branch_employee_sessions SET lifecycle_status = 'Revoked', revoked_at = $now,
+                revocation_reason = 'TerminalLocked'
+            WHERE branch_id = $branch AND device_id = $device AND employee_id = $employee
+                AND session_id = $session AND lifecycle_status = 'Active';
+            """;
+        command.Parameters.AddWithValue("$branch", branchId);
+        command.Parameters.AddWithValue("$device", deviceId);
+        command.Parameters.AddWithValue("$employee", employeeId);
+        command.Parameters.AddWithValue("$session", sessionId);
+        command.Parameters.AddWithValue("$now", now.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _connections.OpenAsync(cancellationToken);
@@ -64,6 +83,14 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
     public Task<string?> QueueCancellationInspectionAsync(string branchId, string cancellationId, DateTimeOffset now, CancellationToken cancellationToken) =>
         ExecuteAtomicallyAsync((transaction, token) =>
             ((SqliteTableSessionCommandTransaction)transaction).QueueCancellationInspectionAsync(branchId, cancellationId, now, token),
+            cancellationToken);
+
+    public Task<CashSaleResult?> CompleteCashSaleAsync(
+        string branchId, string sessionId, string requestId, string employeeId, string deviceId,
+        DateTimeOffset now, long expectedVersion, decimal tendered, CancellationToken cancellationToken) =>
+        ExecuteAtomicallyAsync((transaction, token) =>
+            ((SqliteTableSessionCommandTransaction)transaction).CompleteCashSaleAsync(
+                branchId, sessionId, requestId, employeeId, deviceId, now, expectedVersion, tendered, token),
             cancellationToken);
 
     public async Task<TResult> ExecuteAtomicallyAsync<TResult>(

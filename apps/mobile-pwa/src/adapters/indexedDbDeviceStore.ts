@@ -32,15 +32,17 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
  */
 export class IndexedDbDeviceStore implements DeviceStore {
   private readonly factory: IDBFactory
+  private readonly databaseName: string
   private database: Promise<IDBDatabase> | null = null
 
-  constructor(factory: IDBFactory = indexedDB) {
+  constructor(factory: IDBFactory = indexedDB, databaseName = DATABASE_NAME) {
     this.factory = factory
+    this.databaseName = databaseName
   }
 
   private open(): Promise<IDBDatabase> {
     this.database ??= new Promise((resolve, reject) => {
-      const request = this.factory.open(DATABASE_NAME, DATABASE_VERSION)
+      const request = this.factory.open(this.databaseName, DATABASE_VERSION)
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(STORE_NAME)) {
           request.result.createObjectStore(STORE_NAME)
