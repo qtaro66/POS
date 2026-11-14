@@ -78,6 +78,13 @@ public static class BranchOrderingEndpoints
         group.MapPost("/cancellation-queue/{cancellationId}/reject", BranchOrderingHttpHandlers.RejectCancellationAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0))
             .WithName("RejectBranchCancellation");
+        if (configuration.GetValue<bool>("BranchOrdering:EnableCancellationConfirmation") &&
+            configuration.GetValue<bool>("BranchOrdering:EnableMobileCancellationRequests"))
+        {
+            group.MapPost("/cancellation-requests", BranchOrderingHttpHandlers.RequestCancellationAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
+                .WithName("RequestBranchCancellation");
+        }
         group.MapGet("/cancellation-queue", BranchOrderingHttpHandlers.CancellationQueueAsync)
             .WithName("ListBranchCancellationQueue");
         group.MapGet("/floor-plan", BranchOrderingHttpHandlers.FloorPlanAsync)

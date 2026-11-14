@@ -161,6 +161,37 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Ok(new { SchemaVersion = 1, Status = status });
     }
 
+    public sealed record CancellationSelection(string OrderLineId, int Quantity);
+    public sealed record MobileCancellationRequest(int SchemaVersion, BranchOrderingContext Context, IReadOnlyList<CancellationSelection>? Lines);
+
+    public static async Task<IResult> RequestCancellationAsync(ClaimsPrincipal principal, MobileCancellationRequest request,
+        BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "Mobile")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        if (request.Lines is not { Count: > 0 }) { return InvalidRequest(); }
+        var quantities = new Dictionary<string, int>(StringComparer.Ordinal);
+        Pos.Application.TableSessions.BranchCommandMetadata metadata;
+        try
+        {
+            metadata = Context(request.SchemaVersion, request.Context, identity);
+            foreach (var line in request.Lines)
+            {
+                if (line is null || line.Quantity <= 0 || !quantities.TryAdd(Identifier(line.OrderLineId), line.Quantity))
+                {
+                    return InvalidRequest();
+                }
+            }
+        }
+        catch (ArgumentException) { return InvalidRequest(); }
+
+        return Receipt(await runtime.Commands.RequestCancellationAsync(metadata, quantities, cancellationToken));
+    }
+
     public static async Task<IResult> RejectCancellationAsync(ClaimsPrincipal principal, string cancellationId,
         BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
