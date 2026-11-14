@@ -1,4 +1,9 @@
-param([Parameter(Mandatory)][string]$Dist)
+param(
+    [Parameter(Mandatory)][string]$Dist,
+    [ValidateSet('Balanced', 'Short', 'Over')][string]$Scenario = 'Balanced'
+)
+$tender = if ($Scenario -eq 'Short') { 200 } else { 250 }
+$countedCash = @{ Balanced = 700; Short = 690; Over = 710 }[$Scenario]
 $ErrorActionPreference = 'Stop'
 $project = Join-Path $PSScriptRoot 'Pos.PcPos.BrowserHost.csproj'
 $distPath = (Resolve-Path -LiteralPath $Dist).Path
@@ -76,7 +81,7 @@ try {
     $attempts[1].Context.deviceId = $devices[1].deviceId
     foreach ($attempt in $attempts) {
         $attempt.Context.requestId = [guid]::NewGuid().ToString()
-        $attempt.Body = @{ schemaVersion = 1; context = $attempt.Context; expectedVersion = $version; tenderedAmount = 250 }
+        $attempt.Body = @{ schemaVersion = 1; context = $attempt.Context; expectedVersion = $version; tenderedAmount = $tender }
     }
     $responses = @(0, 1 | ForEach-Object -ThrottleLimit 2 -Parallel {
         $attempt = ($using:attempts)[$_]
@@ -95,7 +100,7 @@ try {
     }
     $available = (Request "$api/floor-plan" 200 $null $secondHeaders).tables | Where-Object tableId -eq 'A01'
     if ($available.status -ne 'Available' -or $available.tableSessionId) { throw 'Second device did not see the released table.' }
-    if ($sale.appliedAmount -ne 200 -or $sale.changeAmount -ne 50) { throw 'Cash totals differ.' }
+    if ($sale.appliedAmount -ne 200 -or $sale.changeAmount -ne ($tender - 200)) { throw 'Cash totals differ.' }
     $receipt = "$api/test-cash-cycle/receipts/$($sale.receiptNumber)"
     $null = Request $receipt 200 $null $headers
     $simulation = Request "$receipt/simulate" 200 @{ fail = $true } $headers
@@ -142,8 +147,8 @@ try {
         $afterRestart.branchSequence -ne $beforeRestart.branchSequence) {
         throw 'Pending cash event identity changed after restart.'
     }
-    $close = Request "$api/test-cash-cycle" 200 @{ operation = 'close'; shiftId = $shift; cash = 700; pin = $pin } $headers
-    if ($close.expectedCash -ne 700 -or $close.difference -ne 0) { throw 'Shift totals differ.' }
+    $close = Request "$api/test-cash-cycle" 200 @{ operation = 'close'; shiftId = $shift; cash = $countedCash; pin = $pin } $headers
+    if ($close.expectedCash -ne 700 -or $close.countedCash -ne $countedCash -or $close.difference -ne ($countedCash - 700)) { throw 'Shift totals differ.' }
     $centralJob = Start-Job { dotnet $using:assembly --central $using:fixtureId }
     $central = $null
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
@@ -164,7 +169,7 @@ try {
         Receive-Job $job | Select-String -Pattern "fail:|Exception|status code|https://127.0.0.1:17444" | Select-Object -Last 20 | Write-Host
         throw "Reconnect failed. Central count: $($central.events.Count), duplicates: $($central.duplicates), outstanding: $($queue.summary.unacknowledgedCount), statuses: $($queue.items.processingStatus -join ',')."
     }
-    'PC POS loopback HTTPS cash sale: PASS'
+    "PC POS loopback HTTPS cash sale ($Scenario): PASS"
 }
 finally {
     if ($centralJob) { Stop-Job $centralJob; Remove-Job $centralJob }

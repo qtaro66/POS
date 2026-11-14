@@ -54,3 +54,8 @@ and replaces the first successful cash acknowledgment with HTTP 503.
 The test checks ordered ingestion, a single stored cash event, a
 duplicate delivery, and an empty Branch outbox. It uses ports 17443 and
 17444 and does not require PostgreSQL.
+
+Run the smoke test sequentially with `-Scenario Balanced`, `-Scenario Short`,
+and `-Scenario Over` to exercise counted cash of 700, 690, and 710 against
+an expected 700. Short uses exact tender; Balanced and Over use overpayment.
+Every run rejects insufficient tender and verifies restart and reconnect.
