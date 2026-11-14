@@ -102,6 +102,19 @@ try {
     if ($simulation.status -ne 'Failed' -or $repeat.status -ne $simulation.status) {
         throw 'Receipt simulation replay differs.'
     }
+    function Read-CashOutbox {
+        $status = Request "$api/cloud-outbox-status" 200 $null $secondHeaders
+        $cash = @($status.items | Where-Object action -eq 'CompletePayment')
+        if ($cash.Count -ne 1 -or $cash[0].requestId -ne $accepted.Context.requestId -or
+            $cash[0].tableSessionId -ne $context.tableSessionId -or $cash[0].processingStatus -ne 'Pending') {
+            throw 'Expected exactly one pending cash event for the winning request.'
+        }
+        if ($status.summary.unacknowledgedCount -ne 4 -or $status.summary.pendingCount -ne 4) {
+            throw 'Expected four pending events for the cash cycle.'
+        }
+        $cash[0]
+    }
+    $beforeRestart = Read-CashOutbox
     Stop-Job $job
     Remove-Job $job
     $job = Start-Fixture
@@ -123,6 +136,11 @@ try {
     if ($persisted.status -ne 'Failed') { throw 'Receipt outcome was lost after restart.' }
     $available = (Request "$api/floor-plan" 200 $null $secondHeaders).tables | Where-Object tableId -eq 'A01'
     if ($available.status -ne 'Available') { throw 'Table was not released after restart.' }
+    $afterRestart = Read-CashOutbox
+    if ($afterRestart.outboxId -ne $beforeRestart.outboxId -or
+        $afterRestart.branchSequence -ne $beforeRestart.branchSequence) {
+        throw 'Pending cash event identity changed after restart.'
+    }
     $close = Request "$api/test-cash-cycle" 200 @{ operation = 'close'; shiftId = $shift; cash = 700; pin = $pin } $headers
     if ($close.expectedCash -ne 700 -or $close.difference -ne 0) { throw 'Shift totals differ.' }
     'PC POS loopback HTTPS cash sale: PASS'
