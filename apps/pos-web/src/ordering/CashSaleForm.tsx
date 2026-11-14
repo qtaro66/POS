@@ -24,6 +24,11 @@ export function CashSaleForm({ detail, send, refresh, simulateReceipt }: {
     setBusy(true)
     try {
       const tendered = payment ? Number(new FormData(event.currentTarget).get('cash')) : undefined
+      const due = detail.billPreviewTotals?.netTotal
+      if (!pending.current && tendered !== undefined && due !== undefined && tendered < due) {
+        setMessage('เงินสดที่รับต่ำกว่ายอดชำระ')
+        return
+      }
       const args = pending.current ?? [payment ? 'complete-cash-sale' : 'request-payment',
         detail.session.tableSessionId, detail.session.tableVersion, crypto.randomUUID(), new Date().toISOString(), tendered]
       pending.current = args
