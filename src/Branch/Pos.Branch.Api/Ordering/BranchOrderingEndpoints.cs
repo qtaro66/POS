@@ -58,6 +58,9 @@ public static class BranchOrderingEndpoints
             .WithName("OpenBranchTable");
         if (configuration.GetValue<bool>("BranchOrdering:EnableCashSaleTest"))
         {
+            group.MapPost("/test-cash-cycle", TestCashCycleEndpoints.HandleAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize));
+            group.MapGet("/test-cash-cycle/receipts/{receiptNumber}", TestCashCycleEndpoints.ReceiptAsync);
             group.MapPost("/tables/complete-cash-sale", BranchOrderingHttpHandlers.CompleteCashSaleAsync)
                 .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
                 .WithName("CompleteBranchCashSale");

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Pos.Branch.Api.Security;
+using Pos.Branch.Infrastructure.Sqlite;
 
 namespace Pos.Branch.Api.Tests;
 
@@ -30,7 +31,9 @@ public sealed partial class BranchOrderingHttpApiTests
             tenderedAmount = 300m
         };
         Assert.Equal(409, (await fixture.Call("CompleteBranchCashSale", request, principal: cashier)).Status);
-        await fixture.Execute("INSERT INTO cash_sale_open_shifts VALUES ('BRANCH-01', 'SHIFT-1', 'STORE-1', '2026-10-31');");
+        var store = new SqliteTableSessionCommandStore(fixture.Path);
+        Assert.True(await store.OpenTestCashCycleAsync("BRANCH-01", "SHIFT-1", "STORE-1", new DateOnly(2026, 10, 31), 500m, default));
+        Assert.False(await store.OpenTestCashCycleAsync("BRANCH-01", "SHIFT-2", "STORE-2", new DateOnly(2026, 10, 31), 500m, default));
         Assert.Equal(403, (await fixture.Call("CompleteBranchCashSale", request)).Status);
         var first = await fixture.Call("CompleteBranchCashSale", request, principal: cashier);
         Assert.Equal(200, first.Status);
@@ -42,6 +45,16 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM cash_sales;"));
         Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM simulated_cash_receipt_jobs;"));
         Assert.Equal("QueuedForSimulation", replay.Body.GetProperty("printStatus").GetString());
+        var receiptNumber = first.Body.GetProperty("receiptNumber").GetString()!;
+        Assert.Contains("220.00", await store.RenderTestReceiptAsync("BRANCH-01", receiptNumber, default));
+        Assert.Null(await store.RenderTestReceiptAsync("BRANCH-02", receiptNumber, default));
+        Assert.Equal(720m, await new SqliteTableSessionCommandStore(fixture.Path).ReadExpectedTestCashAsync("BRANCH-01", 500m, default));
         Assert.Equal("Completed", await fixture.Scalar("SELECT status FROM table_sessions;"));
+        Assert.Null(await store.CloseTestCashCycleAsync("BRANCH-01", "OTHER", 710m, default));
+        var closedAt = DateTimeOffset.UnixEpoch;
+        Assert.Equal(new TestCashClose(720m, 710m, -10m, "EMP-1", closedAt),
+            await store.CloseTestCashCycleAsync("BRANCH-01", "SHIFT-1", 710m, default, "EMP-1", closedAt));
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM test_cash_close_history;"));
+        Assert.Null(await store.ReadExpectedTestCashAsync("BRANCH-01", 500m, default));
     }
 }

@@ -416,6 +416,9 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
+    async testCashCycle(operation: 'open' | 'close', shiftId: string, cash: number, pin: string) {
+      return request('/test-cash-cycle', 'POST', JSON.stringify({operation, shiftId, cash, pin}))
+    },
     async cashStep(action: 'request-payment' | 'complete-cash-sale', tableSessionId: string, expectedVersion: number, requestId: string, clientCreatedAt: string, tenderedAmount?: number) {
       return request('/tables/' + action, 'POST', JSON.stringify({
         schemaVersion: 1, context: { requestId, tableSessionId, clientCreatedAt, branchId: session.branchId,
