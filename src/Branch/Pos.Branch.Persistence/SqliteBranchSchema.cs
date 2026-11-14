@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 26;
+    public const int CurrentVersion = 27;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1075,6 +1075,23 @@ internal static class SqliteBranchSchema
         );
         """;
 
+    private const string SchemaVersion27 = """
+        CREATE TABLE IF NOT EXISTS cancellation_confirmations (
+            branch_id TEXT NOT NULL,
+            cancellation_request_id TEXT NOT NULL,
+            employee_id TEXT NOT NULL,
+            occurred_at TEXT NOT NULL,
+            details_json TEXT NOT NULL CHECK (json_valid(details_json)),
+            PRIMARY KEY (branch_id, cancellation_request_id),
+            FOREIGN KEY (branch_id, cancellation_request_id)
+                REFERENCES cancellation_requests (branch_id, cancellation_request_id)
+        );
+        CREATE TRIGGER IF NOT EXISTS cancellation_confirmations_no_update
+        BEFORE UPDATE ON cancellation_confirmations BEGIN SELECT RAISE(ABORT, 'Immutable cancellation confirmation'); END;
+        CREATE TRIGGER IF NOT EXISTS cancellation_confirmations_no_delete
+        BEFORE DELETE ON cancellation_confirmations BEGIN SELECT RAISE(ABORT, 'Immutable cancellation confirmation'); END;
+        """;
+
     private const string SchemaVersion26 = """
         CREATE TABLE IF NOT EXISTS cancellation_production_checks (
             branch_id TEXT NOT NULL,
@@ -1416,6 +1433,11 @@ internal static class SqliteBranchSchema
         if (storedVersion < 26)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion26, cancellationToken);
+        }
+
+        if (storedVersion < 27)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion27, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
