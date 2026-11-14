@@ -20,3 +20,20 @@ for each row. Keep PINs, pairing links, tokens, and device IDs out of evidence.
 | Outage and restart | Stop only the test Central endpoint. Complete a test sale and verify the Branch cloud status shows pending work. Restart the Branch process using the same database, sign back in and verify the closed table and persisted pending work. |
 | Reconnect | Restore Central. Verify the Branch backlog drains and Central records one completion per sale. |
 | Reconcile | Close a test shift with opening float plus applied cash amounts. In another shift enter a deliberate discrepancy. Verify zero and the signed difference respectively. |
+
+## Local Branch fixture
+
+From the repository root, build and start the loopback-only host.
+
+```pwsh
+npm run build --workspace apps/pos-web -- --mode browser-fixture
+dotnet run --no-launch-profile --project tests/Pos.PcPos.BrowserHost -- (Resolve-Path apps/pos-web/dist).Path
+```
+
+Open https://127.0.0.1:17443/ in a disposable browser profile. The host
+creates an ephemeral self-signed certificate for loopback. Accept the
+certificate for this fixture only. Use the one-time link and synthetic PIN
+printed by the host. Stop with Ctrl+C to remove the temporary database.
+
+This fixture serves the built UI and real Branch routes from the same
+origin. It issues a single pairing challenge and does not start Central.
