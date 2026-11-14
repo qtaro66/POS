@@ -9,8 +9,9 @@ const labels = {
   StatusRecorded: 'บันทึกผลตรวจแล้ว',
 }
 
-export function HomeCancellationQueue({ read, queueInspection, recordProduction }: {
+export function HomeCancellationQueue({ read, queueInspection, recordProduction, rejectCancellation }: {
   read: NonNullable<OrderingReadClient['cancellationQueue']>
+  rejectCancellation?: OrderingReadClient['rejectCancellation']
   recordProduction?: OrderingReadClient['recordCancellationProduction']
   queueInspection?: OrderingReadClient['queueCancellationInspection']
 }) {
@@ -47,6 +48,20 @@ export function HomeCancellationQueue({ read, queueInspection, recordProduction 
     }
   }
 
+  async function reject(id: string) {
+    if (!rejectCancellation || printing || !window.confirm('ปฏิเสธคำขอยกเลิกและคงรายการอาหารไว้หรือไม่?')) return
+    setPrinting(true)
+    try {
+      const result = await rejectCancellation(id)
+      setPrintMessage(result.kind === 'ok' ? 'ปฏิเสธคำขอแล้ว' : 'ยืนยันการปฏิเสธคำขอไม่ได้')
+      setRefresh(value => value + 1)
+    } catch {
+      setPrintMessage('ยืนยันการปฏิเสธคำขอไม่ได้')
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   return <section aria-labelledby="cancellation-queue-title">
     <h3 id="cancellation-queue-title">คำขอยกเลิกรายการ</h3>
     <button className="refresh-button" onClick={() => { setQueue(undefined); setRefresh(value => value + 1) }}>อ่านคิวใหม่</button>
@@ -63,6 +78,10 @@ export function HomeCancellationQueue({ read, queueInspection, recordProduction 
           setPrintMessage('บันทึกผลตรวจแล้ว')
           setRefresh(value => value + 1)
         }} />}
+      {rejectCancellation && entry.status === 'StatusRecorded' &&
+        <button className="refresh-button" disabled={printing} onClick={() => { void reject(entry.cancellationRequestId) }}>
+          ปฏิเสธคำขอยกเลิก
+        </button>}
       <ul>{entry.lines.map(line => <li key={line.orderLineId}>{line.displayName} × {line.requestedQuantity}</li>)}</ul>
     </li>)}</ul>}
   </section>

@@ -44,6 +44,11 @@ public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
         await SqliteBranchSchema.InitializeAsync(connection, cancellationToken);
     }
 
+    public Task<bool> RejectCancellationAsync(string branchId, string requestId, CancellationToken cancellationToken) =>
+        ExecuteAtomicallyAsync((transaction, token) =>
+            ((SqliteTableSessionCommandTransaction)transaction).RejectCancellationAsync(branchId, requestId, token),
+            cancellationToken);
+
     public Task<bool> RecordCancellationProductionAsync(string branchId, string requestId, string employeeId,
         DateTimeOffset now, IReadOnlyList<CancellationProductionCheck> checks, CancellationToken cancellationToken) =>
         ExecuteAtomicallyAsync((transaction, token) =>

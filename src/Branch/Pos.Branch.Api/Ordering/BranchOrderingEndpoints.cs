@@ -69,6 +69,9 @@ public static class BranchOrderingEndpoints
         group.MapPost("/cancellation-queue/{cancellationId}/production-status", BranchOrderingHttpHandlers.RecordCancellationProductionAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .WithName("RecordBranchCancellationProduction");
+        group.MapPost("/cancellation-queue/{cancellationId}/reject", BranchOrderingHttpHandlers.RejectCancellationAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0))
+            .WithName("RejectBranchCancellation");
         group.MapGet("/cancellation-queue", BranchOrderingHttpHandlers.CancellationQueueAsync)
             .WithName("ListBranchCancellationQueue");
         group.MapGet("/floor-plan", BranchOrderingHttpHandlers.FloorPlanAsync)
