@@ -65,8 +65,36 @@ public sealed partial class SqliteBranchOrderingQuery
                 Amount("netTotal"), Amount("vatInclusiveAmount"), Amount("amountBeforeVat"));
         }
         var batches = await ReadBatchesAsync(connection, transaction, branchId, tableSessionId, calculated, cancellationToken);
+        using var cancellation = connection.CreateCommand();
+        cancellation.Transaction = transaction;
+        cancellation.CommandText = """
+            SELECT r.cancellation_request_id, r.status, l.order_line_id, l.requested_quantity
+            FROM cancellation_requests r
+            LEFT JOIN cancellation_request_lines l USING (branch_id, cancellation_request_id)
+            WHERE r.branch_id = $branch AND r.table_session_id = $session
+            ORDER BY r.cancellation_request_id, l.order_line_id;
+            """;
+        cancellation.Parameters.AddWithValue("$branch", branchId);
+        cancellation.Parameters.AddWithValue("$session", tableSessionId);
+        var requests = new List<BranchCancellationStatus>();
+        await using (var reader = await cancellation.ExecuteReaderAsync(cancellationToken))
+        {
+            Dictionary<string, int> quantities = new(StringComparer.Ordinal);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetString(0);
+                if (requests.Count == 0 || requests[^1].CancellationRequestId != id)
+                {
+                    quantities = new(StringComparer.Ordinal);
+                    requests.Add(new(id, reader.GetString(1), quantities));
+                }
+
+                if (!reader.IsDBNull(2)) { quantities.Add(reader.GetString(2), reader.GetInt32(3)); }
+            }
+        }
+
         await transaction.CommitAsync(cancellationToken);
-        return new(session, asOf, hasOpenCancellation, totals, batches);
+        return new(session, asOf, hasOpenCancellation, totals, batches, requests);
     }
 
     private static async Task<IReadOnlyList<BranchOrderingBatch>> ReadBatchesAsync(SqliteConnection connection, SqliteTransaction transaction,

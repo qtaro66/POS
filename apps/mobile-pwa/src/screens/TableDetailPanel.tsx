@@ -4,6 +4,12 @@ import type { ActiveTablesSnapshot, EmployeeSession, PairedDevice } from '../dom
 
 const money = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'THB' })
 
+const cancellationLabels: Readonly<Record<string, string>> = {
+  CancellationRequested: 'Waiting for cashier', ProductionStatusChecking: 'Checking production',
+  StatusRecorded: 'Inspection recorded', Confirmed: 'Confirmed', PartiallyConfirmed: 'Partially confirmed',
+  Rejected: 'Rejected',
+}
+
 interface Props {
   onCancellation?: (lines: readonly import('../domain/mobileRequest.ts').CancellationSelection[]) => Promise<boolean>
   cancellationBlocked?: boolean
@@ -35,7 +41,11 @@ export function TableDetailPanel({ gateway, device, employee, sessionId, snapsho
   if (!detail || detail.tableVersion < (version ?? 0)) {
     return <p role="status">Table details are unavailable from the branch.</p>
   }
-  const cancellable = detail.lines.filter(line => line.quantity > 0 && line.status === 'Active')
+  const requests = detail.cancellationRequests ?? []
+  const pending = requests.filter(request => ['CancellationRequested', 'ProductionStatusChecking', 'StatusRecorded'].includes(request.status))
+  const cancellable = detail.lines.filter(line => line.status === 'Active').map(line => ({
+    ...line, available: line.quantity - pending.reduce((sum, request) => sum + (request.quantities[line.id] ?? 0), 0),
+  })).filter(line => line.available > 0)
   async function requestCancellation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!onCancellation || cancellationBlocked) return
@@ -48,7 +58,10 @@ export function TableDetailPanel({ gateway, device, employee, sessionId, snapsho
   return (
     <section aria-label="Accepted order">
       <h2>Accepted order</h2>
-      {detail.hasOpenCancellationRequest && <p>Cancellation requested</p>}
+      {requests.length > 0 && <ul aria-label="Cancellation requests">
+        {requests.map(request => <li key={request.id}>{request.id} · {cancellationLabels[request.status] ?? request.status}</li>)}
+      </ul>}
+      {detail.hasOpenCancellationRequest && requests.length === 0 && <p>Cancellation requested</p>}
       {detail.lines.length === 0 ? <p>No accepted items.</p> : (
         <ul>
           {detail.lines.map(line => (
@@ -74,7 +87,7 @@ export function TableDetailPanel({ gateway, device, employee, sessionId, snapsho
           <fieldset disabled={cancellationBlocked || result?.snapshot !== snapshot || detail.tableVersion !== version}>
             <legend>Request cancellation</legend>
             {cancellable.map(line => <label key={line.id}>{line.name}
-              <input type="number" name={line.id} min={0} max={line.quantity} step={1} defaultValue={0} required />
+              <input type="number" name={line.id} min={0} max={line.available} step={1} defaultValue={0} required />
             </label>)}
             <button type="submit" className="button">Send cancellation request</button>
           </fieldset>
