@@ -30,6 +30,7 @@
     <Project Path="tests/Pos.Central.Api.Tests/Pos.Central.Api.Tests.csproj" />
     <Project Path="tests/Pos.Central.Persistence.Tests/Pos.Central.Persistence.Tests.csproj" />
     <Project Path="tests/Pos.Domain.Tests/Pos.Domain.Tests.csproj" />
+    <Project Path="tests/Pos.PcPos.BrowserHost/Pos.PcPos.BrowserHost.csproj" />
     <Project Path="tests/Pos.Printing.Tests/Pos.Printing.Tests.csproj" />
   </Folder>
 </Solution>
