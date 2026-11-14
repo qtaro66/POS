@@ -61,11 +61,43 @@ try {
     $payment = Command 'tables/request-payment' 200 @{ expectedVersion = $detail.session.tableVersion }
     $version = $payment.result.tableVersion
     $null = Command 'tables/complete-cash-sale' 409 @{ expectedVersion = $version; tenderedAmount = 199 }
-    $sale = Command 'tables/complete-cash-sale' 200 @{ expectedVersion = $version; tenderedAmount = 250 }
+    $pending = (Request "$api/floor-plan" 200 $null $secondHeaders).tables | Where-Object tableId -eq 'A01'
+    if ($pending.status -ne 'PaymentPending') { throw 'Second device did not see the pending payment.' }
+    $cashPath = "$api/tables/complete-cash-sale"
+    $attempts = @(
+        @{ Headers = $headers; Context = $context.Clone() }
+        @{ Headers = $secondHeaders; Context = $context.Clone() }
+    )
+    $attempts[1].Context.deviceId = $devices[1].deviceId
+    foreach ($attempt in $attempts) {
+        $attempt.Context.requestId = [guid]::NewGuid().ToString()
+        $attempt.Body = @{ schemaVersion = 1; context = $attempt.Context; expectedVersion = $version; tenderedAmount = 250 }
+    }
+    $responses = @(0, 1 | ForEach-Object -ThrottleLimit 2 -Parallel {
+        $attempt = ($using:attempts)[$_]
+        $response = Invoke-WebRequest -Uri "$using:origin/$using:cashPath" -Method Post -Headers $attempt.Headers `
+            -ContentType application/json -Body (ConvertTo-Json -InputObject $attempt.Body -Depth 10 -Compress) `
+            -NoProxy -SkipCertificateCheck -SkipHttpErrorCheck
+        [pscustomobject]@{ Index = $_; Status = $response.StatusCode; Content = $response.Content }
+    })
+    if (($responses.Status | Sort-Object) -join ',' -ne '200,409') { throw 'Expected one successful settlement and one conflict.' }
+    $winner = $responses | Where-Object Status -eq 200
+    $sale = ConvertFrom-Json -InputObject $winner.Content
+    $accepted = $attempts[$winner.Index]
+    $replay = Request $cashPath 200 $accepted.Body $accepted.Headers
+    if ($replay.receiptNumber -ne $sale.receiptNumber -or $replay.changeAmount -ne $sale.changeAmount) {
+        throw 'Settlement replay differs.'
+    }
+    $available = (Request "$api/floor-plan" 200 $null $secondHeaders).tables | Where-Object tableId -eq 'A01'
+    if ($available.status -ne 'Available' -or $available.tableSessionId) { throw 'Second device did not see the released table.' }
     if ($sale.appliedAmount -ne 200 -or $sale.changeAmount -ne 50) { throw 'Cash totals differ.' }
     $receipt = "$api/test-cash-cycle/receipts/$($sale.receiptNumber)"
     $null = Request $receipt 200 $null $headers
-    $null = Request "$receipt/simulate" 200 @{ fail = $false } $headers
+    $simulation = Request "$receipt/simulate" 200 @{ fail = $true } $headers
+    $repeat = Request "$receipt/simulate" 200 @{ fail = $false } $secondHeaders
+    if ($simulation.status -ne 'Failed' -or $repeat.status -ne $simulation.status) {
+        throw 'Receipt simulation replay differs.'
+    }
     $close = Request "$api/test-cash-cycle" 200 @{ operation = 'close'; shiftId = $shift; cash = 700; pin = $pin } $headers
     if ($close.expectedCash -ne 700 -or $close.difference -ne 0) { throw 'Shift totals differ.' }
     'PC POS loopback HTTPS cash sale: PASS'
