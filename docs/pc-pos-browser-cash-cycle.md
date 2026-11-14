@@ -36,4 +36,14 @@ certificate for this fixture only. Use the one-time link and synthetic PIN
 printed by the host. Stop with Ctrl+C to remove the temporary database.
 
 This fixture serves the built UI and real Branch routes from the same
-origin. It issues a single pairing challenge and does not start Central.
+origin. It issues two one-time pairing challenges and does not start Central.
+
+Run the loopback HTTPS smoke test from the repository root after building the
+browser fixture. Stop any existing fixture host first.
+
+```pwsh
+pwsh tests/Pos.PcPos.BrowserHost/Test-CashSale.ps1 -Dist apps/pos-web/dist
+```
+
+The smoke test sends HTTP requests. Use the browser checklist above for UI
+acceptance.
