@@ -132,6 +132,35 @@ public static class BranchOrderingHttpHandlers
             : TypedResults.Conflict(new BranchOrderingError(1, "InvalidCancellationProductionStatus"));
     }
 
+    public static async Task<IResult> ConfirmCancellationAsync(ClaimsPrincipal principal, string cancellationId,
+        CancellationProductionRequest request, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        if (!AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        if (request.SchemaVersion != 1 || request.Lines is not { Count: > 0 }) { return InvalidRequest(); }
+        var quantities = new List<Pos.Application.TableSessions.CancellationProductionCheck>();
+        try
+        {
+            cancellationId = Identifier(cancellationId);
+            foreach (var line in request.Lines)
+            {
+                if (line is null || line.NotStarted is not int notStarted || line.InProgress is not int inProgress ||
+                    line.Completed is not int completed || line.NotApplicable is not int notApplicable) { return InvalidRequest(); }
+                quantities.Add(new(Identifier(line.OrderLineId), notStarted, inProgress, completed, notApplicable));
+            }
+        }
+        catch (ArgumentException) { return InvalidRequest(); }
+
+        var status = await runtime.TableCommands.ConfirmCancellationAsync(
+            identity.BranchId, cancellationId, identity.EmployeeId, runtime.Time.GetUtcNow(), quantities, cancellationToken);
+        return status is null ? TypedResults.Conflict(new BranchOrderingError(1, "CancellationNotReadyForConfirmation"))
+            : TypedResults.Ok(new { SchemaVersion = 1, Status = status });
+    }
+
     public static async Task<IResult> RejectCancellationAsync(ClaimsPrincipal principal, string cancellationId,
         BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
