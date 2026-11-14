@@ -3,7 +3,7 @@ using Pos.Application.TableSessions;
 
 namespace Pos.Branch.Infrastructure.Sqlite;
 
-public sealed class SqliteTableSessionCommandStore : ITableSessionCommandStore
+public sealed partial class SqliteTableSessionCommandStore : ITableSessionCommandStore
 {
     private readonly SqliteConnectionFactory _connections;
     private readonly ISqliteBillPreviewContentSource _billPreviewContentSource;

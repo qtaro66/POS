@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Pos.Branch.Api.Security;
+using Pos.Branch.Infrastructure.Sqlite;
 
 namespace Pos.Branch.Api.Tests;
 
@@ -42,6 +43,7 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM cash_sales;"));
         Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM simulated_cash_receipt_jobs;"));
         Assert.Equal("QueuedForSimulation", replay.Body.GetProperty("printStatus").GetString());
+        Assert.Equal(720m, await new SqliteTableSessionCommandStore(fixture.Path).ReadExpectedTestCashAsync("BRANCH-01", 500m, default));
         Assert.Equal("Completed", await fixture.Scalar("SELECT status FROM table_sessions;"));
     }
 }
