@@ -45,6 +45,8 @@ public sealed partial class BranchOrderingHttpApiTests
         var replay = await fixture.Call("CompleteBranchCashSale", request, principal: cashier);
         Assert.Equal(first.Body.GetRawText(), replay.Body.GetRawText());
         Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM cash_sales;"));
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM cloud_sync_outbox WHERE action = 'CompletePayment' AND request_id = 'CASH-1' AND successfully_sent_at IS NULL;"));
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM table_session_audit WHERE action = 'CompletePayment' AND request_id = 'CASH-1';"));
         Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM simulated_cash_receipt_jobs;"));
         Assert.Equal("QueuedForSimulation", replay.Body.GetProperty("printStatus").GetString());
         var receiptNumber = first.Body.GetProperty("receiptNumber").GetString()!;
