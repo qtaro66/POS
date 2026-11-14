@@ -239,14 +239,14 @@ public sealed partial class BranchOrderingHttpApiTests
         public string Path => System.IO.Path.Combine(_directory, "branch.db");
         private IConfiguration _configuration = null!;
 
-        public static async Task<Fixture> CreateAsync()
+        public static async Task<Fixture> CreateAsync(bool cancellationEnabled = false)
         {
             var fixture = new Fixture();
-            try { await fixture.InitializeAsync(); return fixture; }
+            try { await fixture.InitializeAsync(cancellationEnabled); return fixture; }
             catch { await fixture.DisposeAsync(); throw; }
         }
 
-        private async Task InitializeAsync()
+        private async Task InitializeAsync(bool cancellationEnabled)
         {
             await new SqliteTableSessionCommandStore(Path).InitializeAsync();
             await Execute($$"""
@@ -265,7 +265,7 @@ public sealed partial class BranchOrderingHttpApiTests
                 INSERT INTO master_data_option_groups VALUES ('BRANCH-01','OLD','ITEM-1','GROUP-1','Choose','SubItem',1,1,0,1,0);
                 INSERT INTO master_data_option_group_items VALUES ('BRANCH-01','OLD','ITEM-1','GROUP-1','OPT-1',0,0);
                 """);
-            _configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["BranchOrdering:Enabled"] = "true" }).Build();
+            _configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["BranchOrdering:Enabled"] = "true", ["BranchOrdering:EnableCancellationConfirmation"] = cancellationEnabled.ToString(), ["BranchOrdering:EnableMobileCancellationRequests"] = cancellationEnabled.ToString() }).Build();
             var builder = WebApplication.CreateBuilder();
             builder.Services.AddSingleton(new BranchOrderingRuntime(Path, TimeProvider.System));
             _app = builder.Build();
@@ -283,6 +283,7 @@ public sealed partial class BranchOrderingHttpApiTests
             context.Request.Path = BranchOrderingEndpoints.Prefix;
             context.Request.Method = body is null ? "GET" : "POST";
             context.Request.RouteValues["requestId"] = routeValue;
+            context.Request.RouteValues["cancellationId"] = routeValue;
             context.Request.RouteValues["tableSessionId"] = routeValue;
             using var requestBody = new MemoryStream(Encoding.UTF8.GetBytes(body is null ? "" : JsonSerializer.Serialize(body)));
             context.Request.Body = requestBody;
