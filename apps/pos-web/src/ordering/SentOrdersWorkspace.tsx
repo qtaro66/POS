@@ -95,7 +95,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       {detail.hasOpenCancellationRequest && <p className="cancellation-notice" role="status">{s.cancellationPending}</p>}
       <div className="batch-list" role="region" aria-label={s.batches} tabIndex={0}>{detail.batches.length === 0 ? <p className="empty-state">{s.noOrders}</p> : detail.batches.map((batch, index) => <Batch key={batch.orderBatchId} batch={batch} index={index} />)}</div>
       {!preview && client.cashStep && detail.billPreviewTotals && <CashSaleForm key={detail.session.tableSessionId}
-        detail={detail} send={client.cashStep} refresh={() => { void controller.refresh() }} />}
+        detail={detail} send={client.cashStep} simulateReceipt={client.simulateReceipt} refresh={() => { void controller.refresh() }} />}
       <Totals detail={detail} compact={inSession} /></>}
   </section>
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}

@@ -6,8 +6,10 @@ namespace Pos.Branch.Api.Tests;
 
 public sealed partial class BranchOrderingHttpApiTests
 {
-    [Fact]
-    public async Task Cash_sale_requires_an_open_shift_and_replays_without_a_second_payment()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Cash_sale_requires_an_open_shift_and_replays_without_a_second_payment(bool failPrinting)
     {
         await using var fixture = await Fixture.CreateAsync();
         var cashier = Principal();
@@ -48,6 +50,12 @@ public sealed partial class BranchOrderingHttpApiTests
         var receiptNumber = first.Body.GetProperty("receiptNumber").GetString()!;
         Assert.Contains("220.00", await store.RenderTestReceiptAsync("BRANCH-01", receiptNumber, default));
         Assert.Null(await store.RenderTestReceiptAsync("BRANCH-02", receiptNumber, default));
+        var simulation = await store.SimulateReceiptAsync("BRANCH-01", receiptNumber, failPrinting, default);
+        Assert.NotNull(simulation);
+        Assert.Equal(failPrinting ? "Failed" : "Simulated", simulation.Status);
+        Assert.Equal(simulation, await store.SimulateReceiptAsync("BRANCH-01", receiptNumber, !failPrinting, default));
+        Assert.Null(await store.SimulateReceiptAsync("BRANCH-02", receiptNumber, false, default));
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM test_receipt_simulation_results;"));
         Assert.Equal(720m, await new SqliteTableSessionCommandStore(fixture.Path).ReadExpectedTestCashAsync("BRANCH-01", 500m, default));
         Assert.Equal("Completed", await fixture.Scalar("SELECT status FROM table_sessions;"));
         Assert.Null(await store.CloseTestCashCycleAsync("BRANCH-01", "OTHER", 710m, default));

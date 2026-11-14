@@ -61,6 +61,8 @@ public static class BranchOrderingEndpoints
             group.MapPost("/test-cash-cycle", TestCashCycleEndpoints.HandleAsync)
                 .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize));
             group.MapGet("/test-cash-cycle/receipts/{receiptNumber}", TestCashCycleEndpoints.ReceiptAsync);
+            group.MapPost("/test-cash-cycle/receipts/{receiptNumber}/simulate", TestCashCycleEndpoints.SimulateReceiptAsync)
+                .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize));
             group.MapPost("/tables/complete-cash-sale", BranchOrderingHttpHandlers.CompleteCashSaleAsync)
                 .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
                 .WithName("CompleteBranchCashSale");

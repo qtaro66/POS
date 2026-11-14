@@ -6,6 +6,21 @@ namespace Pos.Branch.Api.Ordering;
 
 public static class TestCashCycleEndpoints
 {
+    public sealed record SimulationRequest(bool Fail);
+
+    public static async Task<IResult> SimulateReceiptAsync(ClaimsPrincipal principal, string receiptNumber,
+        SimulationRequest request, BranchOrderingRuntime runtime, CancellationToken token)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity) ||
+            !AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        var result = await runtime.TableCommands.SimulateReceiptAsync(identity.BranchId, receiptNumber, request.Fail, token);
+        return result is null ? TypedResults.NotFound() : TypedResults.Ok(result);
+    }
+
     public static async Task<IResult> ReceiptAsync(ClaimsPrincipal principal, string receiptNumber,
         BranchOrderingRuntime runtime, CancellationToken token)
     {
