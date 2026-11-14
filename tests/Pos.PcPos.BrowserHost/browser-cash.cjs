@@ -8,6 +8,14 @@ const { once } = require('node:events')
 const { chromium } = require('playwright')
 
 async function run() {
+  const scenarios = {
+    Balanced: { tender: 250, counted: 700, difference: 0 },
+    Short: { tender: 200, counted: 690, difference: -10 },
+    Over: { tender: 250, counted: 710, difference: 10 },
+  }
+  const scenario = process.argv[3] ?? 'Balanced'
+  assert.ok(Object.hasOwn(scenarios, scenario), 'Expected Balanced, Short, or Over')
+  const { tender, counted, difference } = scenarios[scenario]
   const origin = 'https://127.0.0.1:17443'
   const fixtureId = crypto.randomUUID().replaceAll('-', '')
   const host = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), resolve(process.argv[2]), fixtureId])
@@ -80,18 +88,32 @@ async function run() {
     await page.getByRole('status').filter({ hasText: 'สาขารับออร์เดอร์แล้ว · Request ID:' }).waitFor()
     await button(page, 'กลับผังโต๊ะ').click()
     await button(page, 'ขอชำระเงิน').click()
-    await page.getByLabel('เงินสดที่รับ').fill('250')
+    let cashRequests = 0
+    page.on('request', request => {
+      if (request.url().endsWith('/tables/complete-cash-sale')) cashRequests++
+    })
+    await page.getByLabel('เงินสดที่รับ').fill('199.99')
     await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
-    await page.getByText(/ใบเสร็จทดสอบ .*เงินทอน 50/).waitFor()
-    await button(page, 'จำลองพิมพ์สำเร็จ').click()
-    await page.locator('pre[role=status]').filter({ hasText: '200.00' }).waitFor()
+    await page.getByText('เงินสดที่รับต่ำกว่ายอดชำระ', { exact: true }).waitFor()
+    assert.equal(cashRequests, 0)
+    await page.getByLabel('เงินสดที่รับ').fill(String(tender))
+    await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
+    await page.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + (tender - 200) + '$')).waitFor()
+    assert.equal(cashRequests, 1)
+    if (scenario === 'Short') {
+      await button(page, 'จำลองพิมพ์ล้มเหลว').click()
+      await page.getByText('จำลองพิมพ์ล้มเหลว · บิลปิดแล้ว', { exact: true }).waitFor()
+    } else {
+      await button(page, 'จำลองพิมพ์สำเร็จ').click()
+      await page.locator('pre[role=status]').filter({ hasText: '200.00' }).waitFor()
+    }
     await button(observer, 'รีเฟรชข้อมูล').click()
     await observer.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
-    await setShift('close', 700)
-    await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ 700 · ผลต่าง 0', { exact: true }).waitFor()
+    await setShift('close', counted)
+    await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ ' + counted + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
     await page.reload()
     await page.getByLabel('PIN', { exact: true }).waitFor()
-    console.log('PC POS Edge ' + browser.version() + ' cash acceptance: PASS')
+    console.log('PC POS Edge ' + browser.version() + ' cash acceptance (' + scenario + '): PASS')
   } finally {
     clearTimeout(timeout)
     try { await browser?.close() }
