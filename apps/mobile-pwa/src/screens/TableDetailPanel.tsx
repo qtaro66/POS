@@ -11,7 +11,7 @@ const cancellationLabels: Readonly<Record<string, string>> = {
 }
 
 interface Props {
-  onCancellation?: (lines: readonly import('../domain/mobileRequest.ts').CancellationSelection[]) => Promise<boolean>
+  onCancellation?: (lines: readonly import('../domain/mobileRequest.ts').CancellationSelection[], reason?: string) => Promise<boolean>
   cancellationBlocked?: boolean
   onRequestPayment?: () => void
   paymentBlocked?: boolean
@@ -53,7 +53,7 @@ export function TableDetailPanel({ gateway, device, employee, sessionId, snapsho
     const data = new FormData(form)
     const lines = cancellable.map(line => ({ orderLineId: line.id, quantity: Number(data.get(line.id)) }))
       .filter(line => line.quantity > 0)
-    if (lines.length && await onCancellation(lines)) form.reset()
+    if (lines.length && await onCancellation(lines, String(data.get("cancellationReason") ?? "").trim() || undefined)) form.reset()
   }
   return (
     <section aria-label="Accepted order">
@@ -89,6 +89,7 @@ export function TableDetailPanel({ gateway, device, employee, sessionId, snapsho
             {cancellable.map(line => <label key={line.id}>{line.name}
               <input type="number" name={line.id} min={0} max={line.available} step={1} defaultValue={0} required />
             </label>)}
+            <label>Reason (optional)<input name="cancellationReason" maxLength={500} /></label>
             <button type="submit" className="button">Send cancellation request</button>
           </fieldset>
         </form>

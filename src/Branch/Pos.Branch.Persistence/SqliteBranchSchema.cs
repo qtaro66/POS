@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 27;
+    public const int CurrentVersion = 28;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1438,6 +1438,20 @@ internal static class SqliteBranchSchema
         if (storedVersion < 27)
         {
             await ExecuteAsync(connection, transaction, SchemaVersion27, cancellationToken);
+        }
+
+        if (storedVersion < 28)
+        {
+            await ExecuteAsync(connection, transaction, """
+                CREATE TABLE IF NOT EXISTS cancellation_request_reasons (
+                    branch_id TEXT NOT NULL,
+                    cancellation_request_id TEXT NOT NULL,
+                    reason TEXT NOT NULL CHECK (length(reason) BETWEEN 1 AND 500),
+                    PRIMARY KEY (branch_id, cancellation_request_id),
+                    FOREIGN KEY (branch_id, cancellation_request_id)
+                        REFERENCES cancellation_requests (branch_id, cancellation_request_id)
+                );
+                """, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

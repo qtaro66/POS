@@ -445,6 +445,7 @@ export interface CancellationQueueEntry {
   readonly cancellationRequestId: string
   readonly tableSessionId: string
   readonly status: 'CancellationRequested' | 'ProductionStatusChecking' | 'StatusRecorded'
+  readonly reason?: string | null
   readonly canConfirm?: boolean
   readonly lines: readonly { orderLineId: string; displayName: string; requestedQuantity: number; checked?: ProductionCheck | null }[]
 }

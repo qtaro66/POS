@@ -24,7 +24,7 @@ export function createSubmitOrderGateway(request: AuthenticatedBranchRequest) {
       schemaVersion: 1,
       context: { requestId: order.requestId, branchId: device.branchId, deviceId: order.deviceId,
         employeeId: order.employeeId, tableSessionId: order.tableSessionId, clientCreatedAt: order.clientCreatedAt },
-      ...(order.command === 'RequestPayment' ? { expectedVersion: order.expectedVersion } : order.command === 'RequestCancellation' ? { lines: order.cancellationLines } : { lines: order.lines.map(line => ({
+      ...(order.command === 'RequestPayment' ? { expectedVersion: order.expectedVersion } : order.command === 'RequestCancellation' ? { lines: order.cancellationLines, reason: order.cancellationReason } : { lines: order.lines.map(line => ({
         sellableItemId: line.sellableItemId, quantity: line.quantity, comment: line.comment,
         fulfillmentType: line.fulfillmentType ?? 'DineIn',
         options: line.selections.map(option => ({
