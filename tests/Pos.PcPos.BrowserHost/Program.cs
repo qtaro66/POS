@@ -5,8 +5,15 @@ using Microsoft.Data.Sqlite;
 using Pos.Application.Security;
 using Pos.Branch.Api.Ordering;
 using Pos.Branch.Api.Security;
+using Pos.Branch.Api.Synchronization;
 using Pos.Branch.Infrastructure.Sqlite;
 using Pos.Contracts.Ordering;
+
+if (args is ["--central", var fixtureId])
+{
+    await CentralFixture.RunAsync(Path.Combine(Path.GetTempPath(), $"pc-pos-browser-{Guid.ParseExact(fixtureId, "N"):N}"));
+    return;
+}
 
 if (args.Length is < 1 or > 2 || !File.Exists(Path.Combine(args[0], "index.html")))
 {
@@ -83,6 +90,20 @@ try
     builder.Services.AddBranchEmployeeSessions(builder.Configuration);
     builder.Services.AddBranchPairing(builder.Configuration);
     builder.Services.AddBranchOrdering(builder.Configuration);
+    if (persistent)
+    {
+        const string delivery = "BranchCloudOutboxDelivery:";
+        builder.Configuration[delivery + "Enabled"] = "true";
+        builder.Configuration[delivery + "DatabasePath"] = database;
+        builder.Configuration[delivery + "BranchId"] = Branch;
+        builder.Configuration[delivery + "ServiceOrigin"] = CentralFixture.Origin;
+        builder.Configuration[delivery + "DeliveryPath"] = "/api/v1/branch-events";
+        builder.Configuration[delivery + "RetryDelay"] = "00:00:01";
+        builder.Configuration[delivery + "MaximumRetryDelay"] = "00:00:02";
+        builder.Configuration[delivery + "RequestTimeout"] = "00:00:02";
+        builder.Services.AddSingleton<IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>(new CentralFixture.Transport(directory.FullName));
+        builder.Services.AddBranchCloudOutboxDelivery(builder.Configuration);
+    }
 
     await using var app = builder.Build();
     app.UseDefaultFiles();
