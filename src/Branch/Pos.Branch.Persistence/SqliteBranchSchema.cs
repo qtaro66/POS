@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 25;
+    public const int CurrentVersion = 26;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1075,6 +1075,23 @@ internal static class SqliteBranchSchema
         );
         """;
 
+    private const string SchemaVersion26 = """
+        CREATE TABLE IF NOT EXISTS cancellation_production_checks (
+            branch_id TEXT NOT NULL,
+            cancellation_request_id TEXT NOT NULL,
+            order_line_id TEXT NOT NULL,
+            not_started INTEGER NOT NULL CHECK (not_started >= 0),
+            in_progress INTEGER NOT NULL CHECK (in_progress >= 0),
+            completed INTEGER NOT NULL CHECK (completed >= 0),
+            not_applicable INTEGER NOT NULL CHECK (not_applicable >= 0),
+            recorded_by TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            PRIMARY KEY (branch_id, cancellation_request_id, order_line_id),
+            FOREIGN KEY (branch_id, cancellation_request_id, order_line_id)
+                REFERENCES cancellation_request_lines (branch_id, cancellation_request_id, order_line_id)
+        );
+        """;
+
     private const string SchemaVersion25 = """
         CREATE TABLE IF NOT EXISTS cancellation_inspection_snapshots (
             snapshot_id TEXT NOT NULL PRIMARY KEY,
@@ -1394,6 +1411,11 @@ internal static class SqliteBranchSchema
             {
                 throw new InvalidOperationException("Branch migration would leave invalid foreign keys.");
             }
+        }
+
+        if (storedVersion < 26)
+        {
+            await ExecuteAsync(connection, transaction, SchemaVersion26, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)
