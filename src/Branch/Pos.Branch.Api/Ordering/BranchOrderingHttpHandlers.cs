@@ -277,7 +277,9 @@ public static class BranchOrderingHttpHandlers
                     line.Options.Select(option => new BranchAcceptedOptionView(option.SellableItemId, option.OptionGroupId,
                         option.DisplayName, option.QuantityPerItem, option.UnitPrice)).ToArray(),
                     line.ActiveGrossAmount, line.ActiveDiscountAmount, line.ActiveNetAmount)).ToArray(),
-                batch.ActiveGrossAmount, batch.ActiveLineDiscountAmount, batch.ActiveItemNetAmount)).ToArray(), canRequestCancellation));
+                batch.ActiveGrossAmount, batch.ActiveLineDiscountAmount, batch.ActiveItemNetAmount)).ToArray(), canRequestCancellation,
+            detail.CancellationRequests.Select(request => new BranchCancellationStatusView(
+                request.CancellationRequestId, request.Status, request.Quantities)).ToArray()));
     }
 
     private static BranchMenuItem Item(CatalogSellableItemSnapshot item,

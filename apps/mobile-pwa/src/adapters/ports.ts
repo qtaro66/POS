@@ -74,6 +74,7 @@ export type ActiveTablesOutcome =
 export interface TableDetail {
   readonly tableVersion: number
   readonly status: string
+  readonly cancellationRequests?: readonly { id: string; status: string; quantities: Readonly<Record<string, number>> }[]
   readonly canRequestCancellation?: boolean
   readonly hasOpenCancellationRequest: boolean
   readonly lines: readonly {

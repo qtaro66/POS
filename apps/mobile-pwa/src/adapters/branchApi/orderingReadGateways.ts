@@ -38,6 +38,11 @@ function tableDetail(value: unknown, sessionId: string): TableDetail {
     tableVersion: integer(session.tableVersion, 1),
     status: string(session.status),
     ...(body.canRequestCancellation === true ? { canRequestCancellation: true } : {}),
+    ...(Array.isArray(body.cancellationRequests) ? { cancellationRequests: body.cancellationRequests.map(value => {
+      const row = object(value)
+      return { id: string(row.cancellationRequestId), status: string(row.status),
+        quantities: Object.fromEntries(Object.entries(object(row.quantities)).map(([id, count]) => [id, integer(count, 1)])) }
+    }) } : {}),
     hasOpenCancellationRequest: body.hasOpenCancellationRequest,
     lines: list(body.batches).flatMap(batch => list(object(batch).lines).map(candidate => {
       const line = object(candidate)
