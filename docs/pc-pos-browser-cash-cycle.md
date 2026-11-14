@@ -47,3 +47,10 @@ pwsh tests/Pos.PcPos.BrowserHost/Test-CashSale.ps1 -Dist apps/pos-web/dist
 
 The smoke test sends HTTP requests and restarts the Branch fixture with its original database. It checks that paired devices, the settlement and receipt outcome, the released table, and the shift balance survive the restart. Use the browser checklist above for UI
 acceptance.
+
+The smoke test starts a separate loopback Central fixture after Branch
+restarts. It uses the Central ingestion handler with an in-memory store,
+and replaces the first successful cash acknowledgment with HTTP 503.
+The test checks ordered ingestion, a single stored cash event, a
+duplicate delivery, and an empty Branch outbox. It uses ports 17443 and
+17444 and does not require PostgreSQL.

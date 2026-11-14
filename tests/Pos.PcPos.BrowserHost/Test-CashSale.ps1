@@ -10,6 +10,7 @@ function Start-Fixture {
     Start-Job { dotnet $using:assembly $using:distPath $using:fixtureId }
 }
 $job = Start-Fixture
+$centralJob = $null
 try {
     $lines = @()
     for ($attempt = 0; $attempt -lt 60 -and -not ($lines -match '^Fixture second pairing:'); $attempt++) {
@@ -106,11 +107,11 @@ try {
         $status = Request "$api/cloud-outbox-status" 200 $null $secondHeaders
         $cash = @($status.items | Where-Object action -eq 'CompletePayment')
         if ($cash.Count -ne 1 -or $cash[0].requestId -ne $accepted.Context.requestId -or
-            $cash[0].tableSessionId -ne $context.tableSessionId -or $cash[0].processingStatus -ne 'Pending') {
-            throw 'Expected exactly one pending cash event for the winning request.'
+            $cash[0].tableSessionId -ne $context.tableSessionId) {
+            throw 'Expected exactly one unacknowledged cash event for the winning request.'
         }
-        if ($status.summary.unacknowledgedCount -ne 4 -or $status.summary.pendingCount -ne 4) {
-            throw 'Expected four pending events for the cash cycle.'
+        if ($status.summary.unacknowledgedCount -ne 4) {
+            throw 'Expected four unacknowledged events for the cash cycle.'
         }
         $cash[0]
     }
@@ -143,9 +144,30 @@ try {
     }
     $close = Request "$api/test-cash-cycle" 200 @{ operation = 'close'; shiftId = $shift; cash = 700; pin = $pin } $headers
     if ($close.expectedCash -ne 700 -or $close.difference -ne 0) { throw 'Shift totals differ.' }
+    $centralJob = Start-Job { dotnet $using:assembly --central $using:fixtureId }
+    $central = $null
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        Start-Sleep -Milliseconds 500
+        try {
+            $central = Invoke-RestMethod 'https://127.0.0.1:17444/fixture-events' -NoProxy -SkipCertificateCheck -TimeoutSec 2
+        }
+        catch {
+            if ($centralJob.State -in 'Failed', 'Completed', 'Stopped') { throw 'Central fixture stopped before reconnect.' }
+            continue
+        }
+        $queue = Request "$api/cloud-outbox-status" 200 $null $headers
+        if ($queue.summary.unacknowledgedCount -eq 0 -and $central.events.Count -eq 4 -and $central.duplicates -eq 1) { break }
+    }
+    $receivedCash = @($central.events | Where-Object action -eq 'CompletePayment')
+    if ($queue.summary.unacknowledgedCount -ne 0 -or ($central.events.branchSequence -join ',') -ne '1,2,3,4' -or
+        $receivedCash.Count -ne 1 -or $receivedCash[0].eventId -ne $beforeRestart.outboxId -or $central.duplicates -ne 1) {
+        Receive-Job $job | Select-String -Pattern "fail:|Exception|status code|https://127.0.0.1:17444" | Select-Object -Last 20 | Write-Host
+        throw "Reconnect failed. Central count: $($central.events.Count), duplicates: $($central.duplicates), outstanding: $($queue.summary.unacknowledgedCount), statuses: $($queue.items.processingStatus -join ',')."
+    }
     'PC POS loopback HTTPS cash sale: PASS'
 }
 finally {
+    if ($centralJob) { Stop-Job $centralJob; Remove-Job $centralJob }
     Stop-Job $job
     Remove-Job $job
     $fixtureDirectory = Join-Path ([IO.Path]::GetTempPath()) "pc-pos-browser-$fixtureId"
