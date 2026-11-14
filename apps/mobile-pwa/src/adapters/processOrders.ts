@@ -1,4 +1,4 @@
-import { isOutstanding, newSubmitOrderRequest, transitionRequest, type MobileRequest } from '../domain/mobileRequest.ts'
+import { isOutstanding, newSubmitOrderRequest, transitionRequest, type MobileRequest, type CancellationSelection } from '../domain/mobileRequest.ts'
 import type { Draft } from '../domain/draft.ts'
 import type { MobileServices } from './ports.ts'
 import type { EmployeeSession, PairedDevice } from '../domain/types.ts'
@@ -7,6 +7,7 @@ export async function processOrders(
   services: Pick<MobileServices, 'outbox' | 'submitOrder'>,
   device: PairedDevice, employee: EmployeeSession, now: () => Date,
   draft?: Draft, signal?: AbortSignal, payment?: { tableSessionId: string; version: number },
+  cancellation?: { tableSessionId: string; lines: readonly CancellationSelection[] },
 ): Promise<MobileRequest['state'] | undefined> {
   const { outbox, submitOrder } = services
   if (!outbox || !submitOrder) return
@@ -14,6 +15,18 @@ export async function processOrders(
     signal?.throwIfAborted()
     const requests = (await outbox.listRequests()).filter(order =>
       order.deviceId === device.deviceId && order.employeeId === employee.employeeId && isOutstanding(order))
+    if (cancellation) {
+      if (!outbox.queueCancellation || requests.some(order => order.tableSessionId === cancellation.tableSessionId)) return
+      const at = now().toISOString()
+      const order: MobileRequest = {
+        requestId: crypto.randomUUID(), command: 'RequestCancellation', deviceId: device.deviceId,
+        employeeId: employee.employeeId, tableSessionId: cancellation.tableSessionId,
+        cancellationLines: cancellation.lines, sessionMasterDataVersion: '', lines: [], state: 'Pending',
+        clientCreatedAt: at, updatedAt: at,
+      }
+      await outbox.queueCancellation(order)
+      return process(order)
+    }
     if (payment) {
       if (!outbox.queuePayment || requests.some(order => order.tableSessionId === payment.tableSessionId)) return
       const at = now()

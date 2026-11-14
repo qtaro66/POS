@@ -251,7 +251,7 @@ public static class BranchOrderingHttpHandlers
     }
 
     public static async Task<IResult> DetailAsync(ClaimsPrincipal principal, string tableSessionId,
-        BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+        BranchOrderingRuntime runtime, IConfiguration configuration, CancellationToken cancellationToken)
     {
         if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
         try { tableSessionId = Identifier(tableSessionId); }
@@ -259,6 +259,9 @@ public static class BranchOrderingHttpHandlers
         var detail = await runtime.Queries.DetailAsync(identity.BranchId, tableSessionId, runtime.Time.GetUtcNow(), cancellationToken);
         if (detail is null) { return TypedResults.NotFound(new BranchOrderingError(1, "ActiveTableSessionNotFound")); }
         var totals = detail.BillPreviewTotals;
+        var canRequestCancellation = configuration.GetValue<bool>("BranchOrdering:EnableCancellationConfirmation") &&
+            configuration.GetValue<bool>("BranchOrdering:EnableMobileCancellationRequests") &&
+            AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) && role == "Mobile";
         return TypedResults.Ok(new BranchSessionDetailResponse(1,
             new(detail.Session.TableSessionId, detail.Session.TableId, detail.Session.Status, detail.Session.Version),
             detail.AsOf, detail.HasOpenCancellationRequest,
@@ -274,7 +277,7 @@ public static class BranchOrderingHttpHandlers
                     line.Options.Select(option => new BranchAcceptedOptionView(option.SellableItemId, option.OptionGroupId,
                         option.DisplayName, option.QuantityPerItem, option.UnitPrice)).ToArray(),
                     line.ActiveGrossAmount, line.ActiveDiscountAmount, line.ActiveNetAmount)).ToArray(),
-                batch.ActiveGrossAmount, batch.ActiveLineDiscountAmount, batch.ActiveItemNetAmount)).ToArray()));
+                batch.ActiveGrossAmount, batch.ActiveLineDiscountAmount, batch.ActiveItemNetAmount)).ToArray(), canRequestCancellation));
     }
 
     private static BranchMenuItem Item(CatalogSellableItemSnapshot item,

@@ -111,6 +111,15 @@ export class IndexedDbOrderStore implements DraftRepository, OrderOutbox {
     return value ?? null
   }
 
+  async queueCancellation(request: MobileRequest): Promise<void> {
+    const database = await this.open()
+    const transaction = database.transaction(REQUESTS, 'readwrite')
+    const done = transactionDone(transaction)
+    transaction.objectStore(REQUESTS).add(request)
+    await done
+    this.changed()
+  }
+
   async queuePayment(key: DraftKey, request: MobileRequest): Promise<void> {
     const database = await this.open()
     const transaction = database.transaction([DRAFTS, REQUESTS], 'readwrite')

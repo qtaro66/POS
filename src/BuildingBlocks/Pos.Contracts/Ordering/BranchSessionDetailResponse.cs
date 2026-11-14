@@ -2,7 +2,7 @@ namespace Pos.Contracts.Ordering;
 
 public sealed record BranchSessionDetailResponse(
     int SchemaVersion, BranchTableSessionView Session, DateTimeOffset AsOf, bool HasOpenCancellationRequest,
-    BranchBillPreviewTotals? BillPreviewTotals, IReadOnlyList<BranchAcceptedBatchView> Batches);
+    BranchBillPreviewTotals? BillPreviewTotals, IReadOnlyList<BranchAcceptedBatchView> Batches, bool CanRequestCancellation = false);
 public sealed record BranchBillPreviewTotals(
     string MasterDataVersion, string CalculationPolicyVersion, decimal VatRate, decimal ServiceChargeRate,
     decimal ItemGrossAmount, decimal LineDiscountAmount, decimal ItemNetAmount, decimal BillDiscountAmount,

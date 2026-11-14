@@ -74,6 +74,7 @@ export type ActiveTablesOutcome =
 export interface TableDetail {
   readonly tableVersion: number
   readonly status: string
+  readonly canRequestCancellation?: boolean
   readonly hasOpenCancellationRequest: boolean
   readonly lines: readonly {
     id: string
@@ -133,6 +134,7 @@ export interface OrderOutbox {
    * removed and the request added, or nothing changes. Fails if the
    * `requestId` already exists.
    */
+  queueCancellation?(request: MobileRequest): Promise<void>
   queuePayment?(key: DraftKey, request: MobileRequest): Promise<void>
   submitDraft(key: DraftKey, request: MobileRequest): Promise<void>
   /** Stores a new state of an existing request; fails for an unknown `requestId`. */
