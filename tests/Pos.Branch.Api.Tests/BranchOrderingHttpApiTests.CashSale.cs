@@ -1,6 +1,12 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
+using Pos.Application.Synchronization;
 using Pos.Branch.Api.Security;
+using Pos.Branch.Api.Synchronization;
 using Pos.Branch.Infrastructure.Sqlite;
+using Pos.Contracts.Synchronization;
 
 namespace Pos.Branch.Api.Tests;
 
@@ -66,5 +72,74 @@ public sealed partial class BranchOrderingHttpApiTests
             await store.CloseTestCashCycleAsync("BRANCH-01", "SHIFT-1", 710m, default, "EMP-1", closedAt));
         Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM test_cash_close_history;"));
         Assert.Null(await store.ReadExpectedTestCashAsync("BRANCH-01", 500m, default));
+        await VerifyCashReconnectAsync(fixture);
+    }
+
+    private static async Task VerifyCashReconnectAsync(Fixture fixture)
+    {
+        var clock = new ReconnectClock();
+        using var central = new ReconnectingCentral();
+        using var http = new HttpClient(central);
+        BranchCloudOutboxCycleProcessor Processor() => new(
+            new SqliteBranchCloudOutboxClaimStore(fixture.Path),
+            new SqliteBranchCloudOutboxLeaseRenewalStore(fixture.Path),
+            new HttpBranchCloudOutboxDeliveryClient(http, new Uri("https://central.example.test/events"), clock),
+            new SqliteBranchCloudDeliveryConfirmationStore(fixture.Path),
+            new SqliteBranchCloudOutboxDeliveryFailureStore(fixture.Path),
+            new SqliteBranchCloudOutboxSequenceReplayStore(fixture.Path),
+            new ExponentialBranchCloudOutboxRetryDelayPolicy(), TimeSpan.FromMinutes(1), clock);
+        Task<BranchCloudOutboxCycleResult> Cycle(BranchCloudOutboxCycleProcessor processor) => processor.ProcessNextAsync(
+            "BRANCH-01", "TEST-WORKER", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5));
+
+        await Cycle(Processor());
+        Assert.Empty(central.Committed);
+        Assert.Equal("Completed", await fixture.Scalar("SELECT status FROM table_sessions;"));
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM simulated_cash_receipt_jobs;"));
+
+        central.Online = true;
+        var restartedProcessor = Processor();
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            clock.Now = clock.Now.AddMinutes(2);
+            if ((await Cycle(restartedProcessor)).Disposition == BranchCloudOutboxCycleDisposition.NoWork) { break; }
+        }
+
+        Assert.Equal(new long[] { 1, 2, 3, 4 }, central.Committed.Keys.ToArray());
+        Assert.Equal(new long[] { 4, 4 }, central.CashAttempts.ToArray());
+        Assert.Equal("1", await fixture.Scalar("SELECT COUNT(*) FROM cloud_sync_outbox WHERE request_id = 'CASH-1' AND successfully_sent_at IS NOT NULL;"));
+        Assert.Equal("0", await fixture.Scalar("SELECT COUNT(*) FROM cloud_sync_outbox WHERE successfully_sent_at IS NULL;"));
+    }
+
+    private sealed class ReconnectClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow.AddMinutes(1);
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private sealed class ReconnectingCentral : HttpMessageHandler
+    {
+        public bool Online { get; set; }
+        public SortedDictionary<long, string> Committed { get; } = [];
+        public List<long> CashAttempts { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (!Online) { throw new HttpRequestException("Central is offline."); }
+            using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            var data = payload.RootElement;
+            var sequence = data.GetProperty("branchSequence").GetInt64();
+            var id = data.GetProperty("eventId").GetString()!;
+            if (!Committed.TryAdd(sequence, id)) { Assert.Equal(Committed[sequence], id); }
+            if (data.GetProperty("requestId").GetString() == "CASH-1")
+            {
+                CashAttempts.Add(sequence);
+                if (CashAttempts.Count == 1) { throw new HttpRequestException("Acknowledgment lost after commit."); }
+            }
+
+            return new(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BranchCloudEventIngestionResponse(1, id, "BRANCH-01", sequence))
+            };
+        }
     }
 }
