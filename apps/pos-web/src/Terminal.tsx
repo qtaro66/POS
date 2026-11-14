@@ -44,10 +44,15 @@ export default function Terminal() {
           auth.discardExpiredSession(employee)
           throw new Error()
         }
+        const lifetime = new AbortController()
         const client = createOrderingClient({ serviceOrigin: device.branchServiceUrl, branchId: device.branchId,
-          deviceId: device.deviceId, employeeId: employee.employeeId, deviceCredential: credential, employeeSessionToken: token })
+          deviceId: device.deviceId, employeeId: employee.employeeId, deviceCredential: credential, employeeSessionToken: token }, {
+          fetch: (input, init) => fetch(input, { ...init, signal: init?.signal
+            ? AbortSignal.any([init.signal, lifetime.signal]) : lifetime.signal }),
+        })
         const timer = window.setTimeout(() => close(), expiry - Date.now())
         function close() {
+          lifetime.abort()
           window.clearTimeout(timer)
           auth.discardExpiredSession(employee)
           setSession(undefined)
