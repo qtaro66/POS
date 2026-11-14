@@ -5,7 +5,11 @@ $distPath = (Resolve-Path -LiteralPath $Dist).Path
 dotnet build $project -v quiet
 if ($LASTEXITCODE) { throw 'Fixture build failed.' }
 $assembly = Join-Path $PSScriptRoot 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'
-$job = Start-Job { dotnet $using:assembly $using:distPath }
+$fixtureId = [guid]::NewGuid().ToString('N')
+function Start-Fixture {
+    Start-Job { dotnet $using:assembly $using:distPath $using:fixtureId }
+}
+$job = Start-Fixture
 try {
     $lines = @()
     for ($attempt = 0; $attempt -lt 60 -and -not ($lines -match '^Fixture second pairing:'); $attempt++) {
@@ -98,6 +102,27 @@ try {
     if ($simulation.status -ne 'Failed' -or $repeat.status -ne $simulation.status) {
         throw 'Receipt simulation replay differs.'
     }
+    Stop-Job $job
+    Remove-Job $job
+    $job = Start-Fixture
+    $restart = @()
+    for ($attempt = 0; $attempt -lt 60 -and -not ($restart -match '^Fixture second pairing:'); $attempt++) {
+        Start-Sleep -Milliseconds 250
+        $restart += Receive-Job $job
+    }
+    $pin = [regex]::Match(($restart -join "`n"), '(?m)^Fixture PIN: (\d+)$').Groups[1].Value
+    if (-not $pin) { throw 'Restarted fixture did not start.' }
+    foreach ($deviceHeaders in @($headers, $secondHeaders)) {
+        $deviceHeaders.Remove('X-POS-Employee-Session')
+        $freshLogin = Request 'api/v1/employee-sessions' 200 @{ schemaVersion = 1; pin = $pin } $deviceHeaders
+        $deviceHeaders['X-POS-Employee-Session'] = $freshLogin.sessionToken
+    }
+    $recovered = Request $cashPath 200 $accepted.Body $accepted.Headers
+    if ($recovered.receiptNumber -ne $sale.receiptNumber) { throw 'Cash settlement was lost after restart.' }
+    $persisted = Request "$receipt/simulate" 200 @{ fail = $false } $secondHeaders
+    if ($persisted.status -ne 'Failed') { throw 'Receipt outcome was lost after restart.' }
+    $available = (Request "$api/floor-plan" 200 $null $secondHeaders).tables | Where-Object tableId -eq 'A01'
+    if ($available.status -ne 'Available') { throw 'Table was not released after restart.' }
     $close = Request "$api/test-cash-cycle" 200 @{ operation = 'close'; shiftId = $shift; cash = 700; pin = $pin } $headers
     if ($close.expectedCash -ne 700 -or $close.difference -ne 0) { throw 'Shift totals differ.' }
     'PC POS loopback HTTPS cash sale: PASS'
@@ -105,4 +130,10 @@ try {
 finally {
     Stop-Job $job
     Remove-Job $job
+    $fixtureDirectory = Join-Path ([IO.Path]::GetTempPath()) "pc-pos-browser-$fixtureId"
+    if (Test-Path -LiteralPath $fixtureDirectory) {
+        $resolvedFixture = (Resolve-Path -LiteralPath $fixtureDirectory).Path
+        if ($resolvedFixture -ne [IO.Path]::GetFullPath($fixtureDirectory)) { throw 'Unexpected fixture path.' }
+        Remove-Item -LiteralPath $resolvedFixture -Recurse
+    }
 }
