@@ -81,6 +81,15 @@ public sealed class BranchEmployeeSessionAuthenticationHandler :
         {
             identity.AddClaim(new Claim(BranchPosClaimTypes.DeviceRole, role));
         }
+        if (!Pos.Application.Security.BranchEmployeeSessionTokenFormat.TryParse(headerValues[0], out var parsed))
+        {
+            return AuthenticateResult.Fail(FailureMessage);
+        }
+
+        using (parsed)
+        {
+            identity.AddClaim(new Claim("pos_employee_session_id", parsed.SessionId));
+        }
         var principal = new ClaimsPrincipal(identity);
         return AuthenticateResult.Success(
             new AuthenticationTicket(principal, Scheme.Name));

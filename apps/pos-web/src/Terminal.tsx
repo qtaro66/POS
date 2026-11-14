@@ -50,13 +50,22 @@ export default function Terminal() {
           fetch: (input, init) => fetch(input, { ...init, signal: init?.signal
             ? AbortSignal.any([init.signal, lifetime.signal]) : lifetime.signal }),
         })
-        const timer = window.setTimeout(() => close(), expiry - Date.now())
-        function close() {
+        const close = (revoke = true) => {
           lifetime.abort()
           window.clearTimeout(timer)
           auth.discardExpiredSession(employee)
           setSession(undefined)
+          if (revoke) {
+            void fetch(new URL('/api/v1/ordering/session/end', device!.branchServiceUrl), {
+              method: 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store',
+              headers: { Authorization: 'Device ' + credential, 'X-POS-Employee-Session': token },
+              signal: AbortSignal.timeout(10_000),
+            }).then(response => {
+              if (!response.ok && response.status !== 401) setError('เครื่องล็อกแล้ว แต่ยืนยันการปิด session ที่สาขาไม่ได้')
+            }, () => setError('เครื่องล็อกแล้ว แต่ยืนยันการปิด session ที่สาขาไม่ได้'))
+          }
         }
+        const timer = window.setTimeout(() => close(false), expiry - Date.now())
         setSession({ client, close })
       }
     } catch {

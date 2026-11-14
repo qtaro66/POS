@@ -49,6 +49,9 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(0))
             .Produces<BranchCloudOutboxStatusResponse>().Produces<BranchCloudOutboxStatusError>(400).Produces<BranchCloudOutboxStatusError>(503)
             .WithName("GetBranchCloudOutboxStatus");
+        group.MapPost("/session/end", BranchOrderingHttpHandlers.EndSessionAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0))
+            .WithName("EndBranchOrderingSession");
         group.MapPost("/tables/open", BranchOrderingHttpHandlers.OpenAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize))
             .Produces<BranchOrderingCommandResponse>().Produces<BranchOrderingCommandResponse>(409)

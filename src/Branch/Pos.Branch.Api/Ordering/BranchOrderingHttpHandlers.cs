@@ -12,6 +12,19 @@ namespace Pos.Branch.Api.Ordering;
 
 public static class BranchOrderingHttpHandlers
 {
+    public static async Task<IResult> EndSessionAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity)) { return TypedResults.Unauthorized(); }
+        var sessionId = principal.Identities
+            .SingleOrDefault(candidate => candidate.IsAuthenticated &&
+                candidate.AuthenticationType == BranchEmployeeSessionAuthenticationDefaults.SchemeName)?
+            .FindFirst("pos_employee_session_id")?.Value;
+        if (sessionId is null) { return TypedResults.Unauthorized(); }
+        await runtime.TableCommands.EndEmployeeSessionAsync(identity.BranchId, identity.DeviceId, identity.EmployeeId,
+            sessionId, runtime.Time.GetUtcNow(), cancellationToken);
+        return TypedResults.NoContent();
+    }
+
     public static async Task<IResult> OpenAsync(ClaimsPrincipal principal, BranchOpenTableRequest request,
         BranchOrderingRuntime runtime, CancellationToken cancellationToken)
     {
