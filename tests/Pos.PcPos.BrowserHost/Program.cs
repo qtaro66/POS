@@ -8,7 +8,7 @@ using Pos.Branch.Api.Security;
 using Pos.Branch.Infrastructure.Sqlite;
 using Pos.Contracts.Ordering;
 
-if (args.Length != 1 || !File.Exists(Path.Combine(args[0], "index.html")))
+if (args.Length is < 1 or > 2 || !File.Exists(Path.Combine(args[0], "index.html")))
 {
     throw new ArgumentException("Pass the path to the built PC POS dist directory.");
 }
@@ -16,34 +16,41 @@ if (args.Length != 1 || !File.Exists(Path.Combine(args[0], "index.html")))
 const string Branch = "BROWSER-TEST";
 const string Employee = "TEST-EMPLOYEE";
 var pin = RandomNumberGenerator.GetInt32(100000, 1000000).ToString(System.Globalization.CultureInfo.InvariantCulture);
-var directory = Directory.CreateTempSubdirectory("pc-pos-browser-");
+var persistent = args.Length == 2;
+var directory = persistent
+    ? new DirectoryInfo(Path.Combine(Path.GetTempPath(), $"pc-pos-browser-{Guid.ParseExact(args[1], "N"):N}"))
+    : Directory.CreateTempSubdirectory("pc-pos-browser-");
+directory.Create();
 var database = Path.Combine(directory.FullName, "branch.db");
 try
 {
-    await new SqliteTableSessionCommandStore(database).InitializeAsync();
-    await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = database, Pooling = false }.ToString()))
+    if (!File.Exists(database))
     {
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO branch_employee_status VALUES ($branch, $employee, 'Active', $now, $now);
-            INSERT INTO master_data_packages VALUES ($branch,'TEST',1,$hash,$now,$now,'Active');
-            INSERT INTO master_data_billing_policy VALUES ($branch,'TEST','TEST-CALC','0','0',2,'AwayFromZero');
-            INSERT INTO master_data_sellable_items
-              (branch_id,master_data_version,sellable_item_id,item_kind,display_name,resolved_price,central_active,branch_catalog_enabled,production_station_id)
-              VALUES ($branch,'TEST','ITEM-1','Item','Browser test item','100',1,1,'TEST-KITCHEN');
-            """;
-        command.Parameters.AddWithValue("$branch", Branch);
-        command.Parameters.AddWithValue("$employee", Employee);
-        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-        command.Parameters.AddWithValue("$hash", new string('A', 64));
-        await command.ExecuteNonQueryAsync();
-    }
+        await new SqliteTableSessionCommandStore(database).InitializeAsync();
+        await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = database, Pooling = false }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO branch_employee_status VALUES ($branch, $employee, 'Active', $now, $now);
+                INSERT INTO master_data_packages VALUES ($branch,'TEST',1,$hash,$now,$now,'Active');
+                INSERT INTO master_data_billing_policy VALUES ($branch,'TEST','TEST-CALC','0','0',2,'AwayFromZero');
+                INSERT INTO master_data_sellable_items
+                  (branch_id,master_data_version,sellable_item_id,item_kind,display_name,resolved_price,central_active,branch_catalog_enabled,production_station_id)
+                  VALUES ($branch,'TEST','ITEM-1','Item','Browser test item','100',1,1,'TEST-KITCHEN');
+                """;
+            command.Parameters.AddWithValue("$branch", Branch);
+            command.Parameters.AddWithValue("$employee", Employee);
+            command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("$hash", new string('A', 64));
+            await command.ExecuteNonQueryAsync();
+        }
 
-    await new SqliteTableRegistryStore(database).ApplyAsync(
-        new TableRegistry(1, Branch, "TEST",
-            [new("A01", "Browser table A01", "Test zone", 1), new("A02", "Browser table A02", "Test zone", 2)]),
-        CancellationToken.None);
+        await new SqliteTableRegistryStore(database).ApplyAsync(
+            new TableRegistry(1, Branch, "TEST",
+                [new("A01", "Browser table A01", "Test zone", 1), new("A02", "Browser table A02", "Test zone", 2)]),
+            CancellationToken.None);
+    }
 
     using var key = RSA.Create(2048);
     var request = new CertificateRequest("CN=PC POS browser fixture", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -122,7 +129,7 @@ try
 finally
 {
     SqliteConnection.ClearAllPools();
-    directory.Delete(recursive: true);
+    if (!persistent) { directory.Delete(recursive: true); }
 }
 
 file sealed class FixturePinValidator(string branch, string employee, string expectedPin) : IBranchEmployeePinValidator

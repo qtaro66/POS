@@ -45,5 +45,5 @@ browser fixture. Stop any existing fixture host first.
 pwsh tests/Pos.PcPos.BrowserHost/Test-CashSale.ps1 -Dist apps/pos-web/dist
 ```
 
-The smoke test sends HTTP requests. Use the browser checklist above for UI
+The smoke test sends HTTP requests and restarts the Branch fixture with its original database. It checks that paired devices, the settlement and receipt outcome, the released table, and the shift balance survive the restart. Use the browser checklist above for UI
 acceptance.
