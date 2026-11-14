@@ -6,7 +6,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 internal sealed partial class SqliteTableSessionCommandTransaction
 {
     internal async Task<string?> ConfirmCancellationAsync(string branchId, string requestId, string employeeId,
-        DateTimeOffset now, IReadOnlyList<CancellationProductionCheck> quantities, CancellationToken token)
+        DateTimeOffset now, IReadOnlyList<CancellationProductionCheck> quantities, IReadOnlySet<string> untrackedItems, CancellationToken token)
     {
         var selected = new Dictionary<string, CancellationProductionCheck>(StringComparer.Ordinal);
         foreach (var line in quantities)
@@ -45,7 +45,7 @@ internal sealed partial class SqliteTableSessionCommandTransaction
 
         using var read = CreateCommand("""
             SELECT l.order_line_id, l.requested_quantity, c.not_started, c.in_progress, c.completed,
-                   c.not_applicable, o.active_quantity
+                   c.not_applicable, o.active_quantity, o.sellable_item_id
             FROM cancellation_request_lines l
             JOIN cancellation_production_checks c USING (branch_id, cancellation_request_id, order_line_id)
             JOIN order_lines o USING (branch_id, order_line_id)
@@ -73,7 +73,7 @@ internal sealed partial class SqliteTableSessionCommandTransaction
                 }
 
                 var amount = Quantity(cancelled);
-                if (amount > reader.GetInt32(6) || amount > requested) { return null; }
+                if ((amount > 0 && !untrackedItems.Contains(reader.GetString(7))) || amount > reader.GetInt32(6) || amount > requested) { return null; }
                 total += amount;
                 partial |= amount != requested;
                 evidence.Add(new(checkedCounts, cancelled, requested, requested - amount));

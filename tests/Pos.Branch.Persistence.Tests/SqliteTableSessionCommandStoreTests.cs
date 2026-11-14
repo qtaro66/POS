@@ -67,9 +67,12 @@ public sealed class SqliteTableSessionCommandStoreTests
             OpenCommand("CANCEL-4", "TS-1", "A04").Metadata, selection)).Outcome);
         Assert.NotNull(await store.QueueCancellationInspectionAsync("BRANCH-01", "CANCEL-4", Now, default));
         Assert.True(await store.RecordCancellationProductionAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check], default));
-        Assert.Null(await store.ConfirmCancellationAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check with { Completed = 1 }], default));
-        Assert.Equal("Confirmed", await store.ConfirmCancellationAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check], default));
-        Assert.Equal("Confirmed", await store.ConfirmCancellationAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check], default));
+        var itemId = await database.ScalarAsync<string>("SELECT sellable_item_id FROM order_lines ORDER BY line_sequence LIMIT 1;");
+        var untracked = new HashSet<string>(StringComparer.Ordinal) { itemId };
+        Assert.Null(await store.ConfirmCancellationAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check], new HashSet<string>(), default));
+        Assert.Null(await store.ConfirmCancellationAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check with { Completed = 1 }], untracked, default));
+        Assert.Equal("Confirmed", await store.ConfirmCancellationAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check], untracked, default));
+        Assert.Equal("Confirmed", await store.ConfirmCancellationAsync("BRANCH-01", "CANCEL-4", "EMP", Now, [check], untracked, default));
         Assert.Equal(0L, await database.ScalarAsync<long>("SELECT active_quantity FROM order_lines ORDER BY line_sequence LIMIT 1;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("SELECT COUNT(*) FROM cancellation_confirmations;"));
         var detail = await new SqliteBranchOrderingQuery(database.Path).DetailAsync("BRANCH-01", "TS-1", Now);
