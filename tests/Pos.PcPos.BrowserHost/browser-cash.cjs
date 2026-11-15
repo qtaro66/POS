@@ -129,6 +129,8 @@ async function run() {
     assert.deepEqual(replies.map(reply => reply.status()).sort(), [200, 409])
     assert.equal(cashRequests, 1)
     const winningIndex = replies.findIndex(reply => reply.status() === 200)
+    const winningReply = replies[winningIndex]
+    const originalSale = await winningReply.json()
     const cashier = racers[winningIndex]
     const rejected = racers[1 - winningIndex]
     await rejected.getByText('ยังยืนยันผลไม่ได้ ตรวจสอบสถานะก่อนทำรายการใหม่', { exact: true }).waitFor()
@@ -176,6 +178,27 @@ async function run() {
     const pendingCash = (await recovered.json()).items.filter(event => event.action === 'CompletePayment')
     assert.deepEqual(pendingCash.map(event => [event.outboxId, event.branchSequence]),
       [[payments[0].outboxId, payments[0].branchSequence]])
+    const winningDevice = devices[winningIndex]
+    const winningHeaders = {
+      Authorization: 'Device ' + winningDevice.device.deviceCredential,
+      'X-POS-Employee-Session': winningDevice.session.sessionToken,
+    }
+    const replay = await winningDevice.context.request.post(winningReply.url(), {
+      headers: winningHeaders,
+      data: winningReply.request().postDataJSON(),
+    })
+    assert.equal(replay.status(), 200)
+    assert.deepEqual(await replay.json(), originalSale)
+    const receiptUrl = origin + '/api/v1/ordering/test-cash-cycle/receipts/' + encodeURIComponent(originalSale.receiptNumber)
+    const receipt = await winningDevice.context.request.get(receiptUrl, { headers: winningHeaders })
+    assert.equal(receipt.status(), 200)
+    assert.match((await receipt.json()).text, /200\.00/)
+    const simulation = await winningDevice.context.request.post(receiptUrl + '/simulate', {
+      headers: winningHeaders,
+      data: { fail: scenario !== 'Short' },
+    })
+    assert.equal(simulation.status(), 200)
+    assert.equal((await simulation.json()).status, scenario === 'Short' ? 'Failed' : 'Simulated')
     const centralOrigin = 'https://127.0.0.1:17444'
     central = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), '--central', fixtureId],
       { stdio: 'ignore' })
