@@ -82,12 +82,7 @@ shift difference, and verifies delivery to the in-memory Central fixture.
 Keep both fixture ports (17443 and 17444) free.
 
 ```pwsh
-foreach ($mode in 'ReloadLost', 'ReloadUnsent') {
-    foreach ($scenario in 'Balanced', 'Short', 'Over') {
-        node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist $scenario $mode
-        if ($LASTEXITCODE -ne 0) { throw "Failed: $mode / $scenario" }
-    }
-}
+pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1
 ```
 
 `ReloadLost` drops the response after Branch accepts payment. `ReloadUnsent`
