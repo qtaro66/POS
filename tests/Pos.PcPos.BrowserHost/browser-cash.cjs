@@ -110,6 +110,8 @@ async function run() {
     }
     await setShift('open', 500)
     await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
+    await setShift('open', 999)
+    await page.getByText('Branch ไม่ยืนยันผล', { exact: true }).waitFor()
     const commandContext = {
       requestId: crypto.randomUUID(), branchId: 'BROWSER-TEST', deviceId: device.deviceId,
       employeeId: session.employeeId, tableSessionId: crypto.randomUUID(), clientCreatedAt: new Date().toISOString(),
@@ -145,7 +147,9 @@ async function run() {
 
     let replies
     let winningIndex
-    const recoveryMode = process.argv[4]
+    const recoveryMode = process.argv[4] ?? 'Concurrent'
+    assert.ok(['Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent']
+      .includes(recoveryMode), 'Unknown cash recovery mode')
     const employeeIsolation = ['EmployeeIsolation', 'EmployeeIsolationUnsent'].includes(recoveryMode)
     const unsent = ['ReloadUnsent', 'EmployeeIsolationUnsent'].includes(recoveryMode)
     if (employeeIsolation || unsent || ['LostResponse', 'ReloadLost'].includes(recoveryMode)) {
