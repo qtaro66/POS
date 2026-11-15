@@ -10,9 +10,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+[System.Collections.Generic.HashSet[string]]$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $cases = foreach ($mode in $Modes) {
     foreach ($scenario in $Scenarios) {
-        [pscustomobject]@{ Mode = $mode; Scenario = $scenario }
+        if ($seen.Add("$mode/$scenario")) {
+            [pscustomobject]@{ Mode = $mode; Scenario = $scenario }
+        }
     }
 }
 if ($ListCases) {
