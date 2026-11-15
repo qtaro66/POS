@@ -1,7 +1,7 @@
 param(
     [ValidateNotNullOrEmpty()]
-    [ValidateSet('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent')]
-    [string[]]$Modes = @('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent'),
+    [ValidateSet('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale')]
+    [string[]]$Modes = @('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale'),
     [ValidateNotNullOrEmpty()]
     [ValidateSet('Balanced', 'Short', 'Over')]
     [string[]]$Scenarios = @('Balanced', 'Short', 'Over'),
