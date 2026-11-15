@@ -455,7 +455,10 @@ async function run() {
         await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
         const response = await completed
         assert.equal(response.status(), 200)
-        const { receiptNumber, changeAmount } = await response.json()
+        const { receiptNumber, changeAmount, shiftId, employeeId } = await response.json()
+        assert.ok(originalSale.shiftId)
+        assert.equal(shiftId, originalSale.shiftId)
+        assert.equal(employeeId, originalSale.employeeId)
         assert.ok(receiptNumber)
         assert.equal(changeAmount, received - 100)
         await page.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + changeAmount + '$')).waitFor()
@@ -522,10 +525,22 @@ async function run() {
         assert.ok(nextSale.receiptNumber)
         assert.ok(!settlements.includes(nextSale.receiptNumber))
         assert.equal(nextSale.changeAmount, 20)
+        assert.equal(nextSale.appliedAmount, 100)
+        assert.equal(nextSale.employeeId, 'TEST-EMPLOYEE-B')
+        assert.ok(nextSale.shiftId)
+        assert.notEqual(nextSale.shiftId, originalSale.shiftId)
         tableSessions.push(response.request().postDataJSON().context.tableSessionId)
         assert.equal(new Set(tableSessions).size, 4)
-        await setShift('close', 400, secondPin)
-        await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ 400 · ผลต่าง 0', { exact: true }).waitFor()
+        const nextDifference = -difference
+        const nextCounted = 400 + nextDifference
+        await setShift('close', nextCounted, secondPin)
+        await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ ' + nextCounted + ' · ผลต่าง ' + nextDifference, { exact: true }).waitFor()
+        const replayNext = await context.request.post(response.url(), {
+          headers: recoveredHeaders,
+          data: response.request().postDataJSON(),
+        })
+        assert.equal(replayNext.status(), 200)
+        assert.deepEqual(await replayNext.json(), nextSale)
       }
       const status = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', { headers: recoveredHeaders })
       assert.equal(status.status(), 200)
