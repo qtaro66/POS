@@ -83,7 +83,7 @@ request before it reaches Branch. Both reload the tab and sign in before
 recovering the original request and continuing the sale.
 The observer explicitly refreshes the table list after settlement.
 
-Run all eighteen combinations of recovery mode and shift outcome with the same build.
+Run all twenty-one combinations of recovery mode and shift outcome with the same build.
 Each case restarts Branch, recovers the original cash request, checks the
 shift difference, and verifies delivery to the in-memory Central fixture.
 Keep both fixture ports (17443 and 17444) free.
@@ -100,7 +100,7 @@ EmployeeIsolation and EmployeeIsolationUnsent verify that switching employees hi
 
 ### Cash-cycle acceptance coverage
 
-The runner covers six modes across three closing cash outcomes.
+The runner covers seven modes across three closing cash outcomes.
 Central ran with an in-memory store and receipt printing was simulated.
 
 | Mode | Balanced | Short | Over |
@@ -111,9 +111,10 @@ Central ran with an in-memory store and receipt printing was simulated.
 | ReloadUnsent | Yes | Yes | Yes |
 | EmployeeIsolation | Yes | Yes | Yes |
 | EmployeeIsolationUnsent | Yes | Yes | Yes |
+| MultiSale | Yes | Yes | Yes |
 
 To rerun a specific mode and shift outcome, pass both filters. Omitting them
-runs the full eighteen-case suite.
+runs the full twenty-one-case suite.
 
 ```pwsh
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes EmployeeIsolationUnsent -Scenarios Short
@@ -133,3 +134,7 @@ LostResponse checks the durable result without
 another POST. ReloadUnsent explicitly resends the original request body.
 Both modes continue through cash settlement and shift close. Every mode verifies
 that Central receives one SubmitOrder with the original request ID and one CompletePayment.
+
+MultiSale settles A01, restarts Branch with A02 still open, then settles A02
+and a new A01 session. It checks three distinct receipts and sessions, three
+order and payment events in Central, and expected shift cash of 900.

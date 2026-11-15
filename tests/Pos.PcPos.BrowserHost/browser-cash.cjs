@@ -42,8 +42,8 @@ async function run() {
     return { pin, links }
   }
 
-  let orderRequestId
-  async function verifyCentral(browser, context, recoveredHeaders, outboxId) {
+  const orderRequestIds = []
+  async function verifyCentral(browser, context, recoveredHeaders, ...outboxIds) {
     const centralOrigin = 'https://127.0.0.1:17444'
     central = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), '--central', fixtureId],
       { stdio: 'ignore' })
@@ -60,12 +60,12 @@ async function run() {
             timeout: 1500,
           })
           if (pending.ok() && (await pending.json()).summary.unacknowledgedCount === 0 &&
-              received.events.length === 4 && received.duplicates === 1) {
-            assert.deepEqual(received.events.map(event => event.branchSequence), [1, 2, 3, 4])
+              received.events.length === outboxIds.length * 4 && received.duplicates === 1) {
+            assert.deepEqual(received.events.map(event => event.branchSequence), Array.from({ length: outboxIds.length * 4 }, (_, index) => index + 1))
             assert.deepEqual(received.events.filter(event => event.action === 'CompletePayment').map(event => event.eventId),
-              [outboxId])
+              outboxIds)
             assert.deepEqual(received.events.filter(event => event.action === 'SubmitOrder').map(event => event.requestId),
-              [orderRequestId])
+              orderRequestIds)
             confirmed = true
             break
           }
@@ -185,7 +185,8 @@ async function run() {
     page.on('request', request => {
       if (request.method() === 'POST' && request.url() === origin + '/api/v1/ordering/orders') {
         orderPosts++
-        orderRequestId ??= request.postDataJSON().context.requestId
+        const id = request.postDataJSON().context.requestId
+        if (!orderRequestIds.includes(id)) orderRequestIds.push(id)
       }
     })
     const recoverOrder = mode === 'LostResponse' || mode === 'ReloadUnsent'
@@ -246,7 +247,7 @@ async function run() {
     let replies
     let winningIndex
     const recoveryMode = process.argv[4] ?? 'Concurrent'
-    assert.ok(['Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent']
+    assert.ok(['MultiSale', 'Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent']
       .includes(recoveryMode), 'Unknown cash recovery mode')
     const employeeIsolation = ['EmployeeIsolation', 'EmployeeIsolationUnsent'].includes(recoveryMode)
     const unsent = ['ReloadUnsent', 'EmployeeIsolationUnsent'].includes(recoveryMode)
@@ -370,8 +371,26 @@ async function run() {
     assert.equal(payments[0].requestId, replies[winningIndex].request().postDataJSON().context.requestId)
     await button(observer, 'รีเฟรชข้อมูล').click()
     await observer.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
-    await setShift('close', counted)
-    await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ ' + counted + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+    async function addSale(tableId) {
+      await button(page, 'เปิดโต๊ะ Browser table ' + tableId).click()
+      await page.getByRole('heading', { name: 'โต๊ะ: ' + tableId, exact: true }).waitFor()
+      await button(page, 'เปิดหน้ารายการ').click()
+      await page.getByRole('button', { name: /Browser test item/ }).first().click()
+      await button(page, 'ลงตะกร้า').click()
+      const submitted = page.waitForResponse(response => response.url().endsWith('/orders'))
+      await button(page, 'ส่งออเดอร์ 1 รายการ').click()
+      assert.equal((await submitted).status(), 200)
+      await button(page, 'กลับผังโต๊ะ').click()
+    }
+
+    const multiSale = recoveryMode === 'MultiSale'
+    if (multiSale) {
+      await button(page, 'รีเฟรชข้อมูล').click()
+      await addSale('A02')
+    } else {
+      await setShift('close', counted)
+      await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ ' + counted + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+    }
     host.kill()
     await stopped
     host = startBranch()
@@ -386,7 +405,12 @@ async function run() {
       assert.equal(response.status(), 200)
       device.session = await response.json()
       await button(device.page, 'โต๊ะ').click()
-      await device.page.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
+      if (multiSale) {
+        await device.page.getByRole('button', { name: /^A02 / }).waitFor()
+        assert.equal(await device.page.getByRole('button', { name: /^A01 / }).count(), 0)
+      } else {
+        await device.page.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
+      }
     }
     const recoveredHeaders = {
       Authorization: 'Device ' + device.deviceCredential,
@@ -418,7 +442,40 @@ async function run() {
     })
     assert.equal(simulation.status(), 200)
     assert.equal((await simulation.json()).status, scenario === 'Short' ? 'Failed' : 'Simulated')
-    await verifyCentral(browser, context, recoveredHeaders, payments[0].outboxId)
+    if (multiSale) {
+      const settlements = [originalSale.receiptNumber]
+      const tableSessions = [winningReply.request().postDataJSON().context.tableSessionId]
+      for (const [tableId, received] of [['A02', 100], ['A01', 125]]) {
+        if (tableId === 'A02') await page.getByRole('button', { name: /^A02 / }).click()
+        else await addSale(tableId)
+        await button(page, 'ขอชำระเงิน').click()
+        await page.getByLabel('เงินสดที่รับ').fill(String(received))
+        const completed = page.waitForResponse(response => response.url().endsWith(cashPath))
+        await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
+        const response = await completed
+        assert.equal(response.status(), 200)
+        const { receiptNumber, changeAmount } = await response.json()
+        assert.ok(receiptNumber)
+        assert.equal(changeAmount, received - 100)
+        await page.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + changeAmount + '$')).waitFor()
+        settlements.push(receiptNumber)
+        tableSessions.push(response.request().postDataJSON().context.tableSessionId)
+        await button(page, 'รีเฟรชข้อมูล').click()
+        await page.getByRole('button', { name: new RegExp('^' + tableId + ' ') }).waitFor({ state: 'hidden' })
+      }
+      assert.equal(new Set(settlements).size, 3)
+      assert.equal(new Set(tableSessions).size, 3)
+      const closeCash = 900 + difference
+      await setShift('close', closeCash)
+      await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 900 · ยอดนับ ' + closeCash + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+      const status = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', { headers: recoveredHeaders })
+      assert.equal(status.status(), 200)
+      const cashEvents = (await status.json()).items.filter(event => event.action === 'CompletePayment')
+      assert.deepEqual(cashEvents.map(event => event.tableSessionId), tableSessions)
+      await verifyCentral(browser, context, recoveredHeaders, ...cashEvents.map(event => event.outboxId))
+    } else {
+      await verifyCentral(browser, context, recoveredHeaders, payments[0].outboxId)
+    }
     await page.reload()
     await page.getByLabel('PIN', { exact: true }).waitFor()
     console.log('PC POS Edge ' + browser.version() + ' cash acceptance (' + scenario + '): PASS')
