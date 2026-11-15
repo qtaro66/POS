@@ -146,10 +146,12 @@ async function run() {
     let replies
     let winningIndex
     const recoveryMode = process.argv[4]
-    if (['LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation'].includes(recoveryMode)) {
+    const employeeIsolation = ['EmployeeIsolation', 'EmployeeIsolationUnsent'].includes(recoveryMode)
+    const unsent = ['ReloadUnsent', 'EmployeeIsolationUnsent'].includes(recoveryMode)
+    if (employeeIsolation || unsent || ['LostResponse', 'ReloadLost'].includes(recoveryMode)) {
       let lostResponse
       const drop = async route => {
-        if (recoveryMode === 'ReloadUnsent') {
+        if (unsent) {
           lostResponse = { request: route.request().postDataJSON() }
           return route.abort()
         }
@@ -161,7 +163,7 @@ async function run() {
       await page.route('**' + cashPath, drop)
       await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
       await page.getByText('ยังยืนยันผลไม่ได้ ตรวจสอบสถานะก่อนทำรายการใหม่', { exact: true }).waitFor()
-      assert.equal(lostResponse?.status, recoveryMode === 'ReloadUnsent' ? undefined : 200)
+      assert.equal(lostResponse?.status, unsent ? undefined : 200)
       await page.unroute('**' + cashPath, drop)
       if (recoveryMode !== 'LostResponse') {
         host.kill()
@@ -171,13 +173,14 @@ async function run() {
         ;({ pin } = await waitForBranch())
         await page.reload()
         await page.getByLabel('PIN', { exact: true }).fill(pin)
-        if (recoveryMode === 'EmployeeIsolation') {
+        if (employeeIsolation) {
           await page.getByLabel('PIN', { exact: true }).fill('000001')
           const otherLogin = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
           await button(page, 'เข้าสู่ระบบ').click()
           assert.equal((await (await otherLogin).json()).employeeId, 'TEST-EMPLOYEE-B')
           await button(page, 'โต๊ะ').click()
-          await page.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
+          if (unsent) await page.getByRole('button', { name: /A01.*รอชำระ/ }).waitFor()
+          else await page.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
           assert.equal(await button(page, 'กู้ผลรับเงินจากคำขอเดิม').count(), 0)
           assert.equal(cashRequests, 1)
           await page.reload()

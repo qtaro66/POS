@@ -76,7 +76,7 @@ PC POS table list exposes active sessions. It then uses browser controls for
 item selection, quantity, order submission, cash, receipt and shift close.
 The observer explicitly refreshes the table list after settlement.
 
-Run the six browser reload recovery cases and the balanced employee isolation case sequentially with the same build.
+Run the six browser reload recovery cases and the two balanced employee isolation cases sequentially with the same build.
 Each case restarts Branch, recovers the original cash request, checks the
 shift difference, and verifies delivery to the in-memory Central fixture.
 Keep both fixture ports (17443 and 17444) free.
@@ -89,4 +89,4 @@ pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1
 drops the request before Branch receives it. The expected shift differences
 are 0, -10, and +10 respectively for Balanced, Short, and Over.
 
-EmployeeIsolation verifies that switching employees hides the pending cash recovery action and that the original employee can recover the same settlement.
+EmployeeIsolation and EmployeeIsolationUnsent verify that switching employees hides the pending cash recovery action and that the original employee can recover the original cash request after a dropped response or a request that never reached Branch.
