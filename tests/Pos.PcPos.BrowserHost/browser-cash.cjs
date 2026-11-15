@@ -131,9 +131,18 @@ async function run() {
       assert.equal(lostResponse?.status, recoveryMode === 'ReloadUnsent' ? undefined : 200)
       await page.unroute('**' + cashPath, drop)
       if (recoveryMode !== 'LostResponse') {
+        host.kill()
+        await stopped
+        host = startBranch()
+        stopped = once(host, 'close')
+        ;({ pin } = await waitForBranch())
         await page.reload()
         await page.getByLabel('PIN', { exact: true }).fill(pin)
+        const login = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
         await button(page, 'เข้าสู่ระบบ').click()
+        const renewed = await login
+        assert.equal(renewed.status(), 200)
+        const freshSession = await renewed.json()
         await button(page, 'โต๊ะ').click()
         const retry = page.waitForResponse(reply => reply.url().endsWith(cashPath))
         await button(page, 'กู้ผลรับเงินจากคำขอเดิม').click()
@@ -143,7 +152,7 @@ async function run() {
         assert.deepEqual(reply.request().postDataJSON(), lostResponse.request)
         await page.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + (tender - 200) + '$')).waitFor()
         const queue = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', {
-          headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': session.sessionToken },
+          headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': freshSession.sessionToken },
         })
         assert.equal(queue.status(), 200)
         assert.equal((await queue.json()).items.filter(item => item.action === 'CompletePayment').length, 1)
