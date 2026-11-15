@@ -128,6 +128,8 @@ pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -ListCases -Modes Rel
 ```
 
 The LostResponse and ReloadUnsent modes also interrupt order submission.
-After reloading and signing in, LostResponse checks the durable result without
+After restarting Branch with the same database, reloading, and signing in,
+LostResponse checks the durable result without
 another POST. ReloadUnsent explicitly resends the original request body.
-Both modes continue through cash settlement, shift close, and Central sync.
+Both modes continue through cash settlement and shift close. Every mode verifies
+that Central receives one SubmitOrder with the original request ID and one CompletePayment.
