@@ -96,17 +96,49 @@ async function run() {
     await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
     await page.getByText('เงินสดที่รับต่ำกว่ายอดชำระ', { exact: true }).waitFor()
     assert.equal(cashRequests, 0)
-    await page.getByLabel('เงินสดที่รับ').fill(String(tender))
-    await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
-    await page.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + (tender - 200) + '$')).waitFor()
-    assert.equal(cashRequests, 1)
-    if (scenario === 'Short') {
-      await button(page, 'จำลองพิมพ์ล้มเหลว').click()
-      await page.getByText('จำลองพิมพ์ล้มเหลว · บิลปิดแล้ว', { exact: true }).waitFor()
-    } else {
-      await button(page, 'จำลองพิมพ์สำเร็จ').click()
-      await page.locator('pre[role=status]').filter({ hasText: '200.00' }).waitFor()
+    await button(observer, 'รีเฟรชข้อมูล').click()
+    await observer.getByRole('button', { name: /A01/ }).click()
+    const cashPath = '/tables/complete-cash-sale'
+    const racers = [page, observer]
+    await Promise.all(racers.map(devicePage => devicePage.getByLabel('เงินสดที่รับ').fill(String(tender))))
+
+    // Hold both outgoing requests until both devices have submitted.
+    let arrivals = 0
+    let release
+    const ready = new Promise(resolve => { release = resolve })
+    for (const devicePage of racers) {
+      await devicePage.route('**' + cashPath, async route => {
+        if (++arrivals === racers.length) release()
+        await ready
+        await route.continue()
+      })
     }
+    const replies = await Promise.all(racers.map(async devicePage => {
+      const response = devicePage.waitForResponse(reply => reply.url().endsWith(cashPath))
+      await button(devicePage, 'ปิดบิลเงินสด (ทดสอบ)').click()
+      return response
+    }))
+    assert.deepEqual(replies.map(reply => reply.status()).sort(), [200, 409])
+    assert.equal(cashRequests, 1)
+    const winningIndex = replies.findIndex(reply => reply.status() === 200)
+    const cashier = racers[winningIndex]
+    const rejected = racers[1 - winningIndex]
+    await rejected.getByText('ยังยืนยันผลไม่ได้ ตรวจสอบสถานะก่อนทำรายการใหม่', { exact: true }).waitFor()
+    await cashier.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + (tender - 200) + '$')).waitFor()
+    if (scenario === 'Short') {
+      await button(cashier, 'จำลองพิมพ์ล้มเหลว').click()
+      await cashier.getByText('จำลองพิมพ์ล้มเหลว · บิลปิดแล้ว', { exact: true }).waitFor()
+    } else {
+      await button(cashier, 'จำลองพิมพ์สำเร็จ').click()
+      await cashier.locator('pre[role=status]').filter({ hasText: '200.00' }).waitFor()
+    }
+    const outbox = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', {
+      headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': session.sessionToken },
+    })
+    assert.equal(outbox.status(), 200)
+    const payments = (await outbox.json()).items.filter(event => event.action === 'CompletePayment')
+    assert.equal(payments.length, 1)
+    assert.equal(payments[0].requestId, replies[winningIndex].request().postDataJSON().context.requestId)
     await button(observer, 'รีเฟรชข้อมูล').click()
     await observer.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
     await setShift('close', counted)
