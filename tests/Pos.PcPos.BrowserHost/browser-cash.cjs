@@ -42,6 +42,39 @@ async function run() {
     return { pin, links }
   }
 
+  async function verifyCentral(browser, context, recoveredHeaders, outboxId) {
+    const centralOrigin = 'https://127.0.0.1:17444'
+    central = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), '--central', fixtureId],
+      { stdio: 'ignore' })
+    const centralRequest = await browser.newContext({ ignoreHTTPSErrors: true })
+    const deadline = Date.now() + 60000
+    let confirmed = false
+    while (Date.now() < deadline && central.exitCode === null) {
+      try {
+        const response = await centralRequest.request.get(centralOrigin + '/fixture-events', { timeout: 1500 })
+        if (response.ok()) {
+          const received = await response.json()
+          const pending = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', {
+            headers: recoveredHeaders,
+            timeout: 1500,
+          })
+          if (pending.ok() && (await pending.json()).summary.unacknowledgedCount === 0 &&
+              received.events.length === 4 && received.duplicates === 1) {
+            assert.deepEqual(received.events.map(event => event.branchSequence), [1, 2, 3, 4])
+            assert.deepEqual(received.events.filter(event => event.action === 'CompletePayment').map(event => event.eventId),
+              [outboxId])
+            confirmed = true
+            break
+          }
+        }
+      } catch (error) {
+        if (error instanceof assert.AssertionError) throw error
+      }
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    assert.ok(confirmed, 'Expected Central to acknowledge all four events after retrying the cash event')
+  }
+
   try {
     let { pin, links } = await waitForBranch()
     browser = await chromium.launch({ channel: 'msedge' })
@@ -155,9 +188,15 @@ async function run() {
           headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': freshSession.sessionToken },
         })
         assert.equal(queue.status(), 200)
-        assert.equal((await queue.json()).items.filter(item => item.action === 'CompletePayment').length, 1)
+        const cashEvents = (await queue.json()).items.filter(item => item.action === 'CompletePayment')
+        assert.equal(cashEvents.length, 1)
+        assert.equal(cashEvents[0].requestId, lostResponse.request.context.requestId)
         await setShift('close', counted)
         await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ ' + counted + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+        await verifyCentral(browser, context, {
+          Authorization: 'Device ' + device.deviceCredential,
+          'X-POS-Employee-Session': freshSession.sessionToken,
+        }, cashEvents[0].outboxId)
         console.log('PC POS Edge cash acceptance (' + recoveryMode + '): PASS')
         return
       }
@@ -262,36 +301,7 @@ async function run() {
     })
     assert.equal(simulation.status(), 200)
     assert.equal((await simulation.json()).status, scenario === 'Short' ? 'Failed' : 'Simulated')
-    const centralOrigin = 'https://127.0.0.1:17444'
-    central = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), '--central', fixtureId],
-      { stdio: 'ignore' })
-    const centralRequest = await browser.newContext({ ignoreHTTPSErrors: true })
-    const deadline = Date.now() + 60000
-    let confirmed = false
-    while (Date.now() < deadline && central.exitCode === null) {
-      try {
-        const response = await centralRequest.request.get(centralOrigin + '/fixture-events', { timeout: 1500 })
-        if (response.ok()) {
-          const received = await response.json()
-          const pending = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', {
-            headers: recoveredHeaders,
-            timeout: 1500,
-          })
-          if (pending.ok() && (await pending.json()).summary.unacknowledgedCount === 0 &&
-              received.events.length === 4 && received.duplicates === 1) {
-            assert.deepEqual(received.events.map(event => event.branchSequence), [1, 2, 3, 4])
-            assert.deepEqual(received.events.filter(event => event.action === 'CompletePayment').map(event => event.eventId),
-              [payments[0].outboxId])
-            confirmed = true
-            break
-          }
-        }
-      } catch (error) {
-        if (error instanceof assert.AssertionError) throw error
-      }
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    assert.ok(confirmed, 'Expected Central to acknowledge all four events after retrying the cash event')
+    await verifyCentral(browser, context, recoveredHeaders, payments[0].outboxId)
     await page.reload()
     await page.getByLabel('PIN', { exact: true }).waitFor()
     console.log('PC POS Edge ' + browser.version() + ' cash acceptance (' + scenario + '): PASS')
