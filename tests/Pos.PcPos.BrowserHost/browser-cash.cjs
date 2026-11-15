@@ -110,25 +110,52 @@ async function run() {
     const racers = [page, observer]
     await Promise.all(racers.map(devicePage => devicePage.getByLabel('เงินสดที่รับ').fill(String(tender))))
 
-    // Hold both outgoing requests until both devices have submitted.
-    let arrivals = 0
-    let release
-    const ready = new Promise(resolve => { release = resolve })
-    for (const devicePage of racers) {
-      await devicePage.route('**' + cashPath, async route => {
-        if (++arrivals === racers.length) release()
-        await ready
-        await route.continue()
-      })
+    let replies
+    let winningIndex
+    if (process.argv[4] === 'LostResponse') {
+      let lostResponse
+      const drop = async route => {
+        const upstream = await route.fetch()
+        lostResponse = { status: upstream.status(), request: route.request().postDataJSON() }
+        if (upstream.status() === 200) await route.abort()
+        else await route.fulfill({ response: upstream })
+      }
+      await page.route('**' + cashPath, drop)
+      await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
+      await page.getByText('ยังยืนยันผลไม่ได้ ตรวจสอบสถานะก่อนทำรายการใหม่', { exact: true }).waitFor()
+      assert.equal(lostResponse?.status, 200)
+      await page.unroute('**' + cashPath, drop)
+      await page.getByLabel('เงินสดที่รับ').fill(String(tender + 1))
+      replies = await Promise.all(racers.map(async devicePage => {
+        const response = devicePage.waitForResponse(reply => reply.url().endsWith(cashPath))
+        await button(devicePage, 'ปิดบิลเงินสด (ทดสอบ)').click()
+        return response
+      }))
+      assert.deepEqual(replies.map(reply => reply.status()), [200, 409])
+      assert.equal(cashRequests, 2)
+      assert.deepEqual(replies[0].request().postDataJSON(), lostResponse.request)
+      winningIndex = 0
+    } else {
+      // Hold both outgoing requests until both devices have submitted.
+      let arrivals = 0
+      let release
+      const ready = new Promise(resolve => { release = resolve })
+      for (const devicePage of racers) {
+        await devicePage.route('**' + cashPath, async route => {
+          if (++arrivals === racers.length) release()
+          await ready
+          await route.continue()
+        })
+      }
+      replies = await Promise.all(racers.map(async devicePage => {
+        const response = devicePage.waitForResponse(reply => reply.url().endsWith(cashPath))
+        await button(devicePage, 'ปิดบิลเงินสด (ทดสอบ)').click()
+        return response
+      }))
+      assert.deepEqual(replies.map(reply => reply.status()).sort(), [200, 409])
+      assert.equal(cashRequests, 1)
+      winningIndex = replies.findIndex(reply => reply.status() === 200)
     }
-    const replies = await Promise.all(racers.map(async devicePage => {
-      const response = devicePage.waitForResponse(reply => reply.url().endsWith(cashPath))
-      await button(devicePage, 'ปิดบิลเงินสด (ทดสอบ)').click()
-      return response
-    }))
-    assert.deepEqual(replies.map(reply => reply.status()).sort(), [200, 409])
-    assert.equal(cashRequests, 1)
-    const winningIndex = replies.findIndex(reply => reply.status() === 200)
     const winningReply = replies[winningIndex]
     const originalSale = await winningReply.json()
     const cashier = racers[winningIndex]
