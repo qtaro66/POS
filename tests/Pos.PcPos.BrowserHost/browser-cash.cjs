@@ -18,12 +18,13 @@ async function run() {
   const { tender, counted, difference } = scenarios[scenario]
   const origin = 'https://127.0.0.1:17443'
   const fixtureId = crypto.randomUUID().replaceAll('-', '')
-  const host = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), resolve(process.argv[2]), fixtureId])
-  const stopped = once(host, 'close')
+  const startBranch = () => spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), resolve(process.argv[2]), fixtureId])
+  let host = startBranch()
+  let stopped = once(host, 'close')
   let central
   let browser
   let timeout
-  try {
+  async function waitForBranch() {
     let pin
     const links = []
     await Promise.race([
@@ -37,6 +38,12 @@ async function run() {
       })(),
       new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Branch fixture startup timed out')), 15000) }),
     ])
+    clearTimeout(timeout)
+    return { pin, links }
+  }
+
+  try {
+    let { pin, links } = await waitForBranch()
     browser = await chromium.launch({ channel: 'msedge' })
     const button = (page, name) => page.getByRole('button', { name, exact: true })
     const devices = []
@@ -144,6 +151,31 @@ async function run() {
     await observer.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
     await setShift('close', counted)
     await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ ' + counted + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+    host.kill()
+    await stopped
+    host = startBranch()
+    stopped = once(host, 'close')
+    ;({ pin } = await waitForBranch())
+    for (const device of devices) {
+      await device.page.reload()
+      await device.page.getByLabel('PIN', { exact: true }).fill(pin)
+      const login = device.page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+      await button(device.page, 'เข้าสู่ระบบ').click()
+      const response = await login
+      assert.equal(response.status(), 200)
+      device.session = await response.json()
+      await button(device.page, 'โต๊ะ').click()
+      await device.page.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
+    }
+    const recoveredHeaders = {
+      Authorization: 'Device ' + device.deviceCredential,
+      'X-POS-Employee-Session': devices[0].session.sessionToken,
+    }
+    const recovered = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', { headers: recoveredHeaders })
+    assert.equal(recovered.status(), 200)
+    const pendingCash = (await recovered.json()).items.filter(event => event.action === 'CompletePayment')
+    assert.deepEqual(pendingCash.map(event => [event.outboxId, event.branchSequence]),
+      [[payments[0].outboxId, payments[0].branchSequence]])
     const centralOrigin = 'https://127.0.0.1:17444'
     central = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), '--central', fixtureId],
       { stdio: 'ignore' })
@@ -156,7 +188,7 @@ async function run() {
         if (response.ok()) {
           const received = await response.json()
           const pending = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', {
-            headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': session.sessionToken },
+            headers: recoveredHeaders,
             timeout: 1500,
           })
           if (pending.ok() && (await pending.json()).summary.unacknowledgedCount === 0 &&
