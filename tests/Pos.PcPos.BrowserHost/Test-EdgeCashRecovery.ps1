@@ -5,17 +5,17 @@ Push-Location $repo
 try {
     npm run build --workspace apps/pos-web -- --mode browser-fixture
     dotnet build tests/Pos.PcPos.BrowserHost
-    foreach ($mode in 'ReloadLost', 'ReloadUnsent') {
-        foreach ($scenario in 'Balanced', 'Short', 'Over') {
+    $modes = 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent'
+    $scenarios = 'Balanced', 'Short', 'Over'
+    $passed = 0
+    foreach ($mode in $modes) {
+        foreach ($scenario in $scenarios) {
             Write-Host "Edge cash recovery: $mode / $scenario"
             node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist $scenario $mode
+            $passed++
         }
     }
-    foreach ($mode in 'EmployeeIsolation', 'EmployeeIsolationUnsent') {
-        Write-Host "Edge cash recovery: $mode / Balanced"
-        node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist Balanced $mode
-    }
-    Write-Host 'Edge cash recovery: 8/8 passed'
+    Write-Host "Edge cash recovery: $passed/$($modes.Count * $scenarios.Count) passed"
 } finally {
     Pop-Location
 }

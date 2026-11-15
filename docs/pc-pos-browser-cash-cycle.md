@@ -76,7 +76,7 @@ PC POS table list exposes active sessions. It then uses browser controls for
 item selection, quantity, order submission, cash, receipt and shift close.
 The observer explicitly refreshes the table list after settlement.
 
-Run the six browser reload recovery cases and the two balanced employee isolation cases sequentially with the same build.
+Run all twelve combinations of recovery mode and shift outcome with the same build.
 Each case restarts Branch, recovers the original cash request, checks the
 shift difference, and verifies delivery to the in-memory Central fixture.
 Keep both fixture ports (17443 and 17444) free.
@@ -91,14 +91,14 @@ are 0, -10, and +10 respectively for Balanced, Short, and Over.
 
 EmployeeIsolation and EmployeeIsolationUnsent verify that switching employees hides the pending cash recovery action and that the original employee can recover the original cash request after a dropped response or a request that never reached Branch.
 
-### Eight-case acceptance results
+### Twelve-case acceptance results
 
-The full Edge runner passed on the fixture revision merged in PR #366.
+The full Edge runner passed all twelve combinations.
 Central ran with an in-memory store and receipt printing was simulated.
 
 | Mode | Balanced | Short | Over |
 | --- | --- | --- | --- |
 | ReloadLost | Pass | Pass | Pass |
 | ReloadUnsent | Pass | Pass | Pass |
-| EmployeeIsolation | Pass | | |
-| EmployeeIsolationUnsent | Pass | | |
+| EmployeeIsolation | Pass | Pass | Pass |
+| EmployeeIsolationUnsent | Pass | Pass | Pass |
