@@ -20,6 +20,7 @@ async function run() {
   const fixtureId = crypto.randomUUID().replaceAll('-', '')
   const host = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), resolve(process.argv[2]), fixtureId])
   const stopped = once(host, 'close')
+  let central
   let browser
   let timeout
   try {
@@ -143,6 +144,36 @@ async function run() {
     await observer.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
     await setShift('close', counted)
     await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ ' + counted + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+    const centralOrigin = 'https://127.0.0.1:17444'
+    central = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), '--central', fixtureId],
+      { stdio: 'ignore' })
+    const centralRequest = await browser.newContext({ ignoreHTTPSErrors: true })
+    const deadline = Date.now() + 60000
+    let confirmed = false
+    while (Date.now() < deadline && central.exitCode === null) {
+      try {
+        const response = await centralRequest.request.get(centralOrigin + '/fixture-events', { timeout: 1500 })
+        if (response.ok()) {
+          const received = await response.json()
+          const pending = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', {
+            headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': session.sessionToken },
+            timeout: 1500,
+          })
+          if (pending.ok() && (await pending.json()).summary.unacknowledgedCount === 0 &&
+              received.events.length === 4 && received.duplicates === 1) {
+            assert.deepEqual(received.events.map(event => event.branchSequence), [1, 2, 3, 4])
+            assert.deepEqual(received.events.filter(event => event.action === 'CompletePayment').map(event => event.eventId),
+              [payments[0].outboxId])
+            confirmed = true
+            break
+          }
+        }
+      } catch (error) {
+        if (error instanceof assert.AssertionError) throw error
+      }
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    assert.ok(confirmed, 'Expected Central to acknowledge all four events after retrying the cash event')
     await page.reload()
     await page.getByLabel('PIN', { exact: true }).waitFor()
     console.log('PC POS Edge ' + browser.version() + ' cash acceptance (' + scenario + '): PASS')
@@ -150,6 +181,11 @@ async function run() {
     clearTimeout(timeout)
     try { await browser?.close() }
     finally {
+      if (central && central.exitCode === null) {
+        const centralStopped = once(central, 'close')
+        central.kill()
+        await centralStopped
+      }
       host.kill()
       await stopped
       await rm(join(tmpdir(), 'pc-pos-browser-' + fixtureId), { recursive: true, force: true, maxRetries: 3 })
