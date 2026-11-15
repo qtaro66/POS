@@ -3,8 +3,9 @@ import { createCommandJournal } from './commandJournal.ts'
 import { createCommandRecovery } from './commandRecovery.ts'
 import type { OrderingEntryPort } from './OrderEntryWorkspace.tsx'
 
-export function OpenRegisteredTable({ port, onOpened }: {
+export function OpenRegisteredTable({ port, onOpened, refreshVersion }: {
   port: OrderingEntryPort
+  refreshVersion: number
   onOpened: (sessionId: string) => Promise<void>
 }) {
   const { client, factory } = port
@@ -31,7 +32,7 @@ export function OpenRegisteredTable({ port, onOpened }: {
     }
     void load()
     return () => cancel.abort()
-  }, [client, recovery])
+  }, [client, recovery, refreshVersion])
 
   async function open(tableId?: string) {
     if (locked.current) return
