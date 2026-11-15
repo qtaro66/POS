@@ -142,5 +142,10 @@ order and payment events in Central, and expected shift cash of 900.
 
 ShiftHandoff closes the three-sale shift, switches employees on the same
 terminal, then opens the next shift with 300. After a Branch restart, it
-replays the original receipt, sells another bill and reconciles to 400.
+replays the original receipt, sells another bill and expects 400 in the new shift.
 Central must receive four orders and four settlements in sequence.
+
+ShiftHandoff verifies that the first three sales share the original shift and
+employee, while the fourth belongs to the new shift and employee. Compare
+the shifts with variances of (0, 0), (-10, +10), and (+10, -10), then replay
+the fourth settlement after closing to confirm the original result.
