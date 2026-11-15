@@ -109,3 +109,11 @@ runs the full twelve-case suite.
 ```pwsh
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes EmployeeIsolationUnsent -Scenarios Short
 ```
+
+Use `-ListCases` to preview the selected mode and shift combinations without
+building or launching the fixtures. The same filters apply to the preview
+and the actual run.
+
+```pwsh
+pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -ListCases -Modes ReloadLost -Scenarios Short
+```
