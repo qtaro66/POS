@@ -43,6 +43,8 @@ export function CashSaleForm({ detail, send, refresh, simulateReceipt }: {
       } else {
         setMessage('ยังยืนยันผลไม่ได้ ตรวจสอบสถานะก่อนทำรายการใหม่')
       }
+    } catch {
+      setMessage('ยังยืนยันผลไม่ได้ ตรวจสอบสถานะก่อนทำรายการใหม่')
     } finally {
       lock.current = false
       setBusy(false)

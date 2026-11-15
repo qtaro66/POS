@@ -112,19 +112,46 @@ async function run() {
 
     let replies
     let winningIndex
-    if (process.argv[4] === 'LostResponse') {
+    const recoveryMode = process.argv[4]
+    if (['LostResponse', 'ReloadLost', 'ReloadUnsent'].includes(recoveryMode)) {
       let lostResponse
       const drop = async route => {
+        if (recoveryMode === 'ReloadUnsent') {
+          lostResponse = { request: route.request().postDataJSON() }
+          return route.abort()
+        }
         const upstream = await route.fetch()
-        lostResponse = { status: upstream.status(), request: route.request().postDataJSON() }
+        lostResponse = { status: upstream.status(), sale: await upstream.json(), request: route.request().postDataJSON() }
         if (upstream.status() === 200) await route.abort()
         else await route.fulfill({ response: upstream })
       }
       await page.route('**' + cashPath, drop)
       await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
       await page.getByText('ยังยืนยันผลไม่ได้ ตรวจสอบสถานะก่อนทำรายการใหม่', { exact: true }).waitFor()
-      assert.equal(lostResponse?.status, 200)
+      assert.equal(lostResponse?.status, recoveryMode === 'ReloadUnsent' ? undefined : 200)
       await page.unroute('**' + cashPath, drop)
+      if (recoveryMode !== 'LostResponse') {
+        await page.reload()
+        await page.getByLabel('PIN', { exact: true }).fill(pin)
+        await button(page, 'เข้าสู่ระบบ').click()
+        await button(page, 'โต๊ะ').click()
+        const retry = page.waitForResponse(reply => reply.url().endsWith(cashPath))
+        await button(page, 'กู้ผลรับเงินจากคำขอเดิม').click()
+        const reply = await retry
+        assert.equal(reply.status(), 200)
+        if (lostResponse.sale) assert.deepEqual(await reply.json(), lostResponse.sale)
+        assert.deepEqual(reply.request().postDataJSON(), lostResponse.request)
+        await page.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + (tender - 200) + '$')).waitFor()
+        const queue = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', {
+          headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': session.sessionToken },
+        })
+        assert.equal(queue.status(), 200)
+        assert.equal((await queue.json()).items.filter(item => item.action === 'CompletePayment').length, 1)
+        await setShift('close', counted)
+        await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 700 · ยอดนับ ' + counted + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+        console.log('PC POS Edge cash acceptance (' + recoveryMode + '): PASS')
+        return
+      }
       await page.getByLabel('เงินสดที่รับ').fill(String(tender + 1))
       replies = await Promise.all(racers.map(async devicePage => {
         const response = devicePage.waitForResponse(reply => reply.url().endsWith(cashPath))
