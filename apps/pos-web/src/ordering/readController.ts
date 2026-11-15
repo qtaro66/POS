@@ -1,7 +1,8 @@
+import type { cashRecovery } from './CashReloadRecovery.tsx'
 import type { createOrderingClient } from '../api/orderingClient.ts'
 import type { ActiveTables, SessionDetail } from '../api/orderingContracts.ts'
 
-export type OrderingReadClient = Pick<ReturnType<typeof createOrderingClient>, 'activeTables' | 'sessionDetail'> & Partial<Pick<ReturnType<typeof createOrderingClient>, 'dataSyncStatus' | 'dataSentStatus' | 'printAttention' | 'cloudOutboxStatus' | 'cloudReplayStatus' | 'printerInventory' | 'branchReadiness' | 'cashStep' | 'testCashCycle' | 'simulateReceipt' | 'cancellationQueue' | 'queueCancellationInspection' | 'recordCancellationProduction' | 'rejectCancellation' | 'confirmCancellation' | 'soldOut' | 'adjustSoldOut' | 'refreshEmployeePermissions'>>
+export type OrderingReadClient = { cashRecovery?: ReturnType<typeof cashRecovery> } & Pick<ReturnType<typeof createOrderingClient>, 'activeTables' | 'sessionDetail'> & Partial<Pick<ReturnType<typeof createOrderingClient>, 'dataSyncStatus' | 'dataSentStatus' | 'printAttention' | 'cloudOutboxStatus' | 'cloudReplayStatus' | 'printerInventory' | 'branchReadiness' | 'cashStep' | 'testCashCycle' | 'simulateReceipt' | 'cancellationQueue' | 'queueCancellationInspection' | 'recordCancellationProduction' | 'rejectCancellation' | 'confirmCancellation' | 'soldOut' | 'adjustSoldOut' | 'refreshEmployeePermissions'>>
 export interface OrderingReadState {
   readonly tablesPhase: 'idle' | 'loading' | 'ready' | 'unavailable'
   readonly tables: ActiveTables['sessions']

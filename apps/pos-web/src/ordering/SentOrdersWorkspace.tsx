@@ -1,3 +1,4 @@
+import { CashReloadRecovery } from './CashReloadRecovery.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { TestCashShift } from './TestCashShift.tsx'
 import { CashSaleForm } from './CashSaleForm.tsx'
@@ -95,7 +96,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       {detail.hasOpenCancellationRequest && <p className="cancellation-notice" role="status">{s.cancellationPending}</p>}
       <div className="batch-list" role="region" aria-label={s.batches} tabIndex={0}>{detail.batches.length === 0 ? <p className="empty-state">{s.noOrders}</p> : detail.batches.map((batch, index) => <Batch key={batch.orderBatchId} batch={batch} index={index} />)}</div>
       {!preview && client.cashStep && detail.billPreviewTotals && <CashSaleForm key={detail.session.tableSessionId}
-        detail={detail} send={client.cashStep} simulateReceipt={client.simulateReceipt} refresh={() => { void controller.refresh() }} />}
+        detail={detail} send={client.cashRecovery?.submit ?? client.cashStep} simulateReceipt={client.simulateReceipt} refresh={() => { void controller.refresh() }} />}
       <Totals detail={detail} compact={inSession} /></>}
   </section>
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
@@ -106,6 +107,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         {!preview && (import.meta.env.DEV || import.meta.env.MODE === 'browser-fixture') && client.testCashCycle && <TestCashShift run={client.testCashCycle} />}
+        {!preview && client.cashRecovery && <CashReloadRecovery recovery={client.cashRecovery} refresh={() => { void controller.refresh() }} />}
         {inSession && <button className="workspace-back" onClick={() => { moveFocus.current = true; setEntry(null) }}>{s.backToTables}</button>}
         {receipt?.owner === client && <div className="workspace-receipt" role="status"><strong>สาขารับออร์เดอร์แล้ว</strong> · Request ID: {receipt.outcome.requestId}
           {!receipt.outcome.localApplied && <p>ข้อมูลในเครื่องยังปรับปรุงไม่ครบ กรุณาตรวจผลคำขอเดิม ห้ามสร้างออร์เดอร์ใหม่แทน</p>}

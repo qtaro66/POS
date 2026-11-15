@@ -1,3 +1,4 @@
+import { cashRecovery } from './ordering/CashReloadRecovery.tsx'
 import { useEffect, useState, type FormEvent } from 'react'
 import App from './App.tsx'
 import { createOrderingClient } from './api/orderingClient.ts'
@@ -13,7 +14,7 @@ const pairing = new BranchPairingGateway(options)
 
 export default function Terminal() {
   const [device, setDevice] = useState<PairedDevice | null>()
-  const [session, setSession] = useState<{ client: ReturnType<typeof createOrderingClient>; close: () => void }>()
+  const [session, setSession] = useState<{ client: ReturnType<typeof createOrderingClient> & { cashRecovery: ReturnType<typeof cashRecovery> }; close: () => void }>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => { void deviceStore.load().then(setDevice, () => setError('อ่านข้อมูลเครื่องไม่ได้')) }, [])
@@ -66,7 +67,7 @@ export default function Terminal() {
           }
         }
         const timer = window.setTimeout(() => close(false), expiry - Date.now())
-        setSession({ client, close })
+        setSession({ client: { ...client, cashRecovery: cashRecovery(sessionStorage, [device.branchServiceUrl, device.branchId, device.deviceId, employee.employeeId], client.cashStep) }, close })
       }
     } catch {
       setError(device ? 'เข้าสู่ระบบไม่ได้' : 'จับคู่เครื่องไม่ได้')
