@@ -105,10 +105,10 @@ async function run() {
       devices.push({ page, context, device, session })
     }
     const [{ page, context, device, session }, { page: observer }] = devices
-    const setShift = async (operation, amount) => {
+    const setShift = async (operation, amount, employeePin = pin) => {
       await page.locator('select[name=operation]').selectOption(operation)
       await page.getByLabel('เงินตั้งต้นหรือยอดนับจริง').fill(String(amount))
-      await page.getByLabel('ยืนยัน PIN').fill(pin)
+      await page.getByLabel('ยืนยัน PIN').fill(employeePin)
       await button(page, 'บันทึกกะทดสอบ').click()
     }
     await setShift('open', 500)
@@ -247,7 +247,7 @@ async function run() {
     let replies
     let winningIndex
     const recoveryMode = process.argv[4] ?? 'Concurrent'
-    assert.ok(['MultiSale', 'Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent']
+    assert.ok(['ShiftHandoff', 'MultiSale', 'Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent']
       .includes(recoveryMode), 'Unknown cash recovery mode')
     const employeeIsolation = ['EmployeeIsolation', 'EmployeeIsolationUnsent'].includes(recoveryMode)
     const unsent = ['ReloadUnsent', 'EmployeeIsolationUnsent'].includes(recoveryMode)
@@ -383,7 +383,8 @@ async function run() {
       await button(page, 'กลับผังโต๊ะ').click()
     }
 
-    const multiSale = recoveryMode === 'MultiSale'
+    const shiftHandoff = recoveryMode === 'ShiftHandoff'
+    const multiSale = shiftHandoff || recoveryMode === 'MultiSale'
     if (multiSale) {
       await button(page, 'รีเฟรชข้อมูล').click()
       await addSale('A02')
@@ -412,7 +413,7 @@ async function run() {
         await device.page.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
       }
     }
-    const recoveredHeaders = {
+    let recoveredHeaders = {
       Authorization: 'Device ' + device.deviceCredential,
       'X-POS-Employee-Session': devices[0].session.sessionToken,
     }
@@ -468,6 +469,64 @@ async function run() {
       const closeCash = 900 + difference
       await setShift('close', closeCash)
       await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 900 · ยอดนับ ' + closeCash + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
+      if (shiftHandoff) {
+        const secondPin = '000001'
+        async function signInNextEmployee() {
+          await page.reload()
+          await page.getByLabel('PIN', { exact: true }).fill(secondPin)
+          const login = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+          await button(page, 'เข้าสู่ระบบ').click()
+          const response = await login
+          assert.equal(response.status(), 200)
+          const nextEmployee = await response.json()
+          assert.equal(nextEmployee.employeeId, 'TEST-EMPLOYEE-B')
+          await button(page, 'โต๊ะ').click()
+          return {
+            Authorization: 'Device ' + device.deviceCredential,
+            'X-POS-Employee-Session': nextEmployee.sessionToken,
+          }
+        }
+
+        await signInNextEmployee()
+        await setShift('open', 300, secondPin)
+        await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
+        host.kill()
+        await stopped
+        host = startBranch()
+        stopped = once(host, 'close')
+        ;({ pin } = await waitForBranch())
+        await winningDevice.page.reload()
+        await winningDevice.page.getByLabel('PIN', { exact: true }).fill(pin)
+        const originalLogin = winningDevice.page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+        await button(winningDevice.page, 'เข้าสู่ระบบ').click()
+        const originalEmployee = await originalLogin
+        assert.equal(originalEmployee.status(), 200)
+        winningHeaders['X-POS-Employee-Session'] = (await originalEmployee.json()).sessionToken
+
+        const original = await winningDevice.context.request.post(winningReply.url(), {
+          headers: winningHeaders,
+          data: winningReply.request().postDataJSON(),
+        })
+        assert.equal(original.status(), 200)
+        assert.deepEqual(await original.json(), originalSale)
+
+        recoveredHeaders = await signInNextEmployee()
+        await addSale('A02')
+        await button(page, 'ขอชำระเงิน').click()
+        await page.getByLabel('เงินสดที่รับ').fill('120')
+        const completed = page.waitForResponse(response => response.url().endsWith(cashPath))
+        await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
+        const response = await completed
+        assert.equal(response.status(), 200)
+        const nextSale = await response.json()
+        assert.ok(nextSale.receiptNumber)
+        assert.ok(!settlements.includes(nextSale.receiptNumber))
+        assert.equal(nextSale.changeAmount, 20)
+        tableSessions.push(response.request().postDataJSON().context.tableSessionId)
+        assert.equal(new Set(tableSessions).size, 4)
+        await setShift('close', 400, secondPin)
+        await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ 400 · ผลต่าง 0', { exact: true }).waitFor()
+      }
       const status = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', { headers: recoveredHeaders })
       assert.equal(status.status(), 200)
       const cashEvents = (await status.json()).items.filter(event => event.action === 'CompletePayment')

@@ -83,7 +83,7 @@ request before it reaches Branch. Both reload the tab and sign in before
 recovering the original request and continuing the sale.
 The observer explicitly refreshes the table list after settlement.
 
-Run all twenty-one combinations of recovery mode and shift outcome with the same build.
+Run all twenty-four combinations of recovery mode and shift outcome with the same build.
 Each case restarts Branch, recovers the original cash request, checks the
 shift difference, and verifies delivery to the in-memory Central fixture.
 Keep both fixture ports (17443 and 17444) free.
@@ -100,7 +100,7 @@ EmployeeIsolation and EmployeeIsolationUnsent verify that switching employees hi
 
 ### Cash-cycle acceptance coverage
 
-The runner covers seven modes across three closing cash outcomes.
+The runner covers eight modes across three closing cash outcomes.
 Central ran with an in-memory store and receipt printing was simulated.
 
 | Mode | Balanced | Short | Over |
@@ -112,9 +112,10 @@ Central ran with an in-memory store and receipt printing was simulated.
 | EmployeeIsolation | Yes | Yes | Yes |
 | EmployeeIsolationUnsent | Yes | Yes | Yes |
 | MultiSale | Yes | Yes | Yes |
+| ShiftHandoff | Yes | Yes | Yes |
 
 To rerun a specific mode and shift outcome, pass both filters. Omitting them
-runs the full twenty-one-case suite.
+runs the full twenty-four-case suite.
 
 ```pwsh
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes EmployeeIsolationUnsent -Scenarios Short
@@ -138,3 +139,8 @@ that Central receives one SubmitOrder with the original request ID and one Compl
 MultiSale settles A01, restarts Branch with A02 still open, then settles A02
 and a new A01 session. It checks three distinct receipts and sessions, three
 order and payment events in Central, and expected shift cash of 900.
+
+ShiftHandoff closes the three-sale shift, switches employees on the same
+terminal, then opens the next shift with 300. After a Branch restart, it
+replays the original receipt, sells another bill and reconciles to 400.
+Central must receive four orders and four settlements in sequence.
