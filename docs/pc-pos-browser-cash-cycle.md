@@ -90,3 +90,15 @@ drops the request before Branch receives it. The expected shift differences
 are 0, -10, and +10 respectively for Balanced, Short, and Over.
 
 EmployeeIsolation and EmployeeIsolationUnsent verify that switching employees hides the pending cash recovery action and that the original employee can recover the original cash request after a dropped response or a request that never reached Branch.
+
+### Eight-case acceptance results
+
+The full Edge runner passed on the fixture revision merged in PR #366.
+Central ran with an in-memory store and receipt printing was simulated.
+
+| Mode | Balanced | Short | Over |
+| --- | --- | --- | --- |
+| ReloadLost | Pass | Pass | Pass |
+| ReloadUnsent | Pass | Pass | Pass |
+| EmployeeIsolation | Pass | | |
+| EmployeeIsolationUnsent | Pass | | |
