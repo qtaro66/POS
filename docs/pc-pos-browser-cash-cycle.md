@@ -83,7 +83,7 @@ request before it reaches Branch. Both reload the tab and sign in before
 recovering the original request and continuing the sale.
 The observer explicitly refreshes the table list after settlement.
 
-Run all twenty-four combinations of recovery mode and shift outcome with the same build.
+Run all thirty combinations of recovery mode and shift outcome with the same build.
 Each case restarts Branch, recovers the original cash request, checks the
 shift difference, and verifies delivery to the in-memory Central fixture.
 Keep both fixture ports (17443 and 17444) free.
@@ -100,7 +100,7 @@ EmployeeIsolation and EmployeeIsolationUnsent verify that switching employees hi
 
 ### Cash-cycle acceptance coverage
 
-The runner covers eight modes across three closing cash outcomes.
+The runner covers seven single-shift modes across three closing cash outcomes and all nine pairs of ShiftHandoff outcomes.
 Central ran with an in-memory store and receipt printing was simulated.
 
 | Mode | Balanced | Short | Over |
@@ -115,7 +115,7 @@ Central ran with an in-memory store and receipt printing was simulated.
 | ShiftHandoff | Yes | Yes | Yes |
 
 To rerun a specific mode and shift outcome, pass both filters. Omitting them
-runs the full twenty-four-case suite.
+runs the full thirty-case suite.
 
 ```pwsh
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes EmployeeIsolationUnsent -Scenarios Short
@@ -147,5 +147,12 @@ Central must receive four orders and four settlements in sequence.
 
 ShiftHandoff verifies that the first three sales share the original shift and
 employee, while the fourth belongs to the new shift and employee. Compare
-the shifts with variances of (0, 0), (-10, +10), and (+10, -10), then replay
+the shifts across all nine pairs of balanced, short, and over, then replay
 the fourth settlement after closing to confirm the original result.
+
+Filter the second shift independently with "-NextShiftScenarios". This filter
+applies to ShiftHandoff cases only. For example:
+
+```pwsh
+pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes ShiftHandoff -Scenarios Short -NextShiftScenarios Over
+```
