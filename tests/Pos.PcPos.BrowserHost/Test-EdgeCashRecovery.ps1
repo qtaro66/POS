@@ -11,8 +11,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 [System.Collections.Generic.HashSet[string]]$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-$cases = foreach ($mode in $Modes) {
-    foreach ($scenario in $Scenarios) {
+$cases = foreach ($requestedMode in $Modes) {
+    $mode = $MyInvocation.MyCommand.Parameters['Modes'].Attributes.ValidValues -eq $requestedMode | Select-Object -First 1
+    foreach ($requestedScenario in $Scenarios) {
+        $scenario = $MyInvocation.MyCommand.Parameters['Scenarios'].Attributes.ValidValues -eq $requestedScenario | Select-Object -First 1
         if ($seen.Add("$mode/$scenario")) {
             [pscustomobject]@{ Mode = $mode; Scenario = $scenario }
         }
