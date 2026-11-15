@@ -531,7 +531,10 @@ async function run() {
         assert.notEqual(nextSale.shiftId, originalSale.shiftId)
         tableSessions.push(response.request().postDataJSON().context.tableSessionId)
         assert.equal(new Set(tableSessions).size, 4)
-        const nextDifference = -difference
+        const nextScenario = process.argv[5]
+        const nextDifferences = new Map([['Balanced', 0], ['Short', -10], ['Over', 10]])
+        assert.ok(nextScenario === undefined || nextDifferences.has(nextScenario), 'Unknown second shift outcome')
+        const nextDifference = nextScenario === undefined ? -difference : nextDifferences.get(nextScenario)
         const nextCounted = 400 + nextDifference
         await setShift('close', nextCounted, secondPin)
         await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ ' + nextCounted + ' · ผลต่าง ' + nextDifference, { exact: true }).waitFor()

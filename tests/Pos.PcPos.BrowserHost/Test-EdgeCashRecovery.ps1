@@ -5,6 +5,9 @@ param(
     [ValidateNotNullOrEmpty()]
     [ValidateSet('Balanced', 'Short', 'Over')]
     [string[]]$Scenarios = @('Balanced', 'Short', 'Over'),
+    [ValidateNotNullOrEmpty()]
+    [ValidateSet('Balanced', 'Short', 'Over')]
+    [string[]]$NextShiftScenarios = @('Balanced', 'Short', 'Over'),
     [switch]$ListCases
 )
 
@@ -15,8 +18,17 @@ $cases = foreach ($requestedMode in $Modes) {
     $mode = $MyInvocation.MyCommand.Parameters['Modes'].Attributes.ValidValues -eq $requestedMode | Select-Object -First 1
     foreach ($requestedScenario in $Scenarios) {
         $scenario = $MyInvocation.MyCommand.Parameters['Scenarios'].Attributes.ValidValues -eq $requestedScenario | Select-Object -First 1
+        if ($mode -eq 'ShiftHandoff') {
+            foreach ($requestedNext in $NextShiftScenarios) {
+                $next = $MyInvocation.MyCommand.Parameters['NextShiftScenarios'].Attributes.ValidValues -eq $requestedNext | Select-Object -First 1
+                if ($seen.Add("$mode/$scenario/$next")) {
+                    [pscustomobject]@{ Mode = $mode; Scenario = $scenario; NextShiftScenario = $next }
+                }
+            }
+            continue
+        }
         if ($seen.Add("$mode/$scenario")) {
-            [pscustomobject]@{ Mode = $mode; Scenario = $scenario }
+            [pscustomobject]@{ Mode = $mode; Scenario = $scenario; NextShiftScenario = $null }
         }
     }
 }
@@ -32,8 +44,14 @@ try {
     dotnet build tests/Pos.PcPos.BrowserHost
     $passed = 0
     foreach ($case in $cases) {
-        Write-Host "Edge cash recovery: $($case.Mode) / $($case.Scenario)"
-        node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist $case.Scenario $case.Mode
+        $arguments = @('tests/Pos.PcPos.BrowserHost/browser-cash.cjs', 'apps/pos-web/dist', $case.Scenario, $case.Mode)
+        $label = "$($case.Mode) / $($case.Scenario)"
+        if ($case.NextShiftScenario) {
+            $arguments += $case.NextShiftScenario
+            $label += " / $($case.NextShiftScenario)"
+        }
+        Write-Host "Edge cash recovery: $label"
+        node @arguments
         $passed++
     }
     Write-Host "Edge cash recovery: $passed/$($cases.Count) passed"
