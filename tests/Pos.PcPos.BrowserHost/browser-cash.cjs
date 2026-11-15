@@ -112,19 +112,62 @@ async function run() {
     await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
     await setShift('open', 999)
     await page.getByText('Branch ไม่ยืนยันผล', { exact: true }).waitFor()
-    const openTable = button(page, 'เปิดโต๊ะ Browser table A01')
-    if (process.argv[4] === 'LostResponse') {
-      const openRoute = '**/tables/open'
+    const openLabel = 'เปิดโต๊ะ Browser table A01'
+    const openTable = button(page, openLabel)
+    const openRoute = '**/tables/open'
+    const mode = process.argv[4] ?? 'Concurrent'
+    if (mode === 'LostResponse' || mode === 'ReloadUnsent') {
+      let original
       let committed
       await page.route(openRoute, async route => {
-        committed = (await route.fetch()).status()
+        original = route.request().postDataJSON()
+        if (mode === 'LostResponse') committed = (await route.fetch()).status()
         await route.abort()
       })
       await openTable.click()
       await page.getByText('ยังยืนยันผลเปิดโต๊ะไม่ได้', { exact: true }).waitFor()
-      assert.equal(committed, 200)
+      assert.ok(original)
+      assert.equal(committed, mode === 'LostResponse' ? 200 : undefined)
       await page.unroute(openRoute)
+      await page.reload()
+      await page.getByLabel('PIN', { exact: true }).fill(pin)
+      const login = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+      await button(page, 'เข้าสู่ระบบ').click()
+      const renewed = await login
+      assert.equal(renewed.status(), 200)
+      session.sessionToken = (await renewed.json()).sessionToken
+      await button(page, 'โต๊ะ').click()
+      const recovered = page.waitForResponse(response => mode === 'LostResponse'
+        ? response.url().endsWith('/commands/' + original.context.requestId)
+        : response.url().endsWith('/tables/open'))
       await button(page, 'กู้คำขอเปิดโต๊ะเดิม').click()
+      const result = await recovered
+      assert.equal(result.status(), 200)
+      if (mode === 'ReloadUnsent') assert.deepEqual(result.request().postDataJSON(), original)
+    } else if (mode === 'Concurrent' || mode === 'EmployeeIsolation') {
+      const otherOpen = button(observer, openLabel)
+      await otherOpen.waitFor()
+      const replies = [page, observer].map(tab => tab.waitForResponse(response => response.url().endsWith('/tables/open')))
+      if (mode === 'Concurrent') {
+        await Promise.all([openTable.click(), otherOpen.click()])
+      } else {
+        await openTable.click()
+        assert.equal((await replies[0]).status(), 200)
+        await otherOpen.click()
+      }
+      const opened = await Promise.all(replies)
+      assert.deepEqual(opened.map(response => response.status()), [200, 200])
+      const results = await Promise.all(opened.map(response => response.json()))
+      assert.ok(results[0].result.tableSessionId)
+      assert.equal(results[0].result.tableSessionId, results[1].result.tableSessionId)
+      for (const tab of [page, observer]) {
+        await button(tab, 'รีเฟรชข้อมูล').click()
+        const active = tab.getByRole('button', { name: /^A01 / })
+        await active.waitFor()
+        assert.equal(await active.count(), 1)
+        await button(tab, openLabel).waitFor({ state: 'hidden' })
+        await active.click()
+      }
     } else {
       await openTable.click()
     }

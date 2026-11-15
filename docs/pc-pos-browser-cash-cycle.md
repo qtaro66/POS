@@ -73,8 +73,14 @@ node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist
 
 The Edge runner opens a registered table from the available table list in PC POS.
 It then uses browser controls for ordering, cash, receipt and shift close.
-LostResponse also recovers a committed table-opening request after its response
-is dropped.
+Concurrent opens the same table from two Edge contexts. EmployeeIsolation
+submits from a stale available-table list. Both verify that Branch returns the
+same session to both devices and that a refresh removes the available-table
+action.
+
+LostResponse drops a committed open response. ReloadUnsent blocks the open
+request before it reaches Branch. Both reload the tab and sign in before
+recovering the original request and continuing the sale.
 The observer explicitly refreshes the table list after settlement.
 
 Run all eighteen combinations of recovery mode and shift outcome with the same build.

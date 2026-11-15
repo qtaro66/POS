@@ -75,6 +75,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   useEffect(() => { void freshness.refresh(); return freshness.cancel }, [freshness])
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   useEffect(() => { void controller.refresh(); return controller.cancel }, [controller])
+  const [floorRefresh, setFloorRefresh] = useState(0)
   const [tableFilter, setTableFilter] = useState<SessionStatus>()
   const visibleTables = tableFilter ? state.tables.filter(table => table.status === tableFilter) : state.tables
   const [entry, setEntry] = useState<{ owner: typeof controller; sessionId: string } | null>(null)
@@ -106,7 +107,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} client={client} freshness={freshnessState} canAdjust={!preview} />}
     systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
-          <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
+          <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { setFloorRefresh(version => version + 1); void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         {!preview && (import.meta.env.DEV || import.meta.env.MODE === 'browser-fixture') && client.testCashCycle && <TestCashShift run={client.testCashCycle} />}
         {!preview && client.cashRecovery && <CashReloadRecovery recovery={client.cashRecovery} refresh={() => { void controller.refresh() }} />}
         {inSession && <button className="workspace-back" onClick={() => { moveFocus.current = true; setEntry(null) }}>{s.backToTables}</button>}
@@ -127,7 +128,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
                 onClick={() => { void controller.selectSession(table.tableSessionId) }}>
                 <strong>{table.tableId}</strong><span>{sessionLabels[table.status]}</span></button>)}</div>)}
           </section>}
-          {!inSession && ordering && !preview && <OpenRegisteredTable port={ordering} onOpened={async sessionId => {
+          {!inSession && ordering && !preview && <OpenRegisteredTable port={ordering} refreshVersion={floorRefresh} onOpened={async sessionId => {
             setTableFilter(undefined)
             await controller.refresh()
             await controller.selectSession(sessionId)
