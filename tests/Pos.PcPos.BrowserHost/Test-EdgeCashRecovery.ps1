@@ -11,7 +11,9 @@ try {
             node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist $scenario $mode
         }
     }
-    Write-Host 'Edge cash recovery: 6/6 passed'
+    Write-Host 'Edge cash recovery: EmployeeIsolation / Balanced'
+    node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist Balanced EmployeeIsolation
+    Write-Host 'Edge cash recovery: 7/7 passed'
 } finally {
     Pop-Location
 }
