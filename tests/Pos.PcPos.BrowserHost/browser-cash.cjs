@@ -176,7 +176,45 @@ async function run() {
     await page.getByRole('button', { name: /Browser test item/ }).first().click()
     await button(page, 'ลงตะกร้า').click()
     await button(page, 'เพิ่มจำนวน Browser test item').click()
+    const orderRoute = '**/orders'
+    let submittedOrder
+    let orderPosts = 0
+    page.on('request', request => {
+      if (request.method() === 'POST' && request.url() === origin + '/api/v1/ordering/orders') orderPosts++
+    })
+    const recoverOrder = mode === 'LostResponse' || mode === 'ReloadUnsent'
+    if (recoverOrder) {
+      await page.route(orderRoute, async route => {
+        submittedOrder = route.request().postDataJSON()
+        if (mode === 'LostResponse') assert.equal((await route.fetch()).status(), 200)
+        await route.abort()
+      })
+    }
     await button(page, 'ส่งออเดอร์ 1 รายการ').click()
+    if (recoverOrder) {
+      await button(page, 'ตรวจสอบผลคำขอเดิม').waitFor()
+      assert.ok(submittedOrder)
+      await page.unroute(orderRoute)
+      await page.reload()
+      await page.getByLabel('PIN', { exact: true }).fill(pin)
+      const login = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+      await button(page, 'เข้าสู่ระบบ').click()
+      const renewed = await login
+      assert.equal(renewed.status(), 200)
+      session.sessionToken = (await renewed.json()).sessionToken
+      await button(page, 'โต๊ะ').click()
+      await page.getByRole('button', { name: /^A01 / }).click()
+      await button(page, 'เปิดหน้ารายการ').click()
+      const orderResult = page.waitForResponse(response => mode === 'LostResponse'
+        ? response.url().endsWith('/commands/' + submittedOrder.context.requestId)
+        : response.url().endsWith('/orders'))
+      await button(page, mode === 'LostResponse' ? 'ตรวจสอบผลคำขอเดิม' : 'ตรวจสอบและลองส่งคำขอเดิม').click()
+      const recoveredOrder = await orderResult
+      assert.equal(recoveredOrder.status(), 200)
+      assert.equal((await recoveredOrder.json()).result.requestId, submittedOrder.context.requestId)
+      if (mode === 'ReloadUnsent') assert.deepEqual(recoveredOrder.request().postDataJSON(), submittedOrder)
+      assert.equal(orderPosts, mode === 'LostResponse' ? 1 : 2)
+    }
     await page.getByRole('status').filter({ hasText: 'สาขารับออร์เดอร์แล้ว · Request ID:' }).waitFor()
     await button(page, 'กลับผังโต๊ะ').click()
     await button(page, 'ขอชำระเงิน').click()
