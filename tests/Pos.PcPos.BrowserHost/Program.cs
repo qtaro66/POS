@@ -21,6 +21,8 @@ if (args.Length is < 1 or > 2 || !File.Exists(Path.Combine(args[0], "index.html"
 }
 
 const string Branch = "BROWSER-TEST";
+const string SecondEmployee = "TEST-EMPLOYEE-B";
+const string SecondPin = "000001";
 const string Employee = "TEST-EMPLOYEE";
 var pin = RandomNumberGenerator.GetInt32(100000, 1000000).ToString(System.Globalization.CultureInfo.InvariantCulture);
 var persistent = args.Length == 2;
@@ -39,7 +41,7 @@ try
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO branch_employee_status VALUES ($branch, $employee, 'Active', $now, $now);
+                INSERT INTO branch_employee_status VALUES ($branch, $employee, 'Active', $now, $now), ($branch, 'TEST-EMPLOYEE-B', 'Active', $now, $now);
                 INSERT INTO master_data_packages VALUES ($branch,'TEST',1,$hash,$now,$now,'Active');
                 INSERT INTO master_data_billing_policy VALUES ($branch,'TEST','TEST-CALC','0','0',2,'AwayFromZero');
                 INSERT INTO master_data_sellable_items
@@ -85,7 +87,7 @@ try
     builder.Configuration["BranchEmployeeSessions:Lifetime"] = "00:30:00";
     builder.Configuration["BranchPairing:ServiceOrigin"] = origin;
     builder.Configuration["BranchOrdering:EnableCashSaleTest"] = "true";
-    builder.Services.AddSingleton<IBranchEmployeePinValidator>(new FixturePinValidator(Branch, Employee, pin));
+    builder.Services.AddSingleton<IBranchEmployeePinValidator>(new FixturePinValidator(Branch, Employee, pin, SecondEmployee, SecondPin));
     builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
     builder.Services.AddBranchEmployeeSessions(builder.Configuration);
     builder.Services.AddBranchPairing(builder.Configuration);
@@ -153,11 +155,15 @@ finally
     if (!persistent) { directory.Delete(recursive: true); }
 }
 
-file sealed class FixturePinValidator(string branch, string employee, string expectedPin) : IBranchEmployeePinValidator
+file sealed class FixturePinValidator(string branch, string employee, string expectedPin, string secondEmployee, string secondPin) : IBranchEmployeePinValidator
 {
     public Task<VerifiedBranchEmployee?> ValidateActiveAsync(string branchId, ReadOnlyMemory<char> pin, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (branchId == branch && pin.Span.SequenceEqual(secondPin))
+        {
+            return Task.FromResult<VerifiedBranchEmployee?>(new(branch, secondEmployee));
+        }
         return Task.FromResult(branchId == branch && pin.Span.SequenceEqual(expectedPin)
             ? new VerifiedBranchEmployee(branch, employee)
             : null);

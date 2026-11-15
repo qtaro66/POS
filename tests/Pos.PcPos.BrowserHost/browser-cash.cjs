@@ -146,7 +146,7 @@ async function run() {
     let replies
     let winningIndex
     const recoveryMode = process.argv[4]
-    if (['LostResponse', 'ReloadLost', 'ReloadUnsent'].includes(recoveryMode)) {
+    if (['LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation'].includes(recoveryMode)) {
       let lostResponse
       const drop = async route => {
         if (recoveryMode === 'ReloadUnsent') {
@@ -171,6 +171,18 @@ async function run() {
         ;({ pin } = await waitForBranch())
         await page.reload()
         await page.getByLabel('PIN', { exact: true }).fill(pin)
+        if (recoveryMode === 'EmployeeIsolation') {
+          await page.getByLabel('PIN', { exact: true }).fill('000001')
+          const otherLogin = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+          await button(page, 'เข้าสู่ระบบ').click()
+          assert.equal((await (await otherLogin).json()).employeeId, 'TEST-EMPLOYEE-B')
+          await button(page, 'โต๊ะ').click()
+          await page.getByText('ไม่มีโต๊ะที่เปิดอยู่', { exact: true }).waitFor()
+          assert.equal(await button(page, 'กู้ผลรับเงินจากคำขอเดิม').count(), 0)
+          assert.equal(cashRequests, 1)
+          await page.reload()
+          await page.getByLabel('PIN', { exact: true }).fill(pin)
+        }
         const login = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
         await button(page, 'เข้าสู่ระบบ').click()
         const renewed = await login
