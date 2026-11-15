@@ -42,6 +42,7 @@ async function run() {
     return { pin, links }
   }
 
+  let orderRequestId
   async function verifyCentral(browser, context, recoveredHeaders, outboxId) {
     const centralOrigin = 'https://127.0.0.1:17444'
     central = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), '--central', fixtureId],
@@ -63,6 +64,8 @@ async function run() {
             assert.deepEqual(received.events.map(event => event.branchSequence), [1, 2, 3, 4])
             assert.deepEqual(received.events.filter(event => event.action === 'CompletePayment').map(event => event.eventId),
               [outboxId])
+            assert.deepEqual(received.events.filter(event => event.action === 'SubmitOrder').map(event => event.requestId),
+              [orderRequestId])
             confirmed = true
             break
           }
@@ -180,7 +183,10 @@ async function run() {
     let submittedOrder
     let orderPosts = 0
     page.on('request', request => {
-      if (request.method() === 'POST' && request.url() === origin + '/api/v1/ordering/orders') orderPosts++
+      if (request.method() === 'POST' && request.url() === origin + '/api/v1/ordering/orders') {
+        orderPosts++
+        orderRequestId ??= request.postDataJSON().context.requestId
+      }
     })
     const recoverOrder = mode === 'LostResponse' || mode === 'ReloadUnsent'
     if (recoverOrder) {
@@ -195,6 +201,11 @@ async function run() {
       await button(page, 'ตรวจสอบผลคำขอเดิม').waitFor()
       assert.ok(submittedOrder)
       await page.unroute(orderRoute)
+      host.kill()
+      await stopped
+      host = startBranch()
+      stopped = once(host, 'close')
+      ;({ pin } = await waitForBranch())
       await page.reload()
       await page.getByLabel('PIN', { exact: true }).fill(pin)
       const login = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
