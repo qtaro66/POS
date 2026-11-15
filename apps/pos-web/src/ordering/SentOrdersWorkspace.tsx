@@ -1,3 +1,4 @@
+import { OpenRegisteredTable } from './OpenRegisteredTable.tsx'
 import { CashReloadRecovery } from './CashReloadRecovery.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { TestCashShift } from './TestCashShift.tsx'
@@ -126,6 +127,11 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
                 onClick={() => { void controller.selectSession(table.tableSessionId) }}>
                 <strong>{table.tableId}</strong><span>{sessionLabels[table.status]}</span></button>)}</div>)}
           </section>}
+          {!inSession && ordering && !preview && <OpenRegisteredTable port={ordering} onOpened={async sessionId => {
+            setTableFilter(undefined)
+            await controller.refresh()
+            await controller.selectSession(sessionId)
+          }} />}
           {sentPanel}
           {inSession && <section key="menu" className="menu-unavailable panel" aria-labelledby="menu-placeholder-heading">
             <h2 id="menu-placeholder-heading">{s.menu}</h2><p role="status">{s.menuUnavailable}</p>

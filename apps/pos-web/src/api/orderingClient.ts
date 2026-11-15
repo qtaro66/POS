@@ -430,6 +430,20 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         expectedVersion, tenderedAmount,
       }))
     },
+    async availableTables(signal?: AbortSignal) {
+      const result = await request('/floor-plan', 'GET', undefined, signal)
+      if (!('status' in result) || result.status !== 200 || !record(result.body) ||
+          result.body.schemaVersion !== 1 || !Array.isArray(result.body.tables)) throw new Error('Floor plan unavailable.')
+      const tables: { tableId: string; displayName: string }[] = []
+      for (const table of result.body.tables as unknown[]) {
+        if (!record(table) || !id(table.tableId) || typeof table.displayName !== 'string' ||
+            typeof table.status !== 'string') throw new Error('Invalid floor plan.')
+        if (table.status === 'Available' && table.tableSessionId === null) {
+          tables.push({ tableId: table.tableId, displayName: table.displayName })
+        }
+      }
+      return tables
+    },
     async activeTables(signal?: AbortSignal): Promise<QueryResult<ActiveTables>> {
       const result = await request('/table-sessions', 'GET', undefined, signal)
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
