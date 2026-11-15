@@ -75,3 +75,21 @@ The script opens the table through the authenticated Branch API because the
 PC POS table list exposes active sessions. It then uses browser controls for
 item selection, quantity, order submission, cash, receipt and shift close.
 The observer explicitly refreshes the table list after settlement.
+
+Run all six browser reload recovery cases sequentially with the same build.
+Each case restarts Branch, recovers the original cash request, checks the
+shift difference, and verifies delivery to the in-memory Central fixture.
+Keep both fixture ports (17443 and 17444) free.
+
+```pwsh
+foreach ($mode in 'ReloadLost', 'ReloadUnsent') {
+    foreach ($scenario in 'Balanced', 'Short', 'Over') {
+        node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist $scenario $mode
+        if ($LASTEXITCODE -ne 0) { throw "Failed: $mode / $scenario" }
+    }
+}
+```
+
+`ReloadLost` drops the response after Branch accepts payment. `ReloadUnsent`
+drops the request before Branch receives it. The expected shift differences
+are 0, -10, and +10 respectively for Balanced, Short, and Over.
