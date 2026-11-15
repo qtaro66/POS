@@ -71,9 +71,10 @@ dotnet build tests/Pos.PcPos.BrowserHost
 node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist
 ```
 
-The script opens the table through the authenticated Branch API because the
-PC POS table list exposes active sessions. It then uses browser controls for
-item selection, quantity, order submission, cash, receipt and shift close.
+The Edge runner opens a registered table from the available table list in PC POS.
+It then uses browser controls for ordering, cash, receipt and shift close.
+LostResponse also recovers a committed table-opening request after its response
+is dropped.
 The observer explicitly refreshes the table list after settlement.
 
 Run all eighteen combinations of recovery mode and shift outcome with the same build.

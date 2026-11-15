@@ -112,17 +112,23 @@ async function run() {
     await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
     await setShift('open', 999)
     await page.getByText('Branch ไม่ยืนยันผล', { exact: true }).waitFor()
-    const commandContext = {
-      requestId: crypto.randomUUID(), branchId: 'BROWSER-TEST', deviceId: device.deviceId,
-      employeeId: session.employeeId, tableSessionId: crypto.randomUUID(), clientCreatedAt: new Date().toISOString(),
+    const openTable = button(page, 'เปิดโต๊ะ Browser table A01')
+    if (process.argv[4] === 'LostResponse') {
+      const openRoute = '**/tables/open'
+      let committed
+      await page.route(openRoute, async route => {
+        committed = (await route.fetch()).status()
+        await route.abort()
+      })
+      await openTable.click()
+      await page.getByText('ยังยืนยันผลเปิดโต๊ะไม่ได้', { exact: true }).waitFor()
+      assert.equal(committed, 200)
+      await page.unroute(openRoute)
+      await button(page, 'กู้คำขอเปิดโต๊ะเดิม').click()
+    } else {
+      await openTable.click()
     }
-    const opened = await context.request.post(origin + '/api/v1/ordering/tables/open', {
-      headers: { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': session.sessionToken },
-      data: { schemaVersion: 1, context: commandContext, tableId: 'A01' },
-    })
-    assert.equal(opened.status(), 200, 'Fixture table setup')
-    await button(page, 'รีเฟรชข้อมูล').click()
-    await page.getByRole('button', { name: /A01/ }).click()
+    await page.getByRole('heading', { name: 'โต๊ะ: A01', exact: true }).waitFor()
     await button(page, 'เปิดหน้ารายการ').click()
     await page.getByRole('button', { name: /Browser test item/ }).first().click()
     await button(page, 'ลงตะกร้า').click()
