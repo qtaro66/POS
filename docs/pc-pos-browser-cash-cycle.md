@@ -102,3 +102,10 @@ Central ran with an in-memory store and receipt printing was simulated.
 | ReloadUnsent | Pass | Pass | Pass |
 | EmployeeIsolation | Pass | Pass | Pass |
 | EmployeeIsolationUnsent | Pass | Pass | Pass |
+
+To rerun a specific mode and shift outcome, pass both filters. Omitting them
+runs the full twelve-case suite.
+
+```pwsh
+pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes EmployeeIsolationUnsent -Scenarios Short
+```
