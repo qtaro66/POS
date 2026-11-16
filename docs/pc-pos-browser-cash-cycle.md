@@ -216,3 +216,7 @@ is still open, then checks its current opening cash. The second terminal also
 discovers the successor shift before selling. Branch HTTPS integration covers
 missing, expired and revoked sessions, Mobile and unassigned device roles, and
 looking up a closed shift owned by another branch.
+
+The second terminal discovers the successor shift, sells one bill, and retries
+an unsent close itself. The test checks the original shift ID, one close record,
+and a balanced close of 400.
