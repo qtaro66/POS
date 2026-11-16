@@ -164,3 +164,7 @@ can open a shift after Branch restarts with the same database.
 The cross-shift cases read the disposable Branch database in read-only mode
 to compare both persisted close records (cash, difference, employee and time)
 with the API responses and check that no open shift remains.
+
+The cross-shift audit also joins each cash sale to its simulated receipt job,
+recalculates each shift from its opening cash and applied sales, and matches
+payment request IDs through the Branch outbox to the events acknowledged by Central.
