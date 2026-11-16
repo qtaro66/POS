@@ -500,6 +500,8 @@ async function run() {
           }
         }
 
+        const firstCloseRecord = await closeResponse.json()
+        const firstShiftId = closeResponse.request().postDataJSON().shiftId
         const changedClose = {
           ...closeResponse.request().postDataJSON(),
           cash: closeCash + 1,
@@ -561,7 +563,12 @@ async function run() {
         assert.ok(nextScenario === undefined || nextDifferences.has(nextScenario), 'Unknown second shift outcome')
         const nextDifference = nextScenario === undefined ? -difference : nextDifferences.get(nextScenario)
         const nextCounted = 400 + nextDifference
+        const nextClosed = page.waitForResponse(reply => reply.url().endsWith(shiftPath))
         await setShift('close', nextCounted, secondPin)
+        const nextCloseResponse = await nextClosed
+        assert.equal(nextCloseResponse.status(), 200)
+        const nextCloseRecord = await nextCloseResponse.json()
+        const nextShiftId = nextCloseResponse.request().postDataJSON().shiftId
         await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ ' + nextCounted + ' · ผลต่าง ' + nextDifference, { exact: true }).waitFor()
         const replayNext = await context.request.post(response.url(), {
           headers: recoveredHeaders,
@@ -569,6 +576,36 @@ async function run() {
         })
         assert.equal(replayNext.status(), 200)
         assert.deepEqual(await replayNext.json(), nextSale)
+        assert.equal(firstShiftId, originalSale.shiftId)
+        assert.equal(nextShiftId, nextSale.shiftId)
+        const { DatabaseSync } = require('node:sqlite')
+        const database = new DatabaseSync(join(tmpdir(), 'pc-pos-browser-' + fixtureId, 'branch.db'), { readOnly: true })
+        try {
+          const history = database.prepare('SELECT shift_id, result_json FROM test_cash_close_history WHERE branch_id = ?')
+            .all('BROWSER-TEST')
+          assert.equal(history.length, 2)
+          for (const [shiftId, expected, employeeId] of [
+            [firstShiftId, firstCloseRecord, originalSale.employeeId],
+            [nextShiftId, nextCloseRecord, nextSale.employeeId],
+          ]) {
+            const row = history.find(item => item.shift_id === shiftId)
+            assert.ok(row, 'Expected a durable close record for the settled shift')
+            const stored = JSON.parse(row.result_json)
+            assert.deepEqual({
+              expectedCash: stored.ExpectedCash,
+              countedCash: stored.CountedCash,
+              difference: stored.Difference,
+              employeeId: stored.EmployeeId,
+              closedAt: stored.ClosedAt,
+            }, expected)
+            assert.equal(stored.EmployeeId, employeeId)
+            assert.ok(Number.isFinite(Date.parse(stored.ClosedAt)))
+          }
+          assert.equal(database.prepare('SELECT COUNT(*) AS count FROM cash_sale_open_shifts WHERE branch_id = ?')
+            .get('BROWSER-TEST').count, 0)
+        } finally {
+          database.close()
+        }
       }
       const status = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', { headers: recoveredHeaders })
       assert.equal(status.status(), 200)
