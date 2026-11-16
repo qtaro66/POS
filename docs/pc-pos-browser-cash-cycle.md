@@ -156,3 +156,7 @@ applies to ShiftHandoff cases only. For example:
 ```pwsh
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes ShiftHandoff -Scenarios Short -NextShiftScenarios Over
 ```
+
+ShiftHandoff also verifies that an invalid PIN cannot close the first shift,
+a repeated close with a changed count returns a conflict, and the next employee
+can open a shift after Branch restarts with the same database.

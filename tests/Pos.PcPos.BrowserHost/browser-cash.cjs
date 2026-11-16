@@ -470,7 +470,17 @@ async function run() {
       assert.equal(new Set(settlements).size, 3)
       assert.equal(new Set(tableSessions).size, 3)
       const closeCash = 900 + difference
+      const shiftPath = '/test-cash-cycle'
+      if (shiftHandoff) {
+        const denied = page.waitForResponse(response => response.url().endsWith(shiftPath))
+        await setShift('close', closeCash, '000000')
+        assert.equal((await denied).status(), 401)
+        await page.getByText('Branch ไม่ยืนยันผล', { exact: true }).waitFor()
+      }
+      const closed = page.waitForResponse(response => response.url().endsWith(shiftPath))
       await setShift('close', closeCash)
+      const closeResponse = await closed
+      assert.equal(closeResponse.status(), 200)
       await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 900 · ยอดนับ ' + closeCash + ' · ผลต่าง ' + difference, { exact: true }).waitFor()
       if (shiftHandoff) {
         const secondPin = '000001'
@@ -490,6 +500,21 @@ async function run() {
           }
         }
 
+        const changedClose = {
+          ...closeResponse.request().postDataJSON(),
+          cash: closeCash + 1,
+        }
+        const duplicate = await context.request.post(closeResponse.url(), {
+          headers: recoveredHeaders,
+          data: changedClose,
+        })
+        assert.equal(duplicate.status(), 409)
+
+        host.kill()
+        await stopped
+        host = startBranch()
+        stopped = once(host, 'close')
+        await waitForBranch()
         await signInNextEmployee()
         await setShift('open', 300, secondPin)
         await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
