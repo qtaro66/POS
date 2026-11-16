@@ -445,6 +445,7 @@ async function run() {
     assert.equal((await simulation.json()).status, scenario === 'Short' ? 'Failed' : 'Simulated')
     if (multiSale) {
       const settlements = [originalSale.receiptNumber]
+      const paymentRequests = [winningReply.request().postDataJSON().context.requestId]
       const tableSessions = [winningReply.request().postDataJSON().context.tableSessionId]
       for (const [tableId, received] of [['A02', 100], ['A01', 125]]) {
         if (tableId === 'A02') await page.getByRole('button', { name: /^A02 / }).click()
@@ -463,6 +464,7 @@ async function run() {
         assert.equal(changeAmount, received - 100)
         await page.getByText(new RegExp('ใบเสร็จทดสอบ .*เงินทอน ' + changeAmount + '$')).waitFor()
         settlements.push(receiptNumber)
+        paymentRequests.push(response.request().postDataJSON().context.requestId)
         tableSessions.push(response.request().postDataJSON().context.tableSessionId)
         await button(page, 'รีเฟรชข้อมูล').click()
         await page.getByRole('button', { name: new RegExp('^' + tableId + ' ') }).waitFor({ state: 'hidden' })
@@ -551,6 +553,8 @@ async function run() {
         const nextSale = await response.json()
         assert.ok(nextSale.receiptNumber)
         assert.ok(!settlements.includes(nextSale.receiptNumber))
+        settlements.push(nextSale.receiptNumber)
+        paymentRequests.push(response.request().postDataJSON().context.requestId)
         assert.equal(nextSale.changeAmount, 20)
         assert.equal(nextSale.appliedAmount, 100)
         assert.equal(nextSale.employeeId, 'TEST-EMPLOYEE-B')
@@ -584,6 +588,24 @@ async function run() {
           const history = database.prepare('SELECT shift_id, result_json FROM test_cash_close_history WHERE branch_id = ?')
             .all('BROWSER-TEST')
           assert.equal(history.length, 2)
+          const ledger = database.prepare(`
+            SELECT sale.request_id, sale.table_session_id, sale.result_json, job.receipt_number
+            FROM cash_sales AS sale
+            LEFT JOIN simulated_cash_receipt_jobs AS job
+              ON job.branch_id = sale.branch_id AND job.request_id = sale.request_id
+            WHERE sale.branch_id = ?
+          `).all('BROWSER-TEST')
+          assert.equal(ledger.length, paymentRequests.length)
+          const sales = paymentRequests.map((requestId, index) => {
+            const row = ledger.find(entry => entry.request_id === requestId)
+            assert.ok(row, 'Expected a persisted sale for each payment request')
+            assert.equal(row.table_session_id, tableSessions[index])
+            assert.equal(row.receipt_number, settlements[index])
+            const sale = JSON.parse(row.result_json)
+            assert.equal(sale.ReceiptNumber, row.receipt_number)
+            assert.equal(sale.TenderedAmount - sale.ChangeAmount, sale.AppliedAmount)
+            return sale
+          })
           for (const [shiftId, expected, employeeId] of [
             [firstShiftId, firstCloseRecord, originalSale.employeeId],
             [nextShiftId, nextCloseRecord, nextSale.employeeId],
@@ -599,6 +621,15 @@ async function run() {
               closedAt: stored.ClosedAt,
             }, expected)
             assert.equal(stored.EmployeeId, employeeId)
+            const opening = database.prepare('SELECT opening_cash FROM test_cash_open_history WHERE branch_id = ? AND shift_id = ?')
+              .get('BROWSER-TEST', shiftId)
+            assert.ok(opening)
+            const shiftSales = sales.filter(sale => sale.ShiftId === shiftId)
+            assert.equal(shiftSales.length, shiftId === firstShiftId ? 3 : 1)
+            assert.ok(shiftSales.every(sale => sale.EmployeeId === employeeId))
+            assert.equal(Number(opening.opening_cash), shiftId === firstShiftId ? 500 : 300)
+            assert.equal(Number(opening.opening_cash) + shiftSales.reduce((sum, sale) => sum + sale.AppliedAmount, 0),
+              stored.ExpectedCash)
             assert.ok(Number.isFinite(Date.parse(stored.ClosedAt)))
           }
           assert.equal(database.prepare('SELECT COUNT(*) AS count FROM cash_sale_open_shifts WHERE branch_id = ?')
@@ -611,6 +642,7 @@ async function run() {
       assert.equal(status.status(), 200)
       const cashEvents = (await status.json()).items.filter(event => event.action === 'CompletePayment')
       assert.deepEqual(cashEvents.map(event => event.tableSessionId), tableSessions)
+      assert.deepEqual(cashEvents.map(event => event.requestId), paymentRequests)
       await verifyCentral(browser, context, recoveredHeaders, ...cashEvents.map(event => event.outboxId))
     } else {
       await verifyCentral(browser, context, recoveredHeaders, payments[0].outboxId)
