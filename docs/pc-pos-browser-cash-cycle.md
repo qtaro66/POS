@@ -173,3 +173,7 @@ After both shifts close, the cross-shift cases restart Branch once more,
 compare all four rendered receipts with the persisted sale amounts, and
 verify that asking for the opposite simulated outcome keeps the original
 success or failure result for each receipt.
+
+While the second shift is open, the cross-shift test retries the first shift's
+close and attempts to close the new shift with another employee's PIN. It
+then verifies the current shift still accepts sales and closes on its own ID.

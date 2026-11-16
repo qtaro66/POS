@@ -520,7 +520,11 @@ async function run() {
         stopped = once(host, 'close')
         await waitForBranch()
         await signInNextEmployee()
+        const opening = page.waitForResponse(response => response.url().endsWith(shiftPath))
         await setShift('open', 300, secondPin)
+        const openingResponse = await opening
+        assert.equal(openingResponse.status(), 200)
+        const secondOpening = openingResponse.request().postDataJSON()
         await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
         host.kill()
         await stopped
@@ -543,6 +547,21 @@ async function run() {
         assert.deepEqual(await original.json(), originalSale)
 
         recoveredHeaders = await signInNextEmployee()
+        const staleClose = await winningDevice.context.request.post(closeResponse.url(), {
+          headers: winningHeaders,
+          data: { operation: 'close', shiftId: firstShiftId, cash: closeCash + 1, pin },
+        })
+        assert.equal(staleClose.status(), 409, 'A stale close must leave the current shift open')
+        const otherEmployeeClose = await context.request.post(closeResponse.url(), {
+          headers: recoveredHeaders,
+          data: {
+            operation: 'close',
+            shiftId: secondOpening.shiftId,
+            cash: 300,
+            pin,
+          },
+        })
+        assert.equal(otherEmployeeClose.status(), 401, 'Another employee PIN must not authorize closing the current shift')
         await addSale('A02')
         await button(page, 'ขอชำระเงิน').click()
         await page.getByLabel('เงินสดที่รับ').fill('120')
@@ -582,6 +601,7 @@ async function run() {
         assert.deepEqual(await replayNext.json(), nextSale)
         assert.equal(firstShiftId, originalSale.shiftId)
         assert.equal(nextShiftId, nextSale.shiftId)
+        assert.equal(nextShiftId, secondOpening.shiftId)
         const snapshots = new Map()
         for (const [index, number] of settlements.entries()) {
           const url = origin + '/api/v1/ordering/test-cash-cycle/receipts/' + encodeURIComponent(number)
