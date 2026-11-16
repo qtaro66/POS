@@ -168,3 +168,8 @@ with the API responses and check that no open shift remains.
 The cross-shift audit also joins each cash sale to its simulated receipt job,
 recalculates each shift from its opening cash and applied sales, and matches
 payment request IDs through the Branch outbox to the events acknowledged by Central.
+
+After both shifts close, the cross-shift cases restart Branch once more,
+compare all four rendered receipts with the persisted sale amounts, and
+verify that asking for the opposite simulated outcome keeps the original
+success or failure result for each receipt.
