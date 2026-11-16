@@ -180,3 +180,7 @@ then verifies the current shift still accepts sales and closes on its own ID.
 
 After both shifts close, ShiftHandoff verifies that delayed open requests for
 closed shift IDs return a conflict and leave the opening and closing records intact.
+
+Cross-shift acceptance submits two concurrent copies of the new shift open
+and close requests over HTTP. It verifies one successful transition and one
+conflict for each, then checks durable history, receipt replay and Central sync.

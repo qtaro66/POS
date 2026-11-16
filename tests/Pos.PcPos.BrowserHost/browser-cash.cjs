@@ -519,10 +519,35 @@ async function run() {
         host = startBranch()
         stopped = once(host, 'close')
         await waitForBranch()
-        await signInNextEmployee()
-        const opening = page.waitForResponse(response => response.url().endsWith(shiftPath))
-        await setShift('open', 300, secondPin)
-        const openingResponse = await opening
+        async function raceShift(operation, amount, headers) {
+          const pattern = '**' + shiftPath
+          let outcomes
+          const competingContext = devices[1].context
+          const compete = async route => {
+            const [primary, duplicate] = await Promise.all([
+              route.fetch(),
+              competingContext.request.post(route.request().url(), {
+                headers,
+                data: route.request().postDataJSON(),
+              }),
+            ])
+            outcomes = [primary.status(), duplicate.status()].sort()
+            await route.fulfill({ response: primary.ok() ? primary : duplicate })
+          }
+          await page.route(pattern, compete)
+          try {
+            const completed = page.waitForResponse(response => response.url().endsWith(shiftPath))
+            await setShift(operation, amount, secondPin)
+            const result = await completed
+            assert.deepEqual(outcomes, [200, 409], 'Exactly one shift transition must commit')
+            return result
+          } finally {
+            await page.unroute(pattern, compete)
+          }
+        }
+
+        const nextEmployeeHeaders = await signInNextEmployee()
+        const openingResponse = await raceShift('open', 300, nextEmployeeHeaders)
         assert.equal(openingResponse.status(), 200)
         const secondOpening = openingResponse.request().postDataJSON()
         await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
@@ -586,9 +611,7 @@ async function run() {
         assert.ok(nextScenario === undefined || nextDifferences.has(nextScenario), 'Unknown second shift outcome')
         const nextDifference = nextScenario === undefined ? -difference : nextDifferences.get(nextScenario)
         const nextCounted = 400 + nextDifference
-        const nextClosed = page.waitForResponse(reply => reply.url().endsWith(shiftPath))
-        await setShift('close', nextCounted, secondPin)
-        const nextCloseResponse = await nextClosed
+        const nextCloseResponse = await raceShift('close', nextCounted, recoveredHeaders)
         assert.equal(nextCloseResponse.status(), 200)
         const nextCloseRecord = await nextCloseResponse.json()
         const nextShiftId = nextCloseResponse.request().postDataJSON().shiftId
