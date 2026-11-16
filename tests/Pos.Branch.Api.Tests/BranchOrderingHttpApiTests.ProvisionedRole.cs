@@ -22,7 +22,8 @@ public sealed partial class BranchOrderingHttpApiTests
     [Theory]
     [InlineData("PcPos")]
     [InlineData("Mobile")]
-    public async Task Provisioned_device_role_survives_https_login_and_authorizes_sold_out(string deviceRole)
+    [InlineData(null)]
+    public async Task Provisioned_device_role_survives_https_login_and_authorizes_sold_out(string? deviceRole)
     {
         await using var fixture = await Fixture.CreateAsync();
         var credential = BranchDeviceCredentialFormat.Generate();
@@ -59,6 +60,7 @@ public sealed partial class BranchOrderingHttpApiTests
             ["BranchEmployeeSessions:DatabasePath"] = fixture.Path,
             ["BranchEmployeeSessions:Lifetime"] = "08:00:00",
             ["BranchOrdering:Enabled"] = "true",
+            ["BranchOrdering:EnableCashSaleTest"] = "true",
             ["BranchOrdering:DatabasePath"] = fixture.Path
         });
         if (deviceRole == "Mobile")
@@ -70,6 +72,8 @@ public sealed partial class BranchOrderingHttpApiTests
             Assert.True(await cache.ApplyAsync(snapshot, timeout.Token));
             builder.Services.AddSingleton(cache);
         }
+        var clock = new ReconnectClock();
+        builder.Services.AddSingleton<TimeProvider>(clock);
         builder.Services.AddSingleton<IBranchEmployeePinValidator, TestPinValidator>();
         builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
         builder.Services.AddBranchEmployeeSessions(builder.Configuration);
@@ -93,6 +97,9 @@ public sealed partial class BranchOrderingHttpApiTests
         })
         { BaseAddress = new Uri(app.Urls.Single()) };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Device", credential.Token);
+        const string shiftStatus = "/api/v1/ordering/test-cash-cycle/status";
+        using var missingSession = await client.GetAsync(shiftStatus, timeout.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingSession.StatusCode);
         using var unauthorized = await client.GetAsync("/api/v1/ordering/table-sessions", timeout.Token);
         Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
         using var login = await client.PostAsJsonAsync("/api/v1/employee-sessions", new BranchEmployeeSessionLoginRequest(1, TestPinValidator.Pin), timeout.Token);
@@ -101,6 +108,29 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.NotNull(employee);
         client.DefaultRequestHeaders.Add(BranchEmployeeSessionAuthenticationDefaults.HeaderName, employee.SessionToken);
 
+        using var status = await client.GetAsync(shiftStatus, timeout.Token);
+        Assert.Equal(deviceRole == "PcPos" ? HttpStatusCode.OK : HttpStatusCode.Forbidden, status.StatusCode);
+        if (deviceRole == "PcPos")
+        {
+            var store = new Pos.Branch.Infrastructure.Sqlite.SqliteTableSessionCommandStore(fixture.Path);
+            var foreignShift = Guid.NewGuid().ToString();
+            Assert.True(await store.OpenTestCashCycleAsync("BRANCH-02", foreignShift, foreignShift, new DateOnly(2026, 11, 16), 900m, timeout.Token));
+            Assert.NotNull(await store.CloseTestCashCycleAsync("BRANCH-02", foreignShift, 900m, timeout.Token));
+            using var foreign = await client.GetAsync(shiftStatus + "?shiftId=" + foreignShift, timeout.Token);
+            Assert.Equal(HttpStatusCode.OK, foreign.StatusCode);
+            using var state = await foreign.Content.ReadFromJsonAsync<JsonDocument>(timeout.Token);
+            Assert.NotNull(state);
+            Assert.Equal(JsonValueKind.Null, state.RootElement.GetProperty("close").ValueKind);
+            Assert.Equal(JsonValueKind.Null, state.RootElement.GetProperty("activeShiftId").ValueKind);
+
+            var beforeExpiry = clock.Now;
+            clock.Now = beforeExpiry.AddHours(9);
+            using var expired = await client.GetAsync(shiftStatus, timeout.Token);
+            Assert.Equal(HttpStatusCode.Unauthorized, expired.StatusCode);
+            clock.Now = beforeExpiry;
+        }
+
+        if (deviceRole is null) { return; }
         using var open = await client.PostAsJsonAsync("/api/v1/ordering/tables/open", Open("OPEN-ROLE", "SESSION-ROLE", "A01"), timeout.Token);
         Assert.Equal(HttpStatusCode.OK, open.StatusCode);
         using var capability = await client.GetFromJsonAsync<JsonDocument>("/api/v1/ordering/sold-out/capability", timeout.Token);
@@ -118,6 +148,8 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
         using var ended = await client.PostAsync("/api/v1/ordering/session/end", null, timeout.Token);
         Assert.Equal(HttpStatusCode.NoContent, ended.StatusCode);
+        using var revoked = await client.GetAsync(shiftStatus, timeout.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
         using var afterLock = await client.GetAsync("/api/v1/ordering/table-sessions", timeout.Token);
         Assert.Equal(HttpStatusCode.Unauthorized, afterLock.StatusCode);
     }
