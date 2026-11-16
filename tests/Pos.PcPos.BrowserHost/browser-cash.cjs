@@ -21,15 +21,16 @@ async function run() {
   const startBranch = () => spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), resolve(process.argv[2]), fixtureId])
   let host = startBranch()
   let stopped = once(host, 'close')
+  let alternateHost
   let central
   let browser
   let timeout
-  async function waitForBranch() {
+  async function waitForBranch(fixture = host) {
     let pin
     const links = []
     await Promise.race([
       (async () => {
-        for await (const line of createInterface({ input: host.stdout })) {
+        for await (const line of createInterface({ input: fixture.stdout })) {
           if (line.startsWith('Fixture PIN: ')) pin = line.slice('Fixture PIN: '.length)
           if (/^Fixture (second )?pairing: /.test(line)) links.push(line.split(': ')[1])
           if (pin && links.length === 2) return
@@ -82,6 +83,80 @@ async function run() {
     let { pin, links } = await waitForBranch()
     browser = await chromium.launch({ channel: 'msedge' })
     const button = (page, name) => page.getByRole('button', { name, exact: true })
+    if (process.argv[4] === 'BranchIsolation') {
+      alternateHost = spawn('dotnet', [resolve(__dirname, 'bin/Debug/net10.0/Pos.PcPos.BrowserHost.dll'), resolve(process.argv[2])],
+        { env: { ...process.env, POS_BROWSER_ALTERNATE_BRANCH: '1' } })
+      const alternate = await waitForBranch(alternateHost)
+      const context = await browser.newContext({ ignoreHTTPSErrors: true })
+      const page = await context.newPage()
+      page.setDefaultTimeout(8000)
+
+      async function enter(branchOrigin, employeePin, pairing) {
+        await page.goto(branchOrigin)
+        if (pairing) {
+          await page.getByLabel('ลิงก์จับคู่เครื่อง').fill(pairing)
+          await button(page, 'จับคู่เครื่อง').click()
+        }
+        await page.getByLabel('PIN', { exact: true }).fill(employeePin)
+        await button(page, 'เข้าสู่ระบบ').click()
+        await button(page, 'โต๊ะ').click()
+      }
+
+      async function transition(operation, amount, employeePin) {
+        await page.locator('select[name=operation]').selectOption(operation)
+        await page.getByLabel('เงินตั้งต้นหรือยอดนับจริง').fill(String(amount))
+        await page.getByLabel('ยืนยัน PIN').fill(employeePin)
+        const pending = page.waitForResponse(reply => reply.url().endsWith('/test-cash-cycle'))
+        await button(page, 'บันทึกกะทดสอบ').click()
+        const response = await pending
+        assert.equal(response.status(), 200)
+        return response.request().postDataJSON().shiftId
+      }
+
+      async function status(message) {
+        await button(page, 'ตรวจสอบสถานะกะ').click()
+        await page.getByText(message, { exact: true }).waitFor()
+      }
+
+      async function sell(shiftId, tender, change) {
+        await button(page, 'เปิดโต๊ะ Browser table A01').click()
+        await button(page, 'เปิดหน้ารายการ').click()
+        await page.getByRole('button', { name: /Browser test item/ }).first().click()
+        await button(page, 'ลงตะกร้า').click()
+        await button(page, 'ส่งออเดอร์ 1 รายการ').click()
+        await page.getByRole('status').filter({ hasText: 'สาขารับออร์เดอร์แล้ว · Request ID:' }).waitFor()
+        await button(page, 'กลับผังโต๊ะ').click()
+        await button(page, 'ขอชำระเงิน').click()
+        await page.getByLabel('เงินสดที่รับ').fill(String(tender))
+        const paid = page.waitForResponse(reply => reply.url().endsWith('/tables/complete-cash-sale'))
+        await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
+        const response = await paid
+        assert.equal(response.status(), 200)
+        const sale = await response.json()
+        assert.equal(sale.shiftId, shiftId)
+        assert.equal(sale.changeAmount, change)
+      }
+
+      const alternateOrigin = 'https://127.0.0.1:17445'
+      await enter(origin, pin, links[0])
+      const firstShift = await transition('open', 300, pin)
+      await sell(firstShift, 120, 20)
+      await enter(alternateOrigin, alternate.pin, alternate.links[0])
+      await status('ไม่มีกะเปิดอยู่')
+      const secondShift = await transition('open', 700, alternate.pin)
+      assert.notEqual(secondShift, firstShift)
+      await sell(secondShift, 150, 50)
+      assert.equal(await transition('close', 790, alternate.pin), secondShift)
+      await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 800 · ยอดนับ 790 · ผลต่าง -10', { exact: true }).waitFor()
+      await enter(origin, pin)
+      await status('มีกะเปิดอยู่ · เงินตั้งต้น 300')
+      assert.equal(await transition('close', 400, pin), firstShift)
+      await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ 400 · ผลต่าง 0', { exact: true }).waitFor()
+      await enter(alternateOrigin, alternate.pin)
+      await status('ไม่มีกะเปิดอยู่')
+      console.log('Same Edge tab kept two Branch sales, shifts and close totals isolated: PASS')
+      return
+    }
     const devices = []
     for (const link of links) {
       const context = await browser.newContext({ ignoreHTTPSErrors: true })
@@ -979,6 +1054,7 @@ async function run() {
     await page.getByLabel('PIN', { exact: true }).waitFor()
     console.log('PC POS Edge ' + browser.version() + ' cash acceptance (' + scenario + '): PASS')
   } finally {
+    alternateHost?.kill()
     clearTimeout(timeout)
     try { await browser?.close() }
     finally {
