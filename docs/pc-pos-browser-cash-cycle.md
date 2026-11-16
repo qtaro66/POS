@@ -210,3 +210,9 @@ The shift form scopes its remembered shift by service origin and Branch ID.
 A status read blocks further shift actions until it completes. The transition
 runner also checks status with an invalid session and verifies a second
 terminal can discover and close an active shift.
+
+ShiftTransitions pairs a fresh Edge context after a Branch restart while a shift
+is still open, then checks its current opening cash. The second terminal also
+discovers the successor shift before selling. Branch HTTPS integration covers
+missing, expired and revoked sessions, Mobile and unassigned device roles, and
+looking up a closed shift owned by another branch.

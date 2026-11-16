@@ -139,9 +139,11 @@ async function run() {
         await stopped
         host = startBranch()
         stopped = once(host, 'close')
-        ;({ pin } = await waitForBranch())
+        const ready = await waitForBranch()
+        pin = ready.pin
         firstHeaders = await authenticate(first, pin)
         secondHeaders = await authenticate(second, secondPin)
+        return ready.links
       }
 
       const openingIds = [crypto.randomUUID(), crypto.randomUUID()]
@@ -207,12 +209,30 @@ async function run() {
       assert.equal(invalidSession.status(), 401)
       console.log('Invalid employee session cannot read shift status: PASS')
       const lostOpen = await dropTransition('open', 500)
-      await restart()
+      const freshLinks = await restart()
       assert.deepEqual(records('cash_sale_open_shifts').map(row => row.shift_id), [lostOpen])
       const openHistory = records('test_cash_open_history').filter(row => row.shift_id === lostOpen)
       assert.equal(openHistory.length, 1)
       assert.equal(Number(openHistory[0].opening_cash), 500)
       console.log('Lost opening response across restart: PASS')
+
+      const newcomer = await browser.newContext({ ignoreHTTPSErrors: true })
+      try {
+        const terminal = await newcomer.newPage()
+        terminal.setDefaultTimeout(8000)
+        await terminal.goto(origin)
+        await terminal.getByLabel('ลิงก์จับคู่เครื่อง').fill(freshLinks[0])
+        await button(terminal, 'จับคู่เครื่อง').click()
+        await terminal.getByLabel('PIN', { exact: true }).fill(secondPin)
+        await button(terminal, 'เข้าสู่ระบบ').click()
+        await button(terminal, 'โต๊ะ').click()
+        await button(terminal, 'ตรวจสอบสถานะกะ').click()
+        await terminal.getByText('มีกะเปิดอยู่ · เงินตั้งต้น 500', { exact: true }).waitFor()
+        assert.deepEqual(records('cash_sale_open_shifts').map(row => row.shift_id), [lostOpen])
+      } finally {
+        await newcomer.close()
+      }
+      console.log('Newly paired terminal discovers the active shift: PASS')
 
       await page.reload()
       await page.getByLabel('PIN', { exact: true }).fill(pin)
@@ -287,6 +307,8 @@ async function run() {
       await observer.getByLabel('PIN', { exact: true }).fill(secondPin)
       await button(observer, 'เข้าสู่ระบบ').click()
       await button(observer, 'โต๊ะ').click()
+      await button(observer, 'ตรวจสอบสถานะกะ').click()
+      await observer.getByText(/มีกะเปิดอยู่ · เงินตั้งต้น 300$/).waitFor()
       await button(observer, 'เปิดโต๊ะ Browser table A01').click()
       await button(observer, 'เปิดหน้ารายการ').click()
       await observer.getByRole('button', { name: /Browser test item/ }).first().click()
