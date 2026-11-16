@@ -582,8 +582,27 @@ async function run() {
         assert.deepEqual(await replayNext.json(), nextSale)
         assert.equal(firstShiftId, originalSale.shiftId)
         assert.equal(nextShiftId, nextSale.shiftId)
+        const snapshots = new Map()
+        for (const [index, number] of settlements.entries()) {
+          const url = origin + '/api/v1/ordering/test-cash-cycle/receipts/' + encodeURIComponent(number)
+          const fail = index === 0 ? scenario === 'Short' : index === 2
+          const printed = await context.request.post(url + '/simulate', { headers: recoveredHeaders, data: { fail } })
+          assert.equal(printed.status(), 200)
+          const outcome = await printed.json()
+          assert.equal(outcome.status, fail ? 'Failed' : 'Simulated')
+          snapshots.set(number, { url, fail, outcome })
+        }
+
+        host.kill()
+        await stopped
+        host = startBranch()
+        stopped = once(host, 'close')
+        await waitForBranch()
+        recoveredHeaders = await signInNextEmployee()
+
         const { DatabaseSync } = require('node:sqlite')
         const database = new DatabaseSync(join(tmpdir(), 'pc-pos-browser-' + fixtureId, 'branch.db'), { readOnly: true })
+        let persistedSales
         try {
           const history = database.prepare('SELECT shift_id, result_json FROM test_cash_close_history WHERE branch_id = ?')
             .all('BROWSER-TEST')
@@ -596,7 +615,7 @@ async function run() {
             WHERE sale.branch_id = ?
           `).all('BROWSER-TEST')
           assert.equal(ledger.length, paymentRequests.length)
-          const sales = paymentRequests.map((requestId, index) => {
+          const sales = persistedSales = paymentRequests.map((requestId, index) => {
             const row = ledger.find(entry => entry.request_id === requestId)
             assert.ok(row, 'Expected a persisted sale for each payment request')
             assert.equal(row.table_session_id, tableSessions[index])
@@ -636,6 +655,24 @@ async function run() {
             .get('BROWSER-TEST').count, 0)
         } finally {
           database.close()
+        }
+        for (const sale of persistedSales) {
+          const { url, fail, outcome } = snapshots.get(sale.ReceiptNumber)
+          const receipt = await context.request.get(url, { headers: recoveredHeaders })
+          assert.equal(receipt.status(), 200)
+          const { text } = await receipt.json()
+          assert.ok(text.includes('ใบเสร็จทดสอบ ' + sale.ReceiptNumber))
+          assert.ok(text.includes('Browser test item'))
+          const totals = 'ยอดชำระ ' + sale.AppliedAmount.toFixed(2) + ' · รับ ' +
+            sale.TenderedAmount.toFixed(2) + ' · ทอน ' + sale.ChangeAmount.toFixed(2)
+          assert.ok(text.includes(totals))
+          if (!fail) assert.equal(outcome.text, text)
+          const recalled = await context.request.post(url + '/simulate', {
+            headers: recoveredHeaders,
+            data: { fail: !fail },
+          })
+          assert.equal(recalled.status(), 200)
+          assert.deepEqual(await recalled.json(), outcome)
         }
       }
       const status = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', { headers: recoveredHeaders })
