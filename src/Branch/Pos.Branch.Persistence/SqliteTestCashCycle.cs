@@ -95,22 +95,27 @@ internal sealed partial class SqliteTableSessionCommandTransaction
     internal async Task<bool> OpenTestCashCycleAsync(string branchId, string shiftId, string storeId, DateOnly businessDate, decimal openingCash, CancellationToken token)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(openingCash);
+        using var ensureHistory = CreateCommand("""
+            CREATE TABLE IF NOT EXISTS test_cash_open_history (
+                branch_id TEXT NOT NULL, shift_id TEXT NOT NULL, opening_cash TEXT NOT NULL,
+                PRIMARY KEY (branch_id, shift_id)
+            );
+            """);
+        await ensureHistory.ExecuteNonQueryAsync(token);
         using var command = CreateCommand("""
             INSERT INTO cash_sale_open_shifts (branch_id, shift_id, store_session_id, business_date)
-            VALUES ($branch, $shift, $store, $date) ON CONFLICT (branch_id) DO NOTHING;
+            SELECT $branch, $shift, $store, $date
+            WHERE NOT EXISTS (
+                SELECT 1 FROM test_cash_open_history WHERE branch_id = $branch AND shift_id = $shift
+            )
+            ON CONFLICT (branch_id) DO NOTHING;
             """);
         command.Parameters.AddWithValue("$branch", branchId);
         command.Parameters.AddWithValue("$shift", shiftId);
         command.Parameters.AddWithValue("$store", storeId);
         command.Parameters.AddWithValue("$date", businessDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
         if (await command.ExecuteNonQueryAsync(token) != 1) { return false; }
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS test_cash_open_history (
-                branch_id TEXT NOT NULL, shift_id TEXT NOT NULL, opening_cash TEXT NOT NULL,
-                PRIMARY KEY (branch_id, shift_id)
-            );
-            INSERT INTO test_cash_open_history VALUES ($branch, $shift, $cash);
-            """;
+        command.CommandText = "INSERT INTO test_cash_open_history VALUES ($branch, $shift, $cash);";
         command.Parameters.AddWithValue("$cash", openingCash.ToString(System.Globalization.CultureInfo.InvariantCulture));
         await command.ExecuteNonQueryAsync(token);
         return true;

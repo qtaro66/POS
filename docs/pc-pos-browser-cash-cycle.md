@@ -177,3 +177,6 @@ success or failure result for each receipt.
 While the second shift is open, the cross-shift test retries the first shift's
 close and attempts to close the new shift with another employee's PIN. It
 then verifies the current shift still accepts sales and closes on its own ID.
+
+After both shifts close, ShiftHandoff verifies that delayed open requests for
+closed shift IDs return a conflict and leave the opening and closing records intact.
