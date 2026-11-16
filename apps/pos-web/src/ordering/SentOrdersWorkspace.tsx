@@ -69,6 +69,9 @@ function Totals({ detail, compact = false }: { detail: SessionDetail; compact?: 
 export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, recovery, ordering }: {
   client: OrderingReadClient; branchLabel: string; preview: boolean; onLock: () => void; recovery?: RecoveryReadPort; ordering?: OrderingEntryPort
 }) {
+  const shiftStorageKey = ordering && 'pos-test-cash-shift:' + JSON.stringify([
+    ordering.client.scope.serviceOrigin, ordering.client.scope.branchId,
+  ])
   const controller = useMemo(() => createOrderingReadController(client), [client])
   const freshness = useMemo(() => createDataFreshness(client), [client])
   const freshnessState = useSyncExternalStore(freshness.subscribe, freshness.getSnapshot, freshness.getSnapshot)
@@ -108,7 +111,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
     systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { setFloorRefresh(version => version + 1); void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
-        {!preview && (import.meta.env.DEV || import.meta.env.MODE === 'browser-fixture') && client.testCashCycle && <TestCashShift run={client.testCashCycle} status={client.testCashShiftStatus} />}
+        {!preview && (import.meta.env.DEV || import.meta.env.MODE === 'browser-fixture') && shiftStorageKey && client.testCashCycle && <TestCashShift key={shiftStorageKey} storageKey={shiftStorageKey} run={client.testCashCycle} status={client.testCashShiftStatus} />}
         {!preview && client.cashRecovery && <CashReloadRecovery recovery={client.cashRecovery} refresh={() => { void controller.refresh() }} />}
         {inSession && <button className="workspace-back" onClick={() => { moveFocus.current = true; setEntry(null) }}>{s.backToTables}</button>}
         {receipt?.owner === client && <div className="workspace-receipt" role="status"><strong>สาขารับออร์เดอร์แล้ว</strong> · Request ID: {receipt.outcome.requestId}
