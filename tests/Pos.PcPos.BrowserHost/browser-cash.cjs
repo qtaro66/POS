@@ -592,6 +592,10 @@ async function run() {
         assert.equal(nextCloseResponse.status(), 200)
         const nextCloseRecord = await nextCloseResponse.json()
         const nextShiftId = nextCloseResponse.request().postDataJSON().shiftId
+        for (const opening of [secondOpening, { ...secondOpening, shiftId: firstShiftId, cash: 999 }]) {
+          const staleOpen = await context.request.post(openingResponse.url(), { headers: recoveredHeaders, data: opening })
+          assert.equal(staleOpen.status(), 409, 'A closed shift ID must not be reopened')
+        }
         await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ ' + nextCounted + ' · ผลต่าง ' + nextDifference, { exact: true }).waitFor()
         const replayNext = await context.request.post(response.url(), {
           headers: recoveredHeaders,
