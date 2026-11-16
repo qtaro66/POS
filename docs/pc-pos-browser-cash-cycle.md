@@ -184,3 +184,19 @@ closed shift IDs return a conflict and leave the opening and closing records int
 Cross-shift acceptance submits two concurrent copies of the new shift open
 and close requests over HTTP. It verifies one successful transition and one
 conflict for each, then checks durable history, receipt replay and Central sync.
+
+### Shift transition contention and lost responses
+
+Build the fixtures as above, then run:
+
+```pwsh
+node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist Balanced ShiftTransitions
+pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes ShiftHandoff
+```
+
+The first command checks five scenarios in one disposable fixture: distinct
+concurrent opens, a competing open and close, distinct concurrent closes,
+lost open response across restart, and lost close response followed by a sale
+and close under a second employee. Contention uses authenticated requests
+from two paired Edge contexts. Loss is injected after Branch commits.
+The second command runs the nine existing cross-shift outcome pairs.

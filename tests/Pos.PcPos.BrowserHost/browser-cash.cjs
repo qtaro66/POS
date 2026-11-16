@@ -111,6 +111,145 @@ async function run() {
       await page.getByLabel('ยืนยัน PIN').fill(employeePin)
       await button(page, 'บันทึกกะทดสอบ').click()
     }
+    if (process.argv[4] === 'ShiftTransitions') {
+      const url = origin + '/api/v1/ordering/test-cash-cycle'
+      const secondPin = '000001'
+      async function authenticate(fixture, employeePin) {
+        const headers = { Authorization: 'Device ' + fixture.device.deviceCredential }
+        const response = await fixture.context.request.post(origin + '/api/v1/employee-sessions', {
+          headers, data: { schemaVersion: 1, pin: employeePin },
+        })
+        assert.equal(response.status(), 200)
+        const employee = await response.json()
+        return { ...headers, 'X-POS-Employee-Session': employee.sessionToken }
+      }
+      const [first, second] = devices
+      let firstHeaders = await authenticate(first, pin)
+      let secondHeaders = await authenticate(second, secondPin)
+      const send = (fixture, headers, operation, shiftId, cash, employeePin) =>
+        fixture.context.request.post(url, { headers, data: { operation, shiftId, cash, pin: employeePin } })
+      const { DatabaseSync } = require('node:sqlite')
+      function records(table) {
+        const db = new DatabaseSync(join(tmpdir(), 'pc-pos-browser-' + fixtureId, 'branch.db'), { readOnly: true })
+        try { return db.prepare('SELECT * FROM ' + table + ' WHERE branch_id = ?').all('BROWSER-TEST') }
+        finally { db.close() }
+      }
+      async function restart() {
+        host.kill()
+        await stopped
+        host = startBranch()
+        stopped = once(host, 'close')
+        ;({ pin } = await waitForBranch())
+        firstHeaders = await authenticate(first, pin)
+        secondHeaders = await authenticate(second, secondPin)
+      }
+
+      const openingIds = [crypto.randomUUID(), crypto.randomUUID()]
+      const openings = await Promise.all([
+        send(first, firstHeaders, 'open', openingIds[0], 500, pin),
+        send(second, secondHeaders, 'open', openingIds[1], 300, secondPin),
+      ])
+      assert.deepEqual(openings.map(result => result.status()).sort(), [200, 409])
+      const winner = openings.findIndex(result => result.ok())
+      const active = openingIds[winner]
+      assert.deepEqual(records('cash_sale_open_shifts').map(row => row.shift_id), [active])
+      assert.deepEqual(records('test_cash_open_history').map(row => Number(row.opening_cash)), [[500, 300][winner]])
+      console.log('Distinct concurrent opens: PASS')
+
+      const successor = crypto.randomUUID()
+      const [closing, opening] = await Promise.all([
+        send(first, firstHeaders, 'close', active, 450, pin),
+        send(second, secondHeaders, 'open', successor, 200, secondPin),
+      ])
+      assert.equal(closing.status(), 200)
+      assert.ok([200, 409].includes(opening.status()))
+      assert.deepEqual(records('cash_sale_open_shifts').map(row => row.shift_id), opening.ok() ? [successor] : [])
+      if (!opening.ok()) assert.equal((await send(second, secondHeaders, 'open', successor, 200, secondPin)).status(), 200)
+      console.log('Competing open and close: PASS')
+
+      const closes = await Promise.all([
+        send(first, firstHeaders, 'close', successor, 190, pin),
+        send(second, secondHeaders, 'close', successor, 210, secondPin),
+      ])
+      assert.deepEqual(closes.map(result => result.status()).sort(), [200, 409])
+      const closer = closes.findIndex(result => result.ok())
+      const history = records('test_cash_close_history').filter(row => row.shift_id === successor)
+      assert.equal(history.length, 1)
+      const result = JSON.parse(history[0].result_json)
+      assert.equal(result.CountedCash, [190, 210][closer])
+      assert.equal(result.EmployeeId, ['TEST-EMPLOYEE', 'TEST-EMPLOYEE-B'][closer])
+      console.log('Distinct concurrent closes: PASS')
+
+      async function dropTransition(operation, amount) {
+        const pattern = '**/test-cash-cycle'
+        let original
+        const drop = async route => {
+          const request = route.request().postDataJSON()
+          const response = await route.fetch()
+          original = { request, status: response.status() }
+          await route.abort()
+        }
+        await page.route(pattern, drop)
+        try {
+          await setShift(operation, amount)
+          await page.getByText('Branch ไม่ยืนยันผล', { exact: true }).waitFor()
+          assert.equal(original?.status, 200)
+          return original.request.shiftId
+        } finally {
+          await page.unroute(pattern, drop)
+        }
+      }
+
+      const lostOpen = await dropTransition('open', 500)
+      await restart()
+      assert.deepEqual(records('cash_sale_open_shifts').map(row => row.shift_id), [lostOpen])
+      const openHistory = records('test_cash_open_history').filter(row => row.shift_id === lostOpen)
+      assert.equal(openHistory.length, 1)
+      assert.equal(Number(openHistory[0].opening_cash), 500)
+      console.log('Lost opening response across restart: PASS')
+
+      await page.reload()
+      await page.getByLabel('PIN', { exact: true }).fill(pin)
+      await button(page, 'เข้าสู่ระบบ').click()
+      await button(page, 'โต๊ะ').click()
+      assert.equal(await dropTransition('close', 490), lostOpen)
+      await restart()
+      assert.deepEqual(records('cash_sale_open_shifts'), [])
+      const closed = records('test_cash_close_history').filter(row => row.shift_id === lostOpen)
+      assert.equal(closed.length, 1)
+      assert.equal(JSON.parse(closed[0].result_json).Difference, -10)
+      const finalShift = crypto.randomUUID()
+      assert.equal((await send(second, secondHeaders, 'open', finalShift, 300, secondPin)).status(), 200)
+      await observer.reload()
+      await observer.getByLabel('PIN', { exact: true }).fill(secondPin)
+      await button(observer, 'เข้าสู่ระบบ').click()
+      await button(observer, 'โต๊ะ').click()
+      await button(observer, 'เปิดโต๊ะ Browser table A01').click()
+      await button(observer, 'เปิดหน้ารายการ').click()
+      await observer.getByRole('button', { name: /Browser test item/ }).first().click()
+      await button(observer, 'ลงตะกร้า').click()
+      await button(observer, 'ส่งออเดอร์ 1 รายการ').click()
+      await observer.getByRole('status').filter({ hasText: 'สาขารับออร์เดอร์แล้ว · Request ID:' }).waitFor()
+      await button(observer, 'กลับผังโต๊ะ').click()
+      await button(observer, 'ขอชำระเงิน').click()
+      await observer.getByLabel('เงินสดที่รับ').fill('120')
+      const paid = observer.waitForResponse(reply => reply.url().endsWith('/tables/complete-cash-sale'))
+      await button(observer, 'ปิดบิลเงินสด (ทดสอบ)').click()
+      const payment = await paid
+      assert.equal(payment.status(), 200)
+      const sale = await payment.json()
+      assert.equal(sale.shiftId, finalShift)
+      assert.equal(sale.employeeId, 'TEST-EMPLOYEE-B')
+      assert.equal(sale.changeAmount, 20)
+      const finalClose = await send(second, secondHeaders, 'close', finalShift, 400, secondPin)
+      assert.equal(finalClose.status(), 200)
+      const reconciled = await finalClose.json()
+      assert.equal(reconciled.expectedCash, 400)
+      assert.equal(reconciled.difference, 0)
+      assert.deepEqual(records('cash_sale_open_shifts'), [])
+      console.log('Lost closing response and next shift: PASS')
+      return
+    }
     await setShift('open', 500)
     await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
     await setShift('open', 999)
