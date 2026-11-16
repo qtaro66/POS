@@ -220,3 +220,15 @@ looking up a closed shift owned by another branch.
 The second terminal discovers the successor shift, sells one bill, and retries
 an unsent close itself. The test checks the original shift ID, one close record,
 and a balanced close of 400.
+
+### Two Branches in one Edge tab
+
+Build in browser-fixture mode and run:
+
+```powershell
+npm run build --workspace apps/pos-web -- --mode browser-fixture
+dotnet build tests/Pos.PcPos.BrowserHost
+node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist Balanced BranchIsolation
+```
+
+The fixture uses two loopback origins with separate databases. It pairs the same tab with each Branch, sells on the same table identifier in both, and verifies separate shift IDs, cash change, and close totals. Returning to the first origin restores its pairing and finds its own open shift.

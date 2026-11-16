@@ -20,7 +20,9 @@ if (args.Length is < 1 or > 2 || !File.Exists(Path.Combine(args[0], "index.html"
     throw new ArgumentException("Pass the path to the built PC POS dist directory.");
 }
 
-const string Branch = "BROWSER-TEST";
+var alternate = Environment.GetEnvironmentVariable("POS_BROWSER_ALTERNATE_BRANCH") == "1";
+var branch = alternate ? "BROWSER-TEST-B" : "BROWSER-TEST";
+var port = alternate ? 17445 : 17443;
 const string SecondEmployee = "TEST-EMPLOYEE-B";
 const string SecondPin = "000001";
 const string Employee = "TEST-EMPLOYEE";
@@ -48,7 +50,7 @@ try
                   (branch_id,master_data_version,sellable_item_id,item_kind,display_name,resolved_price,central_active,branch_catalog_enabled,production_station_id)
                   VALUES ($branch,'TEST','ITEM-1','Item','Browser test item','100',1,1,'TEST-KITCHEN');
                 """;
-            command.Parameters.AddWithValue("$branch", Branch);
+            command.Parameters.AddWithValue("$branch", branch);
             command.Parameters.AddWithValue("$employee", Employee);
             command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
             command.Parameters.AddWithValue("$hash", new string('A', 64));
@@ -56,7 +58,7 @@ try
         }
 
         await new SqliteTableRegistryStore(database).ApplyAsync(
-            new TableRegistry(1, Branch, "TEST",
+            new TableRegistry(1, branch, "TEST",
                 [new("A01", "Browser table A01", "Test zone", 1), new("A02", "Browser table A02", "Test zone", 2)]),
             CancellationToken.None);
     }
@@ -70,7 +72,7 @@ try
 
     using var certificate = X509CertificateLoader.LoadPkcs12(generatedCertificate.Export(X509ContentType.Pkcs12), null);
 
-    var origin = "https://127.0.0.1:17443";
+    var origin = $"https://127.0.0.1:{port}";
     var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     {
         WebRootPath = Path.GetFullPath(args[0]),
@@ -78,7 +80,7 @@ try
     });
     builder.Configuration.Sources.Clear();
     builder.Configuration.AddInMemoryCollection();
-    builder.WebHost.ConfigureKestrel(server => server.Listen(IPAddress.Loopback, 17443, listen => listen.UseHttps(certificate)));
+    builder.WebHost.ConfigureKestrel(server => server.Listen(IPAddress.Loopback, port, listen => listen.UseHttps(certificate)));
     foreach (var section in new[] { "BranchDeviceAuthentication", "BranchEmployeeSessions", "BranchPairing", "BranchOrdering" })
     {
         builder.Configuration[section + ":Enabled"] = "true";
@@ -87,7 +89,7 @@ try
     builder.Configuration["BranchEmployeeSessions:Lifetime"] = "00:30:00";
     builder.Configuration["BranchPairing:ServiceOrigin"] = origin;
     builder.Configuration["BranchOrdering:EnableCashSaleTest"] = "true";
-    builder.Services.AddSingleton<IBranchEmployeePinValidator>(new FixturePinValidator(Branch, Employee, pin, SecondEmployee, SecondPin));
+    builder.Services.AddSingleton<IBranchEmployeePinValidator>(new FixturePinValidator(branch, Employee, pin, SecondEmployee, SecondPin));
     builder.Services.AddBranchDeviceAuthentication(builder.Configuration);
     builder.Services.AddBranchEmployeeSessions(builder.Configuration);
     builder.Services.AddBranchPairing(builder.Configuration);
@@ -97,7 +99,7 @@ try
         const string delivery = "BranchCloudOutboxDelivery:";
         builder.Configuration[delivery + "Enabled"] = "true";
         builder.Configuration[delivery + "DatabasePath"] = database;
-        builder.Configuration[delivery + "BranchId"] = Branch;
+        builder.Configuration[delivery + "BranchId"] = branch;
         builder.Configuration[delivery + "ServiceOrigin"] = CentralFixture.Origin;
         builder.Configuration[delivery + "DeliveryPath"] = "/api/v1/branch-events";
         builder.Configuration[delivery + "RetryDelay"] = "00:00:01";
@@ -123,13 +125,14 @@ try
             await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = database, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
             await connection.OpenAsync(context.RequestAborted);
             await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT device_id FROM branch_devices WHERE branch_id = 'BROWSER-TEST' ORDER BY device_id;";
+            command.CommandText = "SELECT device_id FROM branch_devices WHERE branch_id = $branch ORDER BY device_id;";
+            command.Parameters.AddWithValue("$branch", branch);
             await using var devices = await command.ExecuteReaderAsync(context.RequestAborted);
             var index = 0;
             while (await devices.ReadAsync(context.RequestAborted))
             {
                 var entry = $"BranchDeviceAuthentication:ProvisionedRoles:{index++}:";
-                builder.Configuration[entry + "BranchId"] = Branch;
+                builder.Configuration[entry + "BranchId"] = branch;
                 builder.Configuration[entry + "DeviceId"] = devices.GetString(0);
                 builder.Configuration[entry + "Role"] = "PcPos";
             }
@@ -141,12 +144,12 @@ try
     app.MapBranchEmployeeSessionLoginEndpointIfEnabled(builder.Configuration);
     app.MapBranchOrderingIfEnabled(builder.Configuration);
 
-    var pairing = await app.Services.GetRequiredService<BranchPairingTokenIssuanceService>().IssueAsync(Branch, Employee);
-    var secondPairing = await app.Services.GetRequiredService<BranchPairingTokenIssuanceService>().IssueAsync(Branch, "TEST-PAIRING-OPERATOR");
+    var pairing = await app.Services.GetRequiredService<BranchPairingTokenIssuanceService>().IssueAsync(branch, Employee);
+    var secondPairing = await app.Services.GetRequiredService<BranchPairingTokenIssuanceService>().IssueAsync(branch, "TEST-PAIRING-OPERATOR");
     await app.StartAsync();
     Console.WriteLine($"Fixture PIN: {pin}");
-    Console.WriteLine($"Fixture pairing: {origin}/#pair?v=1&branchId={Branch}&pairingId={pairing.PairingId}&token={pairing.Token}");
-    Console.WriteLine($"Fixture second pairing: {origin}/#pair?v=1&branchId={Branch}&pairingId={secondPairing.PairingId}&token={secondPairing.Token}");
+    Console.WriteLine($"Fixture pairing: {origin}/#pair?v=1&branchId={branch}&pairingId={pairing.PairingId}&token={pairing.Token}");
+    Console.WriteLine($"Fixture second pairing: {origin}/#pair?v=1&branchId={branch}&pairingId={secondPairing.PairingId}&token={secondPairing.Token}");
     await app.WaitForShutdownAsync();
 }
 finally
