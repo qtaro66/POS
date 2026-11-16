@@ -420,6 +420,9 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       return request('/test-cash-cycle/receipts/' + encodeURIComponent(receiptNumber) + '/simulate',
         'POST', JSON.stringify({ fail }))
     },
+    async testCashShiftStatus(shiftId: string | null) {
+      return request('/test-cash-cycle/status' + (shiftId ? '?shiftId=' + encodeURIComponent(shiftId) : ''), 'GET')
+    },
     async testCashCycle(operation: 'open' | 'close', shiftId: string, cash: number, pin: string) {
       return request('/test-cash-cycle', 'POST', JSON.stringify({operation, shiftId, cash, pin}))
     },

@@ -34,6 +34,19 @@ public static class TestCashCycleEndpoints
         return text is null ? TypedResults.NotFound() : TypedResults.Ok(new { Status = "Simulated", Text = text });
     }
 
+    public static async Task<IResult> StatusAsync(ClaimsPrincipal principal, string? shiftId,
+        BranchOrderingRuntime runtime, CancellationToken token)
+    {
+        if (!AuthenticatedBranchRequestIdentityResolver.TryResolve(principal, out var identity) ||
+            !AuthenticatedBranchRequestIdentityResolver.TryGetProvisionedDeviceRole(principal, out var role) || role != "PcPos")
+        {
+            return TypedResults.StatusCode(403);
+        }
+
+        if (shiftId is not null && !Guid.TryParseExact(shiftId, "D", out _)) { return TypedResults.BadRequest(); }
+        return TypedResults.Ok(await runtime.TableCommands.ReadTestCashShiftStatusAsync(identity.BranchId, shiftId, token));
+    }
+
     public sealed record Request(string Operation, string ShiftId, decimal Cash, string Pin);
 
     public static async Task<IResult> HandleAsync(ClaimsPrincipal principal, Request request,

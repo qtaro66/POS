@@ -200,3 +200,8 @@ lost open response across restart, and lost close response followed by a sale
 and close under a second employee. Contention uses authenticated requests
 from two paired Edge contexts. Loss is injected after Branch commits.
 The second command runs the nine existing cross-shift outcome pairs.
+
+The PC POS test shift form adds a read-only status check. ShiftTransitions
+exercises seven UI cases in addition to the five transition checks: lost and
+unsent open and close, a second terminal with an older shift, employee switch,
+and a failed status read followed by a successful read without a mutation.

@@ -212,14 +212,71 @@ async function run() {
       await page.getByLabel('PIN', { exact: true }).fill(pin)
       await button(page, 'เข้าสู่ระบบ').click()
       await button(page, 'โต๊ะ').click()
+      let recoveryWrites = 0
+      const countWrites = request => {
+        if (request.method() === 'POST' && request.url() === url) recoveryWrites++
+      }
+      page.on('request', countWrites)
+      const statusPattern = '**/test-cash-cycle/status*'
+      await page.route(statusPattern, route => route.abort())
+      await button(page, 'ตรวจสอบสถานะกะ').click()
+      await page.getByText('ยังตรวจสอบสถานะกะไม่ได้', { exact: true }).waitFor()
+      await page.unroute(statusPattern)
+      await button(page, 'ตรวจสอบสถานะกะ').click()
+      await page.getByText('มีกะเปิดอยู่ · เงินตั้งต้น 500', { exact: true }).waitFor()
+      assert.equal(records('test_cash_open_history').filter(row => row.shift_id === lostOpen).length, 1)
+      page.off('request', countWrites)
+      assert.equal(recoveryWrites, 0, 'Status recovery must not send a shift mutation')
+      console.log('UI recovered lost open and status read outage: PASS')
+
+      await observer.reload()
+      await observer.getByLabel('PIN', { exact: true }).fill(secondPin)
+      await button(observer, 'เข้าสู่ระบบ').click()
+      await button(observer, 'โต๊ะ').click()
+      await button(observer, 'ตรวจสอบสถานะกะ').click()
+      await observer.getByText('มีกะเปิดอยู่ · เงินตั้งต้น 500', { exact: true }).waitFor()
+      assert.equal((await send(second, secondHeaders, 'close', successor, 999, secondPin)).status(), 409)
+      assert.deepEqual(records('cash_sale_open_shifts').map(row => row.shift_id), [lostOpen])
+      console.log('Second terminal status and stale close isolation: PASS')
+
       assert.equal(await dropTransition('close', 490), lostOpen)
       await restart()
       assert.deepEqual(records('cash_sale_open_shifts'), [])
       const closed = records('test_cash_close_history').filter(row => row.shift_id === lostOpen)
       assert.equal(closed.length, 1)
       assert.equal(JSON.parse(closed[0].result_json).Difference, -10)
-      const finalShift = crypto.randomUUID()
-      assert.equal((await send(second, secondHeaders, 'open', finalShift, 300, secondPin)).status(), 200)
+      await page.reload()
+      await page.getByLabel('PIN', { exact: true }).fill(secondPin)
+      const switched = page.waitForResponse(reply => reply.url().endsWith('/employee-sessions'))
+      await button(page, 'เข้าสู่ระบบ').click()
+      assert.equal((await (await switched).json()).employeeId, 'TEST-EMPLOYEE-B')
+      await button(page, 'โต๊ะ').click()
+      await button(page, 'ตรวจสอบสถานะกะ').click()
+      await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 500 · ยอดนับ 490 · ผลต่าง -10 · ไม่มีกะเปิดอยู่', { exact: true }).waitFor()
+      assert.equal(records('test_cash_close_history').filter(row => row.shift_id === lostOpen).length, 1)
+      console.log('UI recovered lost close after reload and employee switch: PASS')
+
+      async function blockTransition(operation, amount) {
+        const pattern = '**/test-cash-cycle'
+        await page.route(pattern, route => route.abort())
+        try {
+          await setShift(operation, amount, secondPin)
+          await page.getByText('Branch ไม่ยืนยันผล', { exact: true }).waitFor()
+        } finally {
+          await page.unroute(pattern)
+        }
+      }
+      await blockTransition('open', 300)
+      await button(page, 'ตรวจสอบสถานะกะ').click()
+      await page.getByText('ไม่มีกะเปิดอยู่', { exact: true }).waitFor()
+      const opened = page.waitForResponse(reply => reply.url().endsWith('/test-cash-cycle'))
+      await setShift('open', 300, secondPin)
+      const openReply = await opened
+      assert.equal(openReply.status(), 200)
+      const finalShift = openReply.request().postDataJSON().shiftId
+      assert.equal(records('test_cash_open_history').filter(row => row.shift_id === finalShift).length, 1)
+      console.log('UI retried unsent open: PASS')
+
       await observer.reload()
       await observer.getByLabel('PIN', { exact: true }).fill(secondPin)
       await button(observer, 'เข้าสู่ระบบ').click()
@@ -241,12 +298,15 @@ async function run() {
       assert.equal(sale.shiftId, finalShift)
       assert.equal(sale.employeeId, 'TEST-EMPLOYEE-B')
       assert.equal(sale.changeAmount, 20)
-      const finalClose = await send(second, secondHeaders, 'close', finalShift, 400, secondPin)
-      assert.equal(finalClose.status(), 200)
-      const reconciled = await finalClose.json()
-      assert.equal(reconciled.expectedCash, 400)
-      assert.equal(reconciled.difference, 0)
+      await blockTransition('close', 400)
+      await button(page, 'ตรวจสอบสถานะกะ').click()
+      await page.getByText('มีกะเปิดอยู่ · เงินตั้งต้น 300', { exact: true }).waitFor()
+      const settled = page.waitForResponse(reply => reply.url().endsWith('/test-cash-cycle'))
+      await setShift('close', 400, secondPin)
+      assert.equal((await settled).status(), 200)
+      await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ 400 · ผลต่าง 0', { exact: true }).waitFor()
       assert.deepEqual(records('cash_sale_open_shifts'), [])
+      console.log('UI retried unsent close: PASS')
       console.log('Lost closing response and next shift: PASS')
       return
     }

@@ -2,6 +2,10 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 public sealed partial class SqliteTableSessionCommandStore
 {
+    public Task<TestCashShiftStatus> ReadTestCashShiftStatusAsync(string branchId, string? requestedShiftId, CancellationToken token) =>
+        ExecuteAtomicallyAsync((transaction, cancellation) =>
+            ((SqliteTableSessionCommandTransaction)transaction).ReadTestCashShiftStatusAsync(branchId, requestedShiftId, cancellation), token);
+
     public Task<TestReceiptSimulation?> SimulateReceiptAsync(string branchId, string receiptNumber, bool fail, CancellationToken token) =>
         ExecuteAtomicallyAsync((transaction, cancellation) =>
             ((SqliteTableSessionCommandTransaction)transaction).SimulateReceiptAsync(branchId, receiptNumber, fail, cancellation), token);
@@ -24,12 +28,49 @@ public sealed partial class SqliteTableSessionCommandStore
         }, token);
 }
 
+public sealed record TestCashShiftStatus(string? ActiveShiftId, decimal? OpeningCash, TestCashClose? Close);
 public sealed record TestReceiptSimulation(string Status, string? Text);
 
 public sealed record TestCashClose(decimal ExpectedCash, decimal CountedCash, decimal Difference, string? EmployeeId = null, DateTimeOffset? ClosedAt = null);
 
 internal sealed partial class SqliteTableSessionCommandTransaction
 {
+    internal async Task<TestCashShiftStatus> ReadTestCashShiftStatusAsync(string branchId, string? requestedShiftId, CancellationToken token)
+    {
+        using var active = CreateCommand("SELECT shift_id FROM cash_sale_open_shifts WHERE branch_id = $branch;");
+        active.Parameters.AddWithValue("$branch", branchId);
+        var activeShiftId = await active.ExecuteScalarAsync(token) as string;
+        decimal? openingCash = null;
+        if (activeShiftId is not null)
+        {
+            using var opening = CreateCommand("SELECT opening_cash FROM test_cash_open_history WHERE branch_id = $branch AND shift_id = $shift;");
+            opening.Parameters.AddWithValue("$branch", branchId);
+            opening.Parameters.AddWithValue("$shift", activeShiftId);
+            if (await opening.ExecuteScalarAsync(token) is string value)
+            {
+                openingCash = decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        TestCashClose? close = null;
+        if (requestedShiftId is not null)
+        {
+            using var exists = CreateCommand("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'test_cash_close_history';");
+            if (await exists.ExecuteScalarAsync(token) is not null)
+            {
+                using var history = CreateCommand("SELECT result_json FROM test_cash_close_history WHERE branch_id = $branch AND shift_id = $shift;");
+                history.Parameters.AddWithValue("$branch", branchId);
+                history.Parameters.AddWithValue("$shift", requestedShiftId);
+                if (await history.ExecuteScalarAsync(token) is string json)
+                {
+                    close = System.Text.Json.JsonSerializer.Deserialize<TestCashClose>(json);
+                }
+            }
+        }
+
+        return new(activeShiftId, openingCash, close);
+    }
+
     internal async Task<TestReceiptSimulation?> SimulateReceiptAsync(string branchId, string receiptNumber, bool fail, CancellationToken token)
     {
         using var command = CreateCommand("""
