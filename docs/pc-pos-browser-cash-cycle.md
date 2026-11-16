@@ -160,3 +160,7 @@ pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes ShiftHandoff -
 ShiftHandoff also verifies that an invalid PIN cannot close the first shift,
 a repeated close with a changed count returns a conflict, and the next employee
 can open a shift after Branch restarts with the same database.
+
+The cross-shift cases read the disposable Branch database in read-only mode
+to compare both persisted close records (cash, difference, employee and time)
+with the API responses and check that no open shift remains.
