@@ -105,11 +105,11 @@ async function run() {
       devices.push({ page, context, device, session })
     }
     const [{ page, context, device, session }, { page: observer }] = devices
-    const setShift = async (operation, amount, employeePin = pin) => {
-      await page.locator('select[name=operation]').selectOption(operation)
-      await page.getByLabel('เงินตั้งต้นหรือยอดนับจริง').fill(String(amount))
-      await page.getByLabel('ยืนยัน PIN').fill(employeePin)
-      await button(page, 'บันทึกกะทดสอบ').click()
+    const setShift = async (operation, amount, employeePin = pin, tab = page) => {
+      await tab.locator('select[name=operation]').selectOption(operation)
+      await tab.getByLabel('เงินตั้งต้นหรือยอดนับจริง').fill(String(amount))
+      await tab.getByLabel('ยืนยัน PIN').fill(employeePin)
+      await button(tab, 'บันทึกกะทดสอบ').click()
     }
     if (process.argv[4] === 'ShiftTransitions') {
       const url = origin + '/api/v1/ordering/test-cash-cycle'
@@ -200,6 +200,12 @@ async function run() {
         }
       }
 
+      const statusUrl = url + '/status'
+      const invalidSession = await first.context.request.get(statusUrl, {
+        headers: { ...firstHeaders, 'X-POS-Employee-Session': 'invalid-session' },
+      })
+      assert.equal(invalidSession.status(), 401)
+      console.log('Invalid employee session cannot read shift status: PASS')
       const lostOpen = await dropTransition('open', 500)
       await restart()
       assert.deepEqual(records('cash_sale_open_shifts').map(row => row.shift_id), [lostOpen])
@@ -307,6 +313,16 @@ async function run() {
       await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 400 · ยอดนับ 400 · ผลต่าง 0', { exact: true }).waitFor()
       assert.deepEqual(records('cash_sale_open_shifts'), [])
       console.log('UI retried unsent close: PASS')
+
+      await button(observer, 'ตรวจสอบสถานะกะ').click()
+      await observer.getByText(/ไม่มีกะเปิดอยู่$/).waitFor()
+      await setShift('open', 250, secondPin)
+      await page.getByText('เปิดกะทดสอบแล้ว', { exact: true }).waitFor()
+      await button(observer, 'ตรวจสอบสถานะกะ').click()
+      await observer.getByText('มีกะเปิดอยู่ · เงินตั้งต้น 250', { exact: true }).waitFor()
+      await setShift('close', 250, secondPin, observer)
+      await observer.getByText('ปิดกะแล้ว · ยอดที่ควรมี 250 · ยอดนับ 250 · ผลต่าง 0', { exact: true }).waitFor()
+      console.log('Second terminal discovers and closes the active shift: PASS')
       console.log('Lost closing response and next shift: PASS')
       return
     }

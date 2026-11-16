@@ -205,3 +205,8 @@ The PC POS test shift form adds a read-only status check. ShiftTransitions
 exercises seven UI cases in addition to the five transition checks: lost and
 unsent open and close, a second terminal with an older shift, employee switch,
 and a failed status read followed by a successful read without a mutation.
+
+The shift form scopes its remembered shift by service origin and Branch ID.
+A status read blocks further shift actions until it completes. The transition
+runner also checks status with an invalid session and verifies a second
+terminal can discover and close an active shift.
