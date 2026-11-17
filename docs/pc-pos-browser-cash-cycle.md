@@ -121,6 +121,11 @@ runs the full thirty-case suite.
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes EmployeeIsolationUnsent -Scenarios Short
 ```
 
+The default run includes 32 cases: seven recovery modes across three cash
+scenarios, nine shift-handoff combinations, one shift-transition case, and one
+two-Branch receipt-isolation case. ShiftTransitions and BranchIsolation use
+fixed fixture amounts and run once when the scenario filter includes Balanced.
+
 Use `-ListCases` to preview the selected mode and shift combinations without
 building or launching the fixtures. The same filters apply to the preview
 and the actual run.
