@@ -251,3 +251,26 @@ the cases. Case listing does not write a report.
 ```powershell
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -ContinueOnFailure -ReportPath (Join-Path ([IO.Path]::GetTempPath()) ("edge-cash-" + [guid]::NewGuid() + ".json"))
 ```
+
+The JSON also records the starting Git commit, whether the worktree was clean
+before building, UTC start and update times, and whether the runner was set to
+continue after a failure. PlannedCases is the ordered selection. Cases is the
+completed prefix of that selection. Compare the two arrays to identify cases
+left to run when a report is incomplete.
+
+Use the prior JSON to select failed and unattempted cases. Filters still apply,
+and the runner writes any new evidence to a separate file. These cases are
+fresh runs against the current checkout, with independent fixtures.
+
+```powershell
+pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -RerunFromReport previous.json -ReportPath retry.json
+```
+
+### Cash-cycle requirements coverage
+
+| Requirement area | Edge evidence | Remaining product acceptance |
+|---|---|---|
+| D04 PC POS tables, orders and recovery | Open registered tables, submit orders, handle lost or unsent cash requests, and recover across reloads and Branch restarts | Verify the production workflow with a deployed Branch and representative master data |
+| D04.5 cash and change | Exercise single-tender test settlement, exact and excessive tender, and independent shift totals | Verify the production payment flow, including split tender, rounding and the change overlay |
+| D04.11.5 store and shift | Exercise test shift transitions, concurrent commands and reconciliation | Verify production store and shift controls, optional drawer count and close reports |
+| Receipts and Central reconnect | Exercise simulated receipt stability, cross-Branch lookup and idempotent delivery to fixture Central | Verify deployed synchronization and receipt issuance. Physical printer and drawer acceptance remains deferred |
