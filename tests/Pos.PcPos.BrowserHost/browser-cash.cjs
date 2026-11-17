@@ -135,17 +135,38 @@ async function run() {
         const sale = await response.json()
         assert.equal(sale.shiftId, shiftId)
         assert.equal(sale.changeAmount, change)
+        assert.ok(sale.receiptNumber)
+        const requestHeaders = await response.request().allHeaders()
+        return {
+          number: sale.receiptNumber,
+          headers: {
+            Authorization: requestHeaders.authorization,
+            'X-POS-Employee-Session': requestHeaders['x-pos-employee-session'],
+          },
+        }
       }
 
       const alternateOrigin = 'https://127.0.0.1:17445'
       await enter(origin, pin, links[0])
       const firstShift = await transition('open', 300, pin)
-      await sell(firstShift, 120, 20)
+      const firstReceipt = await sell(firstShift, 120, 20)
       await enter(alternateOrigin, alternate.pin, alternate.links[0])
       await status('ไม่มีกะเปิดอยู่')
       const secondShift = await transition('open', 700, alternate.pin)
       assert.notEqual(secondShift, firstShift)
-      await sell(secondShift, 150, 50)
+      const secondReceipt = await sell(secondShift, 150, 50)
+      assert.notEqual(firstReceipt.number, secondReceipt.number)
+      for (const [service, own, foreign, tendered] of [
+        [origin, firstReceipt, secondReceipt, /120\.00/],
+        [alternateOrigin, secondReceipt, firstReceipt, /150\.00/],
+      ]) {
+        const receiptBase = service + '/api/v1/ordering/test-cash-cycle/receipts/'
+        const ownResponse = await context.request.get(receiptBase + encodeURIComponent(own.number), { headers: own.headers })
+        assert.equal(ownResponse.status(), 200)
+        assert.match((await ownResponse.json()).text, tendered)
+        const foreignResponse = await context.request.get(receiptBase + encodeURIComponent(foreign.number), { headers: own.headers })
+        assert.equal(foreignResponse.status(), 404)
+      }
       assert.equal(await transition('close', 790, alternate.pin), secondShift)
       await page.getByText('ปิดกะแล้ว · ยอดที่ควรมี 800 · ยอดนับ 790 · ผลต่าง -10', { exact: true }).waitFor()
       await enter(origin, pin)
