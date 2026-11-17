@@ -11,7 +11,9 @@ param(
     [switch]$ListCases,
     [switch]$ContinueOnFailure,
     [ValidateNotNullOrEmpty()]
-    [string]$ReportPath
+    [string]$ReportPath,
+    [ValidateNotNullOrEmpty()]
+    [string]$RerunFromReport
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,6 +42,28 @@ $cases = foreach ($requestedMode in $Modes) {
             [pscustomobject]@{ Mode = $mode; Scenario = $scenario; NextShiftScenario = $null }
         }
     }
+}
+if ($RerunFromReport) {
+    $previous = Get-Content -LiteralPath $RerunFromReport -Raw | ConvertFrom-Json
+    if (-not $previous.PlannedCases -or $previous.Attempted -ne @($previous.Cases).Count -or
+        $previous.Selected -ne @($previous.PlannedCases).Count -or $previous.Attempted -gt $previous.Selected) {
+        throw 'Invalid Edge report case plan or results.'
+    }
+    $requested = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    for ($index = 0; $index -lt $previous.PlannedCases.Count; $index++) {
+        $planned = $previous.PlannedCases[$index]
+        $key = "$($planned.Mode)/$($planned.Scenario)/$($planned.NextShiftScenario)"
+        if ($index -lt $previous.Attempted) {
+            $completed = $previous.Cases[$index]
+            if ("$($completed.Mode)/$($completed.Scenario)/$($completed.NextShiftScenario)" -ne $key -or
+                $null -eq $completed.ExitCode) {
+                throw 'Invalid Edge report result order or exit code.'
+            }
+            if ($completed.ExitCode -eq 0) { continue }
+        }
+        [void]$requested.Add($key)
+    }
+    $cases = @($cases | Where-Object { $requested.Contains("$($_.Mode)/$($_.Scenario)/$($_.NextShiftScenario)") })
 }
 if (-not $cases) {
     throw 'No Edge cash recovery cases match the selected modes and scenarios.'
