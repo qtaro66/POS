@@ -46,3 +46,52 @@ Keep fixes, focused tests and the deployed acceptance record together in the
 same implementation follow-up. Physical printer and drawer tests remain
 deferred. References include D04.5, D04.11, D04.11.5, D12.9 and the D04 PC POS
 screen requirements in [POS Requirements v0.2](requirements/POS-Requirements-v0.2.md).
+
+## Windows installation, upgrade and recovery
+
+Run the Windows checks and the cash/day-close scenario as one acceptance
+package. Use disposable Windows environments and a test Central. Use the
+release installation, migration and backup procedures for the build under
+test. Record a blocked row if a required artifact or procedure is unavailable.
+
+1. **Clean install before the cash scenario.** Record the artifact checksum and
+   application, API and schema versions. Verify the Branch Windows Service starts
+   after reboot without opening Edge, readiness is reachable over the configured
+   HTTPS origin, and the paired POS can sign in and load the test table registry
+   and menu. Capture a baseline before creating transactions.
+2. **Crash and restart during the cash scenario.** After the second-shift sale
+   is acknowledged and Central is disconnected, record the active shift, sale,
+   receipt and pending event IDs. Terminate the test Branch process and verify
+   recovery with RPO 0 and RTO at most 5 minutes. Repeat with a Windows restart
+   and verify RPO 0 and RTO at most 15 minutes. Measure from disruption until the
+   Branch can accept another business command. Replay the acknowledged request
+   using the original identity and request ID, and verify a single settlement
+   and one corresponding outbox record. Continue the close-store and reconnect
+   steps after the restart checks.
+3. **Upgrade and rollback.** Preserve a pre-upgrade test backup. Upgrade a copy
+   of the populated Branch using a supported previous build as the source.
+   Compare Business Date, store/shift state, accepted orders, applied cash,
+   receipts, audits and outbox IDs before and after. Verify the release rollback
+   procedure separately on a disposable copy, including a compatible database
+   restore if required. Record versions, elapsed time, and the evidence for
+   preserving the authorized recovery point.
+4. **Restore on another Windows instance.** Restore a supported recovery bundle
+   to an isolated test Branch with cloud delivery disabled until the ledger
+   comparison is complete. Compare orders and totals, payments and cancellations,
+   table sessions, deduplication records, audit history, print and cloud outboxes,
+   and any stock effects enabled in the test configuration. Reconnect only to
+   test Central and verify replay neither loses events nor duplicates them.
+   Measure RPO from the last recoverable accepted transaction and RTO from the
+   outage to restored service. Whole-host loss targets are RPO at most 5 minutes
+   online or 15 minutes offline and RTO at most 4 hours, subject to the backup
+   media and replacement-host prerequisites in D12.8.
+
+Use a single acceptance record with the build and environment versions, test
+step, PASS/FAIL/BLOCKED, expected and observed results, elapsed recovery time,
+and sanitized evidence references. Preserve any release or recovery blockers
+alongside the cash-cycle results. A virtual Windows restore exercises software
+recovery. Verification of physical backup media, replacement hardware, and
+printer or drawer devices requires the corresponding equipment.
+
+See [D12.8 backup and recovery](requirements/POS-Requirements-v0.2/017-d12-8-backup-restore-rpo-rto.md)
+and the Windows deployment requirements in [POS Requirements v0.2](requirements/POS-Requirements-v0.2.md).
