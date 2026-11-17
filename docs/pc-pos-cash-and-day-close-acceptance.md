@@ -138,3 +138,28 @@ fallback if used, reconciliation, issues, fixes and retest evidence. Expand
 beyond one Branch only after the pilot is reconciled and the owners approve the
 next rollout. Use PASS, FAIL, or BLOCKED for each stage and link sanitized
 evidence.
+
+### Pilot readiness evidence
+
+At main commit f05271b (PR #403), automated Edge fixture checks passed 3/3:
+ShiftHandoff (Balanced to Short), ShiftTransitions, and BranchIsolation.
+These cases exercised shift reconciliation, recovery after a Branch process
+restart, receipt separation, and fixture Central reconnect.
+
+From the repository root in PowerShell, reproduce the check with a new report:
+
+```powershell
+$report = Join-Path ([IO.Path]::GetTempPath()) ("pc-pos-pilot-" + [guid]::NewGuid() + ".json")
+& ./tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes ShiftHandoff,ShiftTransitions,BranchIsolation -Scenarios Balanced -NextShiftScenarios Short -ReportPath $report
+```
+
+Deployed pilot status is BLOCKED. The checkout exposes shift and simulated
+receipt operations through the enabled test cash-cycle routes. The production
+OpenStore and CloseStore entry points and an installable Windows release were
+not found in this checkout. No deployed staff rehearsal, physical device
+validation, or live shift was run.
+
+The next implementation dependency is the production store and shift
+vertical slice from D04.11. Start with backed, auditable operations and the
+PC POS store-and-shift screen, then verify a single explicit store close
+across two shifts before running the deployed acceptance plan.
