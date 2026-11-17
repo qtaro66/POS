@@ -239,3 +239,15 @@ node tests/Pos.PcPos.BrowserHost/browser-cash.cjs apps/pos-web/dist Balanced Bra
 The fixture uses two loopback origins with separate databases. It pairs the same tab with each Branch, sells on the same table identifier in both, and verifies separate shift IDs, cash change, and close totals. Returning to the first origin restores its pairing and finds its own open shift.
 
 The receipt check reads each sale receipt using the corresponding Branch session and confirms the other Branch returns HTTP 404 for that number. The shift component test uses one origin and separate Branch storage keys to verify that a delayed close-status response cannot change the selected Branch display or stored shift.
+
+### Save Edge recovery evidence
+
+Use an unused JSON output path. The runner records the selected, attempted,
+passed, and failed counts plus each attempted case's filters, exit code, and
+duration. Add the optional continuation flag to collect failures in one run.
+Any failed case still causes a nonzero exit. Build errors stop before running
+the cases. Case listing does not write a report.
+
+```powershell
+pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -ContinueOnFailure -ReportPath (Join-Path ([IO.Path]::GetTempPath()) ("edge-cash-" + [guid]::NewGuid() + ".json"))
+```

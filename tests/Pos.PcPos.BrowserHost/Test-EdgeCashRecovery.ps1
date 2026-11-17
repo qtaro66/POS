@@ -8,7 +8,10 @@ param(
     [ValidateNotNullOrEmpty()]
     [ValidateSet('Balanced', 'Short', 'Over')]
     [string[]]$NextShiftScenarios = @('Balanced', 'Short', 'Over'),
-    [switch]$ListCases
+    [switch]$ListCases,
+    [switch]$ContinueOnFailure,
+    [ValidateNotNullOrEmpty()]
+    [string]$ReportPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,11 +49,16 @@ if ($ListCases) {
     return
 }
 
+$reportFile = if ($ReportPath) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ReportPath) }
+if ($reportFile -and (Test-Path -LiteralPath $reportFile)) {
+    throw "Edge report already exists: $reportFile"
+}
 $repo = Join-Path $PSScriptRoot '../..'
 Push-Location $repo
 try {
     npm run build --workspace apps/pos-web -- --mode browser-fixture
     dotnet build tests/Pos.PcPos.BrowserHost
+    $results = [System.Collections.Generic.List[object]]::new()
     $passed = 0
     foreach ($case in $cases) {
         $arguments = @('tests/Pos.PcPos.BrowserHost/browser-cash.cjs', 'apps/pos-web/dist', $case.Scenario, $case.Mode)
@@ -60,10 +68,42 @@ try {
             $label += " / $($case.NextShiftScenario)"
         }
         Write-Host "Edge cash recovery: $label"
-        node @arguments
-        $passed++
+        $elapsed = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            node @arguments
+            $exitCode = $LASTEXITCODE
+        } finally {
+            $PSNativeCommandUseErrorActionPreference = $true
+        }
+        if ($exitCode -eq 0) { $passed++ }
+        $results.Add([pscustomobject]@{
+            Mode = $case.Mode
+            Scenario = $case.Scenario
+            NextShiftScenario = $case.NextShiftScenario
+            ExitCode = $exitCode
+            Seconds = [Math]::Round($elapsed.Elapsed.TotalSeconds, 2)
+        })
+        if ($exitCode -ne 0 -and -not $ContinueOnFailure) { break }
+    }
+    if ($reportFile) {
+        $report = [pscustomobject]@{
+            Selected = $cases.Count
+            Attempted = $results.Count
+            Passed = $passed
+            Failed = $results.Count - $passed
+            Cases = $results.ToArray()
+        }
+        $stream = [IO.File]::Open($reportFile, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+        try {
+            $json = [Text.Encoding]::UTF8.GetBytes(($report | ConvertTo-Json -Depth 4) + [Environment]::NewLine)
+            $stream.Write($json)
+        } finally {
+            $stream.Dispose()
+        }
     }
     Write-Host "Edge cash recovery: $passed/$($cases.Count) passed"
+    if ($passed -ne $cases.Count) { exit 1 }
 } finally {
     Pop-Location
 }
