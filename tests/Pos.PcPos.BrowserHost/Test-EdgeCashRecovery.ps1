@@ -1,7 +1,7 @@
 param(
     [ValidateNotNullOrEmpty()]
-    [ValidateSet('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff')]
-    [string[]]$Modes = @('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff'),
+    [ValidateSet('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff', 'ShiftTransitions', 'BranchIsolation')]
+    [string[]]$Modes = @('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff', 'ShiftTransitions', 'BranchIsolation'),
     [ValidateNotNullOrEmpty()]
     [ValidateSet('Balanced', 'Short', 'Over')]
     [string[]]$Scenarios = @('Balanced', 'Short', 'Over'),
@@ -16,6 +16,12 @@ $PSNativeCommandUseErrorActionPreference = $true
 [System.Collections.Generic.HashSet[string]]$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $cases = foreach ($requestedMode in $Modes) {
     $mode = $MyInvocation.MyCommand.Parameters['Modes'].Attributes.ValidValues -eq $requestedMode | Select-Object -First 1
+    if ($mode -in 'ShiftTransitions', 'BranchIsolation') {
+        if ('Balanced' -in $Scenarios -and $seen.Add("$mode/Balanced")) {
+            [pscustomobject]@{ Mode = $mode; Scenario = 'Balanced'; NextShiftScenario = $null }
+        }
+        continue
+    }
     foreach ($requestedScenario in $Scenarios) {
         $scenario = $MyInvocation.MyCommand.Parameters['Scenarios'].Attributes.ValidValues -eq $requestedScenario | Select-Object -First 1
         if ($mode -eq 'ShiftHandoff') {
@@ -31,6 +37,9 @@ $cases = foreach ($requestedMode in $Modes) {
             [pscustomobject]@{ Mode = $mode; Scenario = $scenario; NextShiftScenario = $null }
         }
     }
+}
+if (-not $cases) {
+    throw 'No Edge cash recovery cases match the selected modes and scenarios.'
 }
 if ($ListCases) {
     $cases
