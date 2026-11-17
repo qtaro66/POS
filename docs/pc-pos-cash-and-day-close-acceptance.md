@@ -95,3 +95,46 @@ printer or drawer devices requires the corresponding equipment.
 
 See [D12.8 backup and recovery](requirements/POS-Requirements-v0.2/017-d12-8-backup-restore-rpo-rto.md)
 and the Windows deployment requirements in [POS Requirements v0.2](requirements/POS-Requirements-v0.2.md).
+
+## Single-Branch operational pilot
+
+### Staff rehearsal
+
+Use synthetic sales at one selected Branch. Assign an on-site lead, cashier,
+shift lead, and Central reconciliation owner. Give the staff the Windows
+acceptance sequence above and have them open the store, submit and settle orders,
+hand off a shift, and close the business day themselves. Include one Central
+disconnection and reconnect. Rehearse the fallback with synthetic transactions.
+Record which steps required assistance and resolve issues affecting the ability
+to sell, close, recover, or reconcile before moving to live sales.
+
+### Go/no-go and one live shift
+
+The on-site lead and reconciliation owner review the deployed acceptance
+results, staff rehearsal, recovery evidence, and the readiness of hardware
+required for the live shift. Until the required printer and drawer checks pass,
+limit the pilot to rehearsal. Agree on the cutover time and the legacy fallback
+process before opening the pilot shift.
+
+Record the Branch, Business Date, build versions, opening cash, and first
+receipt reference. Use PC POS as the register of record for the pilot shift.
+Monitor settlement, receipt issuance and Central delivery. At shift end,
+reconcile physical cash, effective cash payments, receipt references, and the
+Central ledger. Record any unresolved differences and pending deliveries.
+
+### Fallback and decision
+
+If the team cannot safely sell, issue a valid receipt, recover the service, or
+reconcile settlement, stop new PC POS sales and capture the last confirmed
+receipt and unresolved requests. Reconcile uncertain payments against their
+recorded status before re-entering anything in the legacy register. Resume new
+sales in the legacy register under the agreed fallback process. Preserve the
+pilot ledger and outbox for reconciliation, and record the cutover time and
+first legacy receipt. Confirm the combined shift totals and resolve exceptions
+before another live pilot.
+
+Keep one pilot record with the rehearsal, go/no-go decision, live shift result,
+fallback if used, reconciliation, issues, fixes and retest evidence. Expand
+beyond one Branch only after the pilot is reconciled and the owners approve the
+next rollout. Use PASS, FAIL, or BLOCKED for each stage and link sanitized
+evidence.
