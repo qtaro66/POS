@@ -244,7 +244,7 @@ The receipt check reads each sale receipt using the corresponding Branch session
 
 Use an unused JSON output path. The runner records the selected, attempted,
 passed, and failed counts plus each attempted case's filters, exit code, and
-duration. Add the optional continuation flag to collect failures in one run.
+duration. After the build, the runner writes a Running snapshot and replaces it after each case. If interrupted, the last snapshot contains the cases recorded so far. Completed means all selected cases ran, while StoppedOnFailure means the run ended early. Add the optional continuation flag to collect failures in one run.
 Any failed case still causes a nonzero exit. Build errors stop before running
 the cases. Case listing does not write a report.
 

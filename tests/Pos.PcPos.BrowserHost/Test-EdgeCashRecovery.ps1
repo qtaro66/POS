@@ -53,6 +53,24 @@ $reportFile = if ($ReportPath) { $ExecutionContext.SessionState.Path.GetUnresolv
 if ($reportFile -and (Test-Path -LiteralPath $reportFile)) {
     throw "Edge report already exists: $reportFile"
 }
+function Write-EdgeReport([string]$State, [switch]$Initial) {
+    $report = [pscustomobject]@{
+        State = $State
+        Selected = $cases.Count
+        Attempted = $results.Count
+        Passed = $passed
+        Failed = $results.Count - $passed
+        Cases = $results.ToArray()
+    }
+    $temp = "$reportFile.$([guid]::NewGuid()).tmp"
+    try {
+        [IO.File]::WriteAllText($temp, ($report | ConvertTo-Json -Depth 4) + [Environment]::NewLine)
+        [IO.File]::Move($temp, $reportFile, -not $Initial)
+    } finally {
+        [IO.File]::Delete($temp)
+    }
+}
+
 $repo = Join-Path $PSScriptRoot '../..'
 Push-Location $repo
 try {
@@ -60,6 +78,7 @@ try {
     dotnet build tests/Pos.PcPos.BrowserHost
     $results = [System.Collections.Generic.List[object]]::new()
     $passed = 0
+    if ($reportFile) { Write-EdgeReport 'Running' -Initial }
     foreach ($case in $cases) {
         $arguments = @('tests/Pos.PcPos.BrowserHost/browser-cash.cjs', 'apps/pos-web/dist', $case.Scenario, $case.Mode)
         $label = "$($case.Mode) / $($case.Scenario)"
@@ -84,23 +103,12 @@ try {
             ExitCode = $exitCode
             Seconds = [Math]::Round($elapsed.Elapsed.TotalSeconds, 2)
         })
-        if ($exitCode -ne 0 -and -not $ContinueOnFailure) { break }
-    }
-    if ($reportFile) {
-        $report = [pscustomobject]@{
-            Selected = $cases.Count
-            Attempted = $results.Count
-            Passed = $passed
-            Failed = $results.Count - $passed
-            Cases = $results.ToArray()
+        $stop = $exitCode -ne 0 -and -not $ContinueOnFailure
+        if ($reportFile) {
+            $reportState = if ($results.Count -eq $cases.Count) { 'Completed' } elseif ($stop) { 'StoppedOnFailure' } else { 'Running' }
+            Write-EdgeReport $reportState
         }
-        $stream = [IO.File]::Open($reportFile, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
-        try {
-            $json = [Text.Encoding]::UTF8.GetBytes(($report | ConvertTo-Json -Depth 4) + [Environment]::NewLine)
-            $stream.Write($json)
-        } finally {
-            $stream.Dispose()
-        }
+        if ($stop) { break }
     }
     Write-Host "Edge cash recovery: $passed/$($cases.Count) passed"
     if ($passed -ne $cases.Count) { exit 1 }
