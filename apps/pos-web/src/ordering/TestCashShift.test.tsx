@@ -42,3 +42,32 @@ it.each(['open', 'close'] as const)('serializes a delayed status read against %s
   expect(run).toHaveBeenCalledWith(operation, 'shift-a', 500, '123456')
   await screen.findByText(operation === 'open' ? 'เปิดกะทดสอบแล้ว' : /ปิดกะแล้ว/)
 })
+
+it('keeps the selected branch status when the previous branch responds late', async () => {
+  localStorage.setItem('branch-a', 'shift-a')
+  localStorage.setItem('branch-b', 'shift-b')
+  let finish!: (result: { status: number; body: unknown }) => void
+  const statusA = vi.fn(() => new Promise<{ status: number; body: unknown }>(resolve => { finish = resolve }))
+  const statusB = vi.fn(async () => ({
+    status: 200, body: { activeShiftId: 'shift-b', openingCash: 700, close: null },
+  }))
+  const run = vi.fn()
+  const view = render(<TestCashShift key="a" storageKey="branch-a" run={run} status={statusA} />)
+  fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบสถานะกะ' }))
+  expect(statusA).toHaveBeenCalledWith('shift-a')
+
+  view.rerender(<TestCashShift key="b" storageKey="branch-b" run={run} status={statusB} />)
+  fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบสถานะกะ' }))
+  await screen.findByText('มีกะเปิดอยู่ · เงินตั้งต้น 700')
+  expect(statusB).toHaveBeenCalledWith('shift-b')
+
+  await act(async () => finish({ status: 200, body: {
+    activeShiftId: null, openingCash: null,
+    close: { expectedCash: 400, countedCash: 390, difference: -10 },
+  } }))
+  expect(screen.getByText('มีกะเปิดอยู่ · เงินตั้งต้น 700')).toBeTruthy()
+  expect(screen.queryByText(/ปิดกะแล้ว/)).toBeNull()
+  expect(localStorage.getItem('branch-a')).toBeNull()
+  expect(localStorage.getItem('branch-b')).toBe('shift-b')
+  expect(run).not.toHaveBeenCalled()
+})
