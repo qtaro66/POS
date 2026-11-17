@@ -56,6 +56,12 @@ if ($reportFile -and (Test-Path -LiteralPath $reportFile)) {
 function Write-EdgeReport([string]$State, [switch]$Initial) {
     $report = [pscustomobject]@{
         State = $State
+        Commit = $commit
+        WorkingTreeClean = $workingTreeClean
+        StartedUtc = $startedUtc
+        UpdatedUtc = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'")
+        ContinueOnFailure = [bool]$ContinueOnFailure
+        PlannedCases = @($cases)
         Selected = $cases.Count
         Attempted = $results.Count
         Passed = $passed
@@ -74,6 +80,11 @@ function Write-EdgeReport([string]$State, [switch]$Initial) {
 $repo = Join-Path $PSScriptRoot '../..'
 Push-Location $repo
 try {
+    if ($reportFile) {
+        $commit = git rev-parse HEAD
+        $workingTreeClean = -not (git status --porcelain --untracked-files=all)
+        $startedUtc = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff'Z'")
+    }
     npm run build --workspace apps/pos-web -- --mode browser-fixture
     dotnet build tests/Pos.PcPos.BrowserHost
     $results = [System.Collections.Generic.List[object]]::new()

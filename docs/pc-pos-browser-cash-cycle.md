@@ -251,3 +251,9 @@ the cases. Case listing does not write a report.
 ```powershell
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -ContinueOnFailure -ReportPath (Join-Path ([IO.Path]::GetTempPath()) ("edge-cash-" + [guid]::NewGuid() + ".json"))
 ```
+
+The JSON also records the starting Git commit, whether the worktree was clean
+before building, UTC start and update times, and whether the runner was set to
+continue after a failure. PlannedCases is the ordered selection. Cases is the
+completed prefix of that selection. Compare the two arrays to identify cases
+left to run when a report is incomplete.
