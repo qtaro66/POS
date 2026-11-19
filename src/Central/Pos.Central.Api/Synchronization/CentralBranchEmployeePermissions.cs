@@ -39,7 +39,12 @@ public static class CentralBranchEmployeePermissions
                 return TypedResults.StatusCode(503);
             }
 
-            employees.Add(new(id, active, active && setSoldOut));
+            var openStore = false;
+            if (employee["OpenStore"] is string openingPermission && !bool.TryParse(openingPermission, out openStore))
+            {
+                return TypedResults.StatusCode(503);
+            }
+            employees.Add(new(id, active, active && setSoldOut, active && openStore));
         }
 
         return TypedResults.Ok(new BranchEmployeePermissionSnapshot(1, identity.BranchId, revision, employees));

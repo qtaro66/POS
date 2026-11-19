@@ -36,4 +36,33 @@ public sealed class CentralBranchEmployeePermissionsTests
         Assert.Equal(new BranchEmployeePermissionEntry("E1", false, false), Assert.Single(value.Employees));
         Assert.Equal("no-store", context.Response.Headers.CacheControl.ToString());
     }
+    [Theory]
+    [InlineData(null, 200, false)]
+    [InlineData("true", 200, true)]
+    [InlineData("false", 200, false)]
+    [InlineData("invalid", 503, false)]
+    public void Open_store_permission_is_optional_and_invalid_configuration_fails_closed(string? opening, int expected, bool permitted)
+    {
+        var prefix = CentralBranchEmployeePermissions.Source + ":0";
+        var values = new Dictionary<string, string?>
+        {
+            [prefix + ":BranchId"] = "B1",
+            [prefix + ":Revision"] = "1",
+            [prefix + ":Employees:0:EmployeeId"] = "E1",
+            [prefix + ":Employees:0:Active"] = "true",
+            [prefix + ":Employees:0:SetSoldOut"] = "false",
+        };
+        if (opening is not null) { values[prefix + ":Employees:0:OpenStore"] = opening; }
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(CentralCloudClaimTypes.BranchId, "B1")], CentralBranchCertificateAuthentication.SchemeName));
+        var result = CentralBranchEmployeePermissions.Read(context, principal, new ConfigurationBuilder().AddInMemoryCollection(values).Build());
+        Assert.Equal(expected, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        if (expected == 200)
+        {
+            var snapshot = Assert.IsType<BranchEmployeePermissionSnapshot>(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
+            Assert.Equal(permitted, Assert.Single(snapshot.Employees).OpenStore);
+        }
+    }
 }

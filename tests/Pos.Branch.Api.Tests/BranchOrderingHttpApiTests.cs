@@ -269,6 +269,11 @@ public sealed partial class BranchOrderingHttpApiTests
             var builder = WebApplication.CreateBuilder();
             builder.Configuration["BranchOrdering:UntrackedCancellationItems:BRANCH-01:0"] = "ITEM-1";
             builder.Services.AddSingleton(new BranchOrderingRuntime(Path, TimeProvider.System));
+            builder.Services.AddSingleton(new Pos.Application.Security.BranchEmployeePinAuthenticationService(new LifecyclePins()));
+            var permissions = new Pos.Branch.Api.Synchronization.BranchEmployeePermissionCache("BRANCH-01", System.IO.Path.Combine(_directory, "permissions.json"));
+            using var snapshot = new MemoryStream(Encoding.UTF8.GetBytes("""{"schemaVersion":1,"branchId":"BRANCH-01","revision":1,"employees":[{"employeeId":"EMP-2","active":true,"setSoldOut":false,"openStore":true}]}"""));
+            await permissions.ApplyAsync(snapshot, CancellationToken.None);
+            builder.Services.AddSingleton(permissions);
             _app = builder.Build();
             _app.MapBranchOrderingIfEnabled(_configuration);
         }
@@ -283,6 +288,7 @@ public sealed partial class BranchOrderingHttpApiTests
             context.Request.Scheme = https ? "https" : "http";
             context.Request.Path = BranchOrderingEndpoints.Prefix;
             context.Request.Method = body is null ? "GET" : "POST";
+            context.Request.RouteValues["storeSessionId"] = routeValue;
             context.Request.RouteValues["requestId"] = routeValue;
             context.Request.RouteValues["cancellationId"] = routeValue;
             context.Request.RouteValues["tableSessionId"] = routeValue;
