@@ -1,3 +1,4 @@
+import { parseStoreLifecycle, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
 import { parseSoldOutPage, soldOutAdjustmentOutcome, type SoldOutAdjustment, type SoldOutAdjustmentOutcome, type SoldOutPage } from './soldOutContracts.ts'
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
@@ -415,6 +416,31 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         const response = commandResponse(result.body, requestId, expected)
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async storeLifecycleCurrent(signal?: AbortSignal): Promise<QueryResult<StoreLifecycleState>> {
+      const result = await request('/store-lifecycle/current', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseStoreLifecycle(result.body) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async storeLifecycleCommand(command: StoreLifecycleCommand, pin: string) {
+      const result = await request('/store-lifecycle', 'POST', JSON.stringify({ ...command, pin }))
+      if ('status' in result && result.status === 200) {
+        try {
+          const state = parseStoreLifecycle(result.body)
+          if (state.storeSessionId !== command.storeSessionId) throw new Error('Different store response.')
+          if (command.operation === 'OpenStore' || command.operation === 'OpenShift') {
+            if (state.isClosed || state.activeShiftId !== command.shiftId) throw new Error('Different active shift.')
+          } else if (state.activeShiftId !== null || state.isClosed !== (command.operation === 'CloseStore') ||
+              state.closing?.shiftId !== command.shiftId || state.closing.closesStore !== (command.operation === 'CloseStore')) {
+            throw new Error('Different closing result.')
+          }
+          return { status: 200, body: state }
+        } catch { return { reason: 'protocol' as const } }
+      }
+      return result
     },
     async simulateReceipt(receiptNumber: string, fail: boolean) {
       return request('/test-cash-cycle/receipts/' + encodeURIComponent(receiptNumber) + '/simulate',

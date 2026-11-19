@@ -1,3 +1,4 @@
+import { StoreShiftWorkspace } from '../shell/StoreShiftWorkspace.tsx'
 import { OpenRegisteredTable } from './OpenRegisteredTable.tsx'
 import { CashReloadRecovery } from './CashReloadRecovery.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
@@ -105,6 +106,9 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       <Totals detail={detail} compact={inSession} /></>}
   </section>
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
+    storePage={!preview && client.scope && client.storeLifecycleCurrent && client.storeLifecycleCommand ?
+      <StoreShiftWorkspace key={JSON.stringify(client.scope)} storageKey={'pos-store-lifecycle:' + JSON.stringify(client.scope)}
+        port={{ storeLifecycleCurrent: client.storeLifecycleCurrent, storeLifecycleCommand: client.storeLifecycleCommand }} /> : undefined}
     sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
     homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh() }}
       openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} client={client} freshness={freshnessState} canAdjust={!preview} />}

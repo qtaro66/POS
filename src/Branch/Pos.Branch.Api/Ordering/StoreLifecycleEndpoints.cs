@@ -13,6 +13,19 @@ public static class StoreLifecycleEndpoints
 {
     public sealed record Request(string RequestId, string StoreSessionId, string ShiftId, string Operation, decimal? CashAmount, string Pin);
 
+    public static async Task<IResult> CurrentAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime,
+        HttpContext context, CancellationToken token)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (!TryIdentity(principal, out var identity)) { return TypedResults.StatusCode(403); }
+        try
+        {
+            var result = await runtime.TableCommands.ReadCurrentStoreLifecycleAsync(identity!.BranchId, token);
+            return result is null ? TypedResults.NotFound() : TypedResults.Ok(result);
+        }
+        catch (SqliteException) { return TypedResults.StatusCode(503); }
+    }
+
     public static async Task<IResult> StatusAsync(ClaimsPrincipal principal, string storeSessionId,
         BranchOrderingRuntime runtime, HttpContext context, CancellationToken token)
     {

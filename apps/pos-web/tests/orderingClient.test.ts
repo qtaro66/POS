@@ -500,3 +500,29 @@ for (const fault of ['session', 'receipt', 'duplicateLine', 'missingTotals', 'ne
     assert.deepEqual(await client.sessionDetail('SESSION-01'), { kind: 'unavailable', reason: 'protocol' })
   })
 }
+
+test('store lifecycle reads current Branch state and posts the original request with transient PIN', async () => {
+  const state = { storeSessionId: 'STORE-1', activeShiftId: 'SHIFT-1', isClosed: false, businessDate: '2026-11-19', openingCashAmount: 500, closing: null }
+  const command = { requestId: 'REQUEST-1', storeSessionId: 'STORE-1', shiftId: 'SHIFT-1', operation: 'OpenStore' as const, cashAmount: 500 }
+  const calls: string[] = []
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    calls.push(url)
+    assert.equal((init.headers as Record<string, string>).Authorization, 'Device ' + session.deviceCredential)
+    if (init.method === 'POST') assert.deepEqual(JSON.parse(init.body as string), { ...command, pin: '123456' })
+    return json(state)
+  } })
+  assert.deepEqual(await client.storeLifecycleCurrent(), { kind: 'ok', value: state })
+  assert.deepEqual(await client.storeLifecycleCommand(command, '123456'), { status: 200, body: state })
+  assert.equal(calls[0], session.serviceOrigin + '/api/v1/ordering/store-lifecycle/current')
+  assert.equal(calls[1], session.serviceOrigin + '/api/v1/ordering/store-lifecycle')
+})
+
+test('store lifecycle distinguishes an absent store and rejects malformed success', async () => {
+  let response = json({}, 404)
+  const client = createOrderingClient(session, { fetch: async () => response })
+  assert.deepEqual(await client.storeLifecycleCurrent(), { kind: 'notFound' })
+  response = json({ isClosed: false })
+  assert.deepEqual(await client.storeLifecycleCurrent(), { kind: 'unavailable', reason: 'protocol' })
+  response = json({ storeSessionId: 'OTHER', activeShiftId: 'SHIFT', isClosed: false, businessDate: '2026-11-19', openingCashAmount: 0, closing: null })
+  assert.deepEqual(await client.storeLifecycleCommand({ requestId: 'R', storeSessionId: 'EXPECTED', shiftId: 'SHIFT', operation: 'OpenStore', cashAmount: 0 }, '123456'), { reason: 'protocol' })
+})
