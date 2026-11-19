@@ -57,7 +57,10 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         {
             if (await reader.ReadAsync(token))
             {
-                if (reader.GetString(0) != json)
+                var original = JsonSerializer.Deserialize<StoreLifecycleCommand>(reader.GetString(0))!;
+                if (original.RequestId != command.RequestId || original.StoreSessionId != command.StoreSessionId ||
+                    original.ShiftId != command.ShiftId || original.Action != command.Action || original.CashAmount != command.CashAmount ||
+                    original.Context.EmployeeId != command.Context.EmployeeId || original.Context.DeviceId != command.Context.DeviceId)
                 {
                     throw new InvalidOperationException("The request identifier was already used for another command.");
                 }

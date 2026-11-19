@@ -19,6 +19,11 @@ public sealed class BranchEmployeePermissionCache(string branchId, string path)
         && Volatile.Read(ref _current)?.Employees.Any(entry =>
             entry.Active && entry.SetSoldOut && string.Equals(entry.EmployeeId, employeeId, StringComparison.Ordinal)) == true;
 
+    public bool CanOpenStore(string requestBranchId, string employeeId) =>
+        IsForBranch(requestBranchId)
+        && Volatile.Read(ref _current)?.Employees.Any(entry =>
+            entry.Active && entry.OpenStore && string.Equals(entry.EmployeeId, employeeId, StringComparison.Ordinal)) == true;
+
     // The synchronization worker is the only writer.
     public async Task RestoreAsync(CancellationToken cancellationToken)
     {
