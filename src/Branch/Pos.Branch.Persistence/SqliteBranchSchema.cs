@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 29;
+    public const int CurrentVersion = 30;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1482,6 +1482,32 @@ internal static class SqliteBranchSchema
                     UNIQUE (branch_id, receipt_number),
                     FOREIGN KEY (branch_id, request_id) REFERENCES cash_sales (branch_id, request_id)
                 );
+                """, cancellationToken);
+        }
+
+        if (storedVersion < 30)
+        {
+            await ExecuteAsync(connection, transaction, """
+                CREATE TABLE store_lifecycle_sessions (
+                    branch_id TEXT NOT NULL,
+                    store_session_id TEXT NOT NULL,
+                    is_closed INTEGER NOT NULL CHECK (is_closed IN (0, 1)),
+                    PRIMARY KEY (branch_id, store_session_id)
+                );
+                CREATE UNIQUE INDEX ux_store_lifecycle_open
+                    ON store_lifecycle_sessions(branch_id) WHERE is_closed = 0;
+                CREATE TABLE store_lifecycle_commands (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    store_session_id TEXT NOT NULL,
+                    command_json TEXT NOT NULL CHECK (json_valid(command_json)),
+                    result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+                    UNIQUE (branch_id, request_id),
+                    FOREIGN KEY (branch_id, store_session_id)
+                        REFERENCES store_lifecycle_sessions(branch_id, store_session_id)
+                );
+                CREATE INDEX ix_store_lifecycle_history ON store_lifecycle_commands(branch_id,store_session_id,sequence);
                 """, cancellationToken);
         }
 
