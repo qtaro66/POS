@@ -1463,14 +1463,14 @@ public sealed class SqliteTableSessionCommandStoreTests
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 30;");
+        await database.ExecuteAsync("PRAGMA user_version = 31;");
         var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 30", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(30L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 31", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(31L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]
