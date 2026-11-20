@@ -80,6 +80,18 @@ export interface StoreOperationContext {
 export interface StoreCashTotals {
   receiptCount: number
   appliedCashAmount: number
+  financials?: StoreBillTotals | null
+}
+export interface StoreBillTotals {
+  itemGrossAmount: number
+  lineDiscountAmount: number
+  billDiscountAmount: number
+  serviceChargeAmount: number
+  totalBeforeRounding: number
+  roundingAdjustment: number
+  amountDue: number
+  vatInclusiveAmount: number
+  amountBeforeVat: number
 }
 export interface StoreCashSummary {
   source: 'CashSales'
@@ -115,7 +127,16 @@ export function parseStoreCashSummary(value: unknown): StoreCashSummary {
   function totals(entry: unknown): StoreCashTotals {
     if (!object(entry) || !Number.isSafeInteger(entry.receiptCount) || (entry.receiptCount as number) < 0 ||
         !money(entry.appliedCashAmount) || entry.appliedCashAmount < 0) throw new Error('Invalid cash summary totals.')
-    return { receiptCount: entry.receiptCount as number, appliedCashAmount: entry.appliedCashAmount }
+    if (entry.financials !== undefined && entry.financials !== null) {
+      const bill = entry.financials
+      const fields = ['itemGrossAmount', 'lineDiscountAmount', 'billDiscountAmount', 'serviceChargeAmount',
+        'totalBeforeRounding', 'roundingAdjustment', 'amountDue', 'vatInclusiveAmount', 'amountBeforeVat']
+      if (!object(bill) || fields.some(field => !money(bill[field]) || (field !== 'roundingAdjustment' && (bill[field] as number) < 0)) ||
+          (bill.roundingAdjustment as number) > 0 || bill.amountDue !== entry.appliedCashAmount) throw new Error('Invalid captured bill totals.')
+    }
+    const result: StoreCashTotals = { receiptCount: entry.receiptCount as number, appliedCashAmount: entry.appliedCashAmount }
+    if (entry.financials !== undefined) result.financials = entry.financials as StoreBillTotals | null
+    return result
   }
   return { source: 'CashSales', store: totals(value.store), shift: value.shift === null ? null : totals(value.shift) }
 }

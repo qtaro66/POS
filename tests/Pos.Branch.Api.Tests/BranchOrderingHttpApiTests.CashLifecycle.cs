@@ -137,4 +137,31 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal("PaymentPending", await fixture.Scalar("SELECT status FROM table_sessions"));
         Assert.Equal("0", await fixture.Scalar("SELECT count(*) FROM simulated_cash_receipt_jobs"));
     }
+    [Fact]
+    public async Task Closing_financials_use_the_settled_bill_rounding_and_tax_snapshot()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.Execute("UPDATE master_data_sellable_items SET resolved_price='40.45' WHERE master_data_version='OLD' AND sellable_item_id='ITEM-1';");
+        var principal = LifecyclePrincipal();
+        var open = new StoreLifecycleEndpoints.Request(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(), "OpenStore", 0, "111111");
+        Assert.Equal(200, (await fixture.Call("ExecuteStoreLifecycle", open, principal: principal)).Status);
+        var request = JsonSerializer.SerializeToNode(await PrepareLifecycleCash(fixture, "ROUND", "A01"))!;
+        request["tenderedAmount"] = 100;
+        var sale = await fixture.Call("CompleteBranchCashSale", request, principal: principal);
+        Assert.Equal(200, sale.Status);
+        Assert.Equal(100, sale.Body.GetProperty("appliedAmount").GetDecimal());
+        var close = open with { RequestId = Guid.NewGuid().ToString(), Operation = "CloseStore", CashAmount = 100 };
+        Assert.Equal(200, (await fixture.Call("ExecuteStoreLifecycle", close, principal: principal)).Status);
+        var saved = await fixture.Call("GetStoreShiftClosing", routeValue: open.StoreSessionId,
+            shiftId: open.ShiftId, principal: principal);
+        var totals = saved.Body.GetProperty("cashSummary").GetProperty("store").GetProperty("financials");
+        Assert.Equal(100.9m, totals.GetProperty("totalBeforeRounding").GetDecimal());
+        Assert.Equal(-0.9m, totals.GetProperty("roundingAdjustment").GetDecimal());
+        Assert.Equal(100, totals.GetProperty("amountDue").GetDecimal());
+        Assert.Equal(6.6m, totals.GetProperty("vatInclusiveAmount").GetDecimal());
+        await fixture.Execute("UPDATE master_data_billing_policy SET vat_rate='0';");
+        Assert.Equal(saved.Body.GetRawText(), (await fixture.Call("GetStoreShiftClosing", routeValue: open.StoreSessionId,
+            shiftId: open.ShiftId, principal: principal)).Body.GetRawText());
+    }
 }
