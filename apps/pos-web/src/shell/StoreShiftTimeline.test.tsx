@@ -185,3 +185,45 @@ it('associates live cash totals with the actual older open-store Business Date a
   expect(summary.getAllByText('900.00 บาท')).toHaveLength(2)
   expect(summary.queryByText(/Business Date 2026-11-20/)).toBeNull()
 })
+
+const financials = {
+  itemGrossAmount: 120, lineDiscountAmount: 10, billDiscountAmount: 5, serviceChargeAmount: 5.9,
+  totalBeforeRounding: 110.9, roundingAdjustment: -0.9, amountDue: 110, vatInclusiveAmount: 7.26, amountBeforeVat: 103.64,
+}
+
+it('shows recorded bill tax, discounts and rounding separately from newer live cash totals', async () => {
+  const captured = { ...first, cashSummary: { source: 'CashSales' as const,
+    store: { receiptCount: 1, appliedCashAmount: 110, financials },
+    shift: { receiptCount: 1, appliedCashAmount: 110, financials } } }
+  const live = { ...workspace, cashSummary: { source: 'CashSales' as const,
+    store: { receiptCount: 2, appliedCashAmount: 220 }, shift: { receiptCount: 1, appliedCashAmount: 110 } } }
+  render(<StoreShiftTimeline sourceState={state} port={{
+    storeLifecycleWorkspace: async () => ({ kind: 'ok', value: live }),
+    storeShiftClosing: async () => ({ kind: 'ok', value: captured }),
+  }} />)
+  await screen.findByText('Business Date 2026-11-20 · จำนวนกะ 2 กะ')
+  fireEvent.click(screen.getAllByRole('button', { name: 'ดูผลปิดกะ' })[0])
+  const dialog = within(screen.getByRole('dialog'))
+  await dialog.findByText('ยอดขายเงินสด ณ เวลาปิด')
+  const shift = within(dialog.getByRole('region', { name: 'เงินสดของกะที่ปิด' }))
+  fireEvent.click(shift.getByText('รายละเอียดบิลเงินสด'))
+  expect(shift.getByText('7.26 บาท')).toBeTruthy()
+  expect(shift.getByText('-0.90 บาท')).toBeTruthy()
+  expect(shift.getByText('ส่วนลดท้ายบิล')).toBeTruthy()
+  expect(dialog.queryByText('220.00 บาท')).toBeNull()
+})
+
+it('labels older captured cash data without complete financial fields as unavailable', async () => {
+  const saved = { ...first, cashSummary: { source: 'CashSales' as const,
+    store: { receiptCount: 1, appliedCashAmount: 100 }, shift: { receiptCount: 1, appliedCashAmount: 100 } } }
+  render(<StoreShiftTimeline sourceState={state} port={{
+    storeLifecycleWorkspace: read,
+    storeShiftClosing: async () => ({ kind: 'ok', value: saved }),
+  }} />)
+  await screen.findByText('Business Date 2026-11-20 · จำนวนกะ 2 กะ')
+  fireEvent.click(screen.getAllByRole('button', { name: 'ดูผลปิดกะ' })[0])
+  const dialog = within(screen.getByRole('dialog'))
+  await dialog.findByText('ยอดขายเงินสด ณ เวลาปิด')
+  expect(dialog.getAllByText('ยังไม่มีรายละเอียดภาษีและส่วนลดที่บันทึกไว้ครบ')).toHaveLength(2)
+  expect(dialog.queryByText('รายละเอียดบิลเงินสด')).toBeNull()
+})

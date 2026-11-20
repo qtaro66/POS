@@ -256,7 +256,7 @@ async function run() {
       const first = await opened.json()
       const firstSale = await sell('A01', first.activeShiftId)
       await button(page, 'ร้านและกะ').click()
-      await page.getByRole('region', { name: 'เงินสดของกะปัจจุบัน', exact: true }).getByText('100.00 บาท', { exact: true }).waitFor()
+      await page.getByRole('region', { name: 'เงินสดของกะปัจจุบัน', exact: true }).locator('dl').first().getByText('100.00 บาท', { exact: true }).waitFor()
 
       await page.route(lifecycle, async route => {
         const response = await route.fetch()
@@ -281,7 +281,10 @@ async function run() {
       await page.getByRole('button', { name: 'ดูผลปิดกะ', exact: true }).first().click()
       const snapshot = page.getByRole('dialog', { name: 'ผลปิดกะที่บันทึกไว้', exact: true })
       await snapshot.getByText('ไม่ได้กระทบยอด (NotReconciled)', { exact: true }).waitFor()
-      await snapshot.getByRole('region', { name: 'เงินสดของกะที่ปิด', exact: true }).getByText('100.00 บาท', { exact: true }).waitFor()
+      await snapshot.getByRole('region', { name: 'เงินสดของกะที่ปิด', exact: true }).locator('dl').first().getByText('100.00 บาท', { exact: true }).waitFor()
+      const financialDetails = snapshot.getByRole('region', { name: 'เงินสดของกะที่ปิด', exact: true })
+      await financialDetails.getByText('รายละเอียดบิลเงินสด', { exact: true }).click()
+      await financialDetails.getByText('VAT รวมในราคา', { exact: true }).waitFor()
       await button(page, 'ปิดผลปิดกะ').click()
       const nextReply = await operate('เปิดกะ', null, '000001')
       assert.equal(nextReply.status(), 200)
@@ -309,7 +312,9 @@ async function run() {
       assert.equal(close.expectedCashAmount, 700)
       assert.equal(close.cashDifference, -10)
       await page.getByRole('button', { name: 'ดูผลปิดกะ', exact: true }).last().click()
-      await snapshot.getByRole('region', { name: 'เงินสดสะสมรอบร้าน ณ เวลาปิด', exact: true }).getByText('200.00 บาท', { exact: true }).waitFor()
+      await snapshot.getByRole('region', { name: 'เงินสดสะสมรอบร้าน ณ เวลาปิด', exact: true }).locator('dl').first().getByText('200.00 บาท', { exact: true }).waitFor()
+      await financialDetails.getByText('รายละเอียดบิลเงินสด', { exact: true }).click()
+      await financialDetails.getByText('VAT รวมในราคา', { exact: true }).waitFor()
       await button(page, 'ปิดผลปิดกะ').click()
 
       let unsent

@@ -12,10 +12,21 @@ function duration(start: string, end: string) {
 function Timestamp({ value }: { value: string }) { return <time dateTime={value}>{dateTime.format(new Date(value))}</time> }
 
 function CashTotals({ totals, label }: { totals: StoreCashTotals; label: string }) {
+  const financials = totals.financials
   return <section aria-label={label}><h4>{label}</h4><dl className="store-attribution">
     <div><dt>ใบเสร็จขายเงินสด</dt><dd>{totals.receiptCount} ใบ</dd></div>
     <div><dt>เงินสดรับจากการขาย</dt><dd>{money(totals.appliedCashAmount)} บาท</dd></div>
-  </dl></section>
+  </dl>{financials ? <details><summary>รายละเอียดบิลเงินสด</summary><dl className="store-attribution">
+    <div><dt>ยอดสินค้าก่อนส่วนลด</dt><dd>{money(financials.itemGrossAmount)} บาท</dd></div>
+    <div><dt>ส่วนลดรายการ</dt><dd>{money(financials.lineDiscountAmount)} บาท</dd></div>
+    <div><dt>ส่วนลดท้ายบิล</dt><dd>{money(financials.billDiscountAmount)} บาท</dd></div>
+    <div><dt>ค่าบริการ</dt><dd>{money(financials.serviceChargeAmount)} บาท</dd></div>
+    <div><dt>ยอดก่อนปัดเศษ</dt><dd>{money(financials.totalBeforeRounding)} บาท</dd></div>
+    <div><dt>ผลต่างปัดเศษ</dt><dd>{money(financials.roundingAdjustment)} บาท</dd></div>
+    <div><dt>ยอดชำระ</dt><dd>{money(financials.amountDue)} บาท</dd></div>
+    <div><dt>VAT รวมในราคา</dt><dd>{money(financials.vatInclusiveAmount)} บาท</dd></div>
+    <div><dt>ยอดก่อน VAT</dt><dd>{money(financials.amountBeforeVat)} บาท</dd></div>
+  </dl></details> : totals.receiptCount > 0 && <p>ยังไม่มีรายละเอียดภาษีและส่วนลดที่บันทึกไว้ครบ</p>}</section>
 }
 function CashSummary({ value, frozen = false, contextLabel }: { value: StoreCashSummary; frozen?: boolean; contextLabel?: string }) {
   return <section aria-label={frozen ? 'สรุปเงินสดที่บันทึก ณ เวลาปิด' : 'สรุปเงินสดที่บันทึกล่าสุด'}>

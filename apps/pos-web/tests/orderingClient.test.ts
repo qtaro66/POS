@@ -1,3 +1,4 @@
+import { parseStoreCashSummary } from '../src/api/storeLifecycleContracts.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createOrderingClient } from '../src/api/orderingClient.ts'
@@ -628,5 +629,25 @@ test('store cash summaries reject malformed counts, values and unknown sources',
   ]) {
     const client = createOrderingClient(session, { fetch: async () => json({ ...base, cashSummary }) })
     assert.deepEqual(await client.storeLifecycleWorkspace(), { kind: 'unavailable', reason: 'protocol' })
+  }
+})
+
+test('cash summary preserves captured financial detail and accepts older totals without it', () => {
+  const financials = { itemGrossAmount: 120, lineDiscountAmount: 10, billDiscountAmount: 5,
+    serviceChargeAmount: 5.9, totalBeforeRounding: 110.9, roundingAdjustment: -0.9,
+    amountDue: 110, vatInclusiveAmount: 7.26, amountBeforeVat: 103.64 }
+  const summary = { source: 'CashSales' as const, store: { receiptCount: 1, appliedCashAmount: 110, financials }, shift: null }
+  assert.deepEqual(parseStoreCashSummary(summary), summary)
+  const previous = { source: 'CashSales', store: { receiptCount: 1, appliedCashAmount: 110 }, shift: null }
+  assert.deepEqual(parseStoreCashSummary(previous), previous)
+})
+
+test('cash summary rejects incomplete, negative or mismatched captured financial detail', () => {
+  const financials = { itemGrossAmount: 120, lineDiscountAmount: 10, billDiscountAmount: 5,
+    serviceChargeAmount: 5.9, totalBeforeRounding: 110.9, roundingAdjustment: -0.9,
+    amountDue: 110, vatInclusiveAmount: 7.26, amountBeforeVat: 103.64 }
+  for (const changed of [{ vatInclusiveAmount: null }, { billDiscountAmount: -1 }, { amountDue: 120 }, { roundingAdjustment: 0.9 }]) {
+    assert.throws(() => parseStoreCashSummary({ source: 'CashSales',
+      store: { receiptCount: 1, appliedCashAmount: 110, financials: { ...financials, ...changed } }, shift: null }))
   }
 })
