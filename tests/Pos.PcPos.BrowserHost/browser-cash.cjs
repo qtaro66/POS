@@ -207,6 +207,136 @@ async function run() {
       await tab.getByLabel('ยืนยัน PIN').fill(employeePin)
       await button(tab, 'บันทึกกะทดสอบ').click()
     }
+    if (process.argv[4] === 'StoreLifecycle') {
+      const lifecycle = origin + '/api/v1/ordering/store-lifecycle'
+      async function operate(name, amount, employeePin = pin) {
+        await button(page, name).click()
+        const dialog = page.getByRole('dialog', { name, exact: true })
+        const cash = dialog.locator('input[type=number]')
+        if (amount !== null) await cash.fill(String(amount))
+        await dialog.getByLabel('ยืนยัน PIN').fill(employeePin)
+        const reply = page.waitForResponse(response => response.url() === lifecycle && response.request().method() === 'POST')
+        await dialog.getByRole('button', { name: 'ยืนยัน' + name, exact: true }).click()
+        return reply
+      }
+      async function sell(table, expectedShift) {
+        await button(page, 'โต๊ะ').click()
+        await button(page, 'เปิดโต๊ะ Browser table ' + table).click()
+        await button(page, 'เปิดหน้ารายการ').click()
+        await page.getByRole('button', { name: /Browser test item/ }).first().click()
+        await button(page, 'ลงตะกร้า').click()
+        const ordered = page.waitForResponse(response => response.url().endsWith('/ordering/orders'))
+        await button(page, 'ส่งออเดอร์ 1 รายการ').click()
+        const submitted = await ordered
+        assert.equal(submitted.status(), 200)
+        orderRequestIds.push(submitted.request().postDataJSON().context.requestId)
+        await page.getByRole('status').filter({ hasText: 'สาขารับออร์เดอร์แล้ว · Request ID:' }).waitFor()
+        await button(page, 'กลับผังโต๊ะ').click()
+        await button(page, 'ขอชำระเงิน').click()
+        await page.getByLabel('เงินสดที่รับ').fill('120')
+        const payment = page.waitForResponse(response => response.url().endsWith('/tables/complete-cash-sale'))
+        await button(page, 'ปิดบิลเงินสด (ทดสอบ)').click()
+        const reply = await payment
+        assert.equal(reply.status(), 200)
+        const sale = await reply.json()
+        assert.equal(sale.shiftId, expectedShift)
+        assert.equal(sale.appliedAmount, 100)
+        assert.equal(sale.changeAmount, 20)
+        return sale
+      }
+      async function current() {
+        const reply = await context.request.get(lifecycle + '/current', { headers })
+        assert.equal(reply.status(), 200)
+        return reply.json()
+      }
+      let headers = { Authorization: 'Device ' + device.deviceCredential, 'X-POS-Employee-Session': session.sessionToken }
+      await button(page, 'ร้านและกะ').click()
+      const opened = await operate('เปิดร้าน', 500)
+      assert.equal(opened.status(), 200)
+      const first = await opened.json()
+      const firstSale = await sell('A01', first.activeShiftId)
+      await button(page, 'ร้านและกะ').click()
+      await page.getByRole('region', { name: 'เงินสดของกะปัจจุบัน', exact: true }).getByText('100.00 บาท', { exact: true }).waitFor()
+
+      await page.route(lifecycle, async route => {
+        const response = await route.fetch()
+        assert.equal(response.status(), 200)
+        await route.abort()
+      })
+      await button(page, 'ปิดกะ').click()
+      const closeDialog = page.getByRole('dialog', { name: 'ปิดกะ', exact: true })
+      await closeDialog.getByLabel('ยืนยัน PIN').fill(pin)
+      await closeDialog.getByRole('button', { name: 'ยืนยันปิดกะ', exact: true }).click()
+      await page.getByText('ยังยืนยันผลจากสาขาไม่ได้ กรุณาส่งคำขอเดิมซ้ำด้วย PIN ผู้ยืนยันเดิม', { exact: true }).first().waitFor()
+      await page.unroute(lifecycle)
+      await page.reload()
+      await page.getByLabel('PIN', { exact: true }).fill(pin)
+      const signedIn = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+      await button(page, 'เข้าสู่ระบบ').click()
+      headers['X-POS-Employee-Session'] = (await (await signedIn).json()).sessionToken
+      await button(page, 'ร้านและกะ').click()
+      await button(page, 'ตรวจสอบผลคำขอ').click()
+      await page.getByRole('heading', { name: 'ร้านเปิด · ระหว่างกะ', exact: true }).waitFor()
+      assert.equal((await current()).closing.actualCashAmount, null)
+      await page.getByRole('button', { name: 'ดูผลปิดกะ', exact: true }).first().click()
+      const snapshot = page.getByRole('dialog', { name: 'ผลปิดกะที่บันทึกไว้', exact: true })
+      await snapshot.getByText('ไม่ได้กระทบยอด (NotReconciled)', { exact: true }).waitFor()
+      await snapshot.getByRole('region', { name: 'เงินสดของกะที่ปิด', exact: true }).getByText('100.00 บาท', { exact: true }).waitFor()
+      await button(page, 'ปิดผลปิดกะ').click()
+      const nextReply = await operate('เปิดกะ', null, '000001')
+      assert.equal(nextReply.status(), 200)
+      const second = await nextReply.json()
+      assert.notEqual(second.activeShiftId, first.activeShiftId)
+      const secondSale = await sell('A02', second.activeShiftId)
+      assert.equal(secondSale.storeSessionId, firstSale.storeSessionId)
+
+      host.kill()
+      await stopped
+      host = startBranch()
+      stopped = once(host, 'close')
+      const restarted = await waitForBranch()
+      pin = restarted.pin
+      await page.reload()
+      await page.getByLabel('PIN', { exact: true }).fill('000001')
+      const resumed = page.waitForResponse(response => response.url().endsWith('/employee-sessions'))
+      await button(page, 'เข้าสู่ระบบ').click()
+      headers['X-POS-Employee-Session'] = (await (await resumed).json()).sessionToken
+      await button(page, 'ร้านและกะ').click()
+      assert.equal((await current()).activeShiftId, second.activeShiftId)
+      const ended = await operate('ปิดร้าน', 690, '000001')
+      assert.equal(ended.status(), 200)
+      const close = (await ended.json()).closing
+      assert.equal(close.expectedCashAmount, 700)
+      assert.equal(close.cashDifference, -10)
+      await page.getByRole('button', { name: 'ดูผลปิดกะ', exact: true }).last().click()
+      await snapshot.getByRole('region', { name: 'เงินสดสะสมรอบร้าน ณ เวลาปิด', exact: true }).getByText('200.00 บาท', { exact: true }).waitFor()
+      await button(page, 'ปิดผลปิดกะ').click()
+
+      let unsent
+      await page.route(lifecycle, route => { unsent = route.request().postDataJSON(); return route.abort() })
+      await button(page, 'เปิดร้าน').click()
+      const unsentDialog = page.getByRole('dialog', { name: 'เปิดร้าน', exact: true })
+      await unsentDialog.getByLabel('เงินสดตั้งต้น', { exact: true }).fill('0')
+      await unsentDialog.getByLabel('ยืนยัน PIN').fill(pin)
+      await unsentDialog.getByRole('button', { name: 'ยืนยันเปิดร้าน', exact: true }).click()
+      await page.getByText('ยังยืนยันผลจากสาขาไม่ได้ กรุณาส่งคำขอเดิมซ้ำด้วย PIN ผู้ยืนยันเดิม', { exact: true }).first().waitFor()
+      await page.unroute(lifecycle)
+      await unsentDialog.getByRole('button', { name: 'กลับ', exact: true }).click()
+      await button(page, 'ยกเลิกคำขอที่ยังไม่บันทึก').click()
+      const retirement = page.getByRole('dialog', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก', exact: true })
+      await retirement.getByLabel('ยืนยัน PIN').fill('000001')
+      await retirement.getByRole('button', { name: 'ยืนยันยกเลิกคำขอ', exact: true }).click()
+      await page.getByRole('button', { name: 'เปิดร้าน', exact: true }).waitFor()
+      assert.equal((await context.request.post(lifecycle, { headers, data: unsent })).status(), 409)
+      assert.equal((await current()).isClosed, true)
+      const outbox = await context.request.get(origin + '/api/v1/ordering/cloud-outbox-status', { headers })
+      assert.equal(outbox.status(), 200)
+      const cashEvents = (await outbox.json()).items.filter(event => event.action === 'CompletePayment')
+      assert.equal(cashEvents.length, 2)
+      await verifyCentral(browser, context, headers, ...cashEvents.map(event => event.outboxId))
+      console.log('Edge durable store lifecycle, two-shift cash, restart, pending recovery and Central reconnect: PASS')
+      return
+    }
     if (process.argv[4] === 'ShiftTransitions') {
       const url = origin + '/api/v1/ordering/test-cash-cycle'
       const secondPin = '000001'

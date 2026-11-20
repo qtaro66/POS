@@ -32,7 +32,7 @@ public static partial class StoreLifecycleEndpoints
         try
         {
             var result = await runtime.TableCommands.ReadStoreShiftClosingAsync(identity!.BranchId, storeSessionId, shiftId, token);
-            return result is null ? TypedResults.NotFound() : TypedResults.Ok(result);
+            return result is null ? TypedResults.NotFound(new { error = "StoreLifecycleNotFound" }) : TypedResults.Ok(result);
         }
         catch (SqliteException) { return TypedResults.StatusCode(503); }
     }

@@ -1,7 +1,7 @@
 param(
     [ValidateNotNullOrEmpty()]
-    [ValidateSet('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff', 'ShiftTransitions', 'BranchIsolation')]
-    [string[]]$Modes = @('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff', 'ShiftTransitions', 'BranchIsolation'),
+    [ValidateSet('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff', 'ShiftTransitions', 'BranchIsolation', 'StoreLifecycle')]
+    [string[]]$Modes = @('Concurrent', 'LostResponse', 'ReloadLost', 'ReloadUnsent', 'EmployeeIsolation', 'EmployeeIsolationUnsent', 'MultiSale', 'ShiftHandoff', 'ShiftTransitions', 'BranchIsolation', 'StoreLifecycle'),
     [ValidateNotNullOrEmpty()]
     [ValidateSet('Balanced', 'Short', 'Over')]
     [string[]]$Scenarios = @('Balanced', 'Short', 'Over'),
@@ -21,7 +21,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 [System.Collections.Generic.HashSet[string]]$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $cases = foreach ($requestedMode in $Modes) {
     $mode = $MyInvocation.MyCommand.Parameters['Modes'].Attributes.ValidValues -eq $requestedMode | Select-Object -First 1
-    if ($mode -in 'ShiftTransitions', 'BranchIsolation') {
+    if ($mode -in 'ShiftTransitions', 'BranchIsolation', 'StoreLifecycle') {
         if ('Balanced' -in $Scenarios -and $seen.Add("$mode/Balanced")) {
             [pscustomobject]@{ Mode = $mode; Scenario = 'Balanced'; NextShiftScenario = $null }
         }

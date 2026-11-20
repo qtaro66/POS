@@ -94,6 +94,14 @@ try
     builder.Services.AddBranchEmployeeSessions(builder.Configuration);
     builder.Services.AddBranchPairing(builder.Configuration);
     builder.Services.AddBranchOrdering(builder.Configuration);
+    var permissions = new BranchEmployeePermissionCache(branch, Path.Combine(directory.FullName, "fixture-permissions.json"));
+    using (var content = new MemoryStream(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+        new Pos.Contracts.Security.BranchEmployeePermissionSnapshot(1, branch, 1,
+            [new(Employee, true, false, true), new(SecondEmployee, true, false, false)]))))
+    {
+        await permissions.ApplyAsync(content, CancellationToken.None);
+    }
+    builder.Services.AddSingleton(permissions);
     if (persistent)
     {
         const string delivery = "BranchCloudOutboxDelivery:";
