@@ -97,6 +97,12 @@ export interface StoreCashSummary {
   source: 'CashSales'
   store: StoreCashTotals
   shift: StoreCashTotals | null
+  tables?: StoreTableTotals | null
+}
+export interface StoreTableTotals {
+  openTableCount: number
+  awaitingPaymentTableCount: number
+  partiallyPaidTableCount: number
 }
 export interface StoreShiftEntry {
   cashSummary?: StoreCashSummary | null
@@ -107,6 +113,7 @@ export interface StoreShiftEntry {
   closing: StoreLifecycleState['closing']
 }
 export interface StoreWorkspace {
+  tables?: StoreTableTotals | null
   cashSummary?: StoreCashSummary | null
   branchId: string
   businessDate: string
@@ -124,6 +131,7 @@ export interface StoreWorkspace {
 
 export function parseStoreCashSummary(value: unknown): StoreCashSummary {
   if (!object(value) || value.source !== 'CashSales') throw new Error('Invalid cash summary source.')
+  if (value.tables !== undefined && value.tables !== null) parseStoreTableTotals(value.tables)
   function totals(entry: unknown): StoreCashTotals {
     if (!object(entry) || !Number.isSafeInteger(entry.receiptCount) || (entry.receiptCount as number) < 0 ||
         !money(entry.appliedCashAmount) || entry.appliedCashAmount < 0) throw new Error('Invalid cash summary totals.')
@@ -138,7 +146,21 @@ export function parseStoreCashSummary(value: unknown): StoreCashSummary {
     if (entry.financials !== undefined) result.financials = entry.financials as StoreBillTotals | null
     return result
   }
-  return { source: 'CashSales', store: totals(value.store), shift: value.shift === null ? null : totals(value.shift) }
+  const result: StoreCashSummary = { source: 'CashSales', store: totals(value.store), shift: value.shift === null ? null : totals(value.shift) }
+  if (value.tables !== undefined) result.tables = value.tables as StoreTableTotals | null
+  return result
+}
+export function parseStoreTableTotals(value: unknown): StoreTableTotals {
+  if (!object(value) || ![value.openTableCount, value.awaitingPaymentTableCount, value.partiallyPaidTableCount]
+    .every(count => Number.isSafeInteger(count) && (count as number) >= 0) ||
+    (value.partiallyPaidTableCount as number) > (value.awaitingPaymentTableCount as number) ||
+    (value.awaitingPaymentTableCount as number) > (value.openTableCount as number)) throw new Error('Invalid table totals.')
+  return value as unknown as StoreTableTotals
+}
+export function readClosingBlockedTables(value: unknown): { tableSessionId: string; tableId: string }[] | null {
+  if (!object(value) || value.error !== 'StoreLifecyclePartialPayments' || !Array.isArray(value.tables) ||
+    value.tables.length === 0 || !value.tables.every(table => object(table) && identifier(table.tableSessionId) && identifier(table.tableId))) return null
+  return value.tables as { tableSessionId: string; tableId: string }[]
 }
 function parseOperationContext(value: unknown): StoreOperationContext {
   if (!object(value) || !identifier(value.employeeId) || !identifier(value.deviceId) ||
@@ -175,6 +197,7 @@ export function parseStoreWorkspace(value: unknown, branchId: string): StoreWork
       typeof value.asOf !== 'string' || !/(Z|\+00:00)$/.test(value.asOf) || !Number.isFinite(Date.parse(value.asOf)) ||
       !Array.isArray(value.stores)) throw new Error('Invalid store workspace.')
   if (value.cashSummary !== undefined && value.cashSummary !== null) parseStoreCashSummary(value.cashSummary)
+  if (value.tables !== undefined && value.tables !== null) parseStoreTableTotals(value.tables)
   const current = value.current === null ? null : parseStoreLifecycle(value.current)
   const storeIds = new Set<string>()
   const stores = value.stores.map((store: unknown) => {

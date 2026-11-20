@@ -76,6 +76,10 @@ public static partial class StoreLifecycleEndpoints
         }
         catch (OverflowException) { return TypedResults.BadRequest(); }
         catch (ArgumentException) { return TypedResults.BadRequest(); }
+        catch (StoreClosingBlockedException blocked)
+        {
+            return TypedResults.Conflict(new { error = "StoreLifecyclePartialPayments", tables = blocked.Tables });
+        }
         catch (InvalidOperationException) { return TypedResults.Conflict(new { error = "StoreLifecycleConflict" }); }
         catch (SqliteException error) when (error.SqliteErrorCode == 19) { return TypedResults.Conflict(new { error = "StoreLifecycleConflict" }); }
         catch (SqliteException) { return TypedResults.StatusCode(503); }

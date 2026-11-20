@@ -282,3 +282,19 @@ it('exposes recovery actions from the normal store-and-shift page', async () => 
   fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบผลคำขอ' }))
   await waitFor(() => expect(status).toHaveBeenCalledWith(saved))
 })
+
+it('shows the specific partial-payment table and permits correction after a definite closing rejection', async () => {
+  const command = vi.fn(async () => ({ status: 409, body: { error: 'StoreLifecyclePartialPayments',
+    tables: [{ tableSessionId: 'SESSION-A', tableId: 'A01' }] } }))
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: current, storeLifecycleCommand: command }} />)
+  await screen.findByText('ร้านเปิด · มีกะเปิดอยู่')
+  fireEvent.click(screen.getByRole('button', { name: 'ปิดร้าน' }))
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.change(dialog.getByLabelText('ยอดเงินสดนับจริง'), { target: { value: '500' } })
+  fireEvent.change(dialog.getByLabelText('ยืนยัน PIN'), { target: { value: '123456' } })
+  fireEvent.submit(dialog.getByRole('button', { name: 'ยืนยันปิดร้าน' }).closest('form')!)
+  await screen.findAllByText(/มีรายการชำระบางส่วนที่โต๊ะ A01/)
+  expect(localStorage.getItem(key)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'ยืนยันคำขอเดิม' })).toBeNull()
+  expect((dialog.getByLabelText('ยอดเงินสดนับจริง') as HTMLInputElement).readOnly).toBe(false)
+})

@@ -227,3 +227,23 @@ it('labels older captured cash data without complete financial fields as unavail
   expect(dialog.getAllByText('ยังไม่มีรายละเอียดภาษีและส่วนลดที่บันทึกไว้ครบ')).toHaveLength(2)
   expect(dialog.queryByText('รายละเอียดบิลเงินสด')).toBeNull()
 })
+
+it('shows live table state separately from the immutable carryover counts at closing', async () => {
+  const live = { ...workspace, tables: { openTableCount: 3, awaitingPaymentTableCount: 2, partiallyPaidTableCount: 1 } }
+  const saved = { ...first, cashSummary: { source: 'CashSales' as const,
+    store: { receiptCount: 0, appliedCashAmount: 0 }, shift: null,
+    tables: { openTableCount: 2, awaitingPaymentTableCount: 1, partiallyPaidTableCount: 0 } } }
+  render(<StoreShiftTimeline sourceState={state} port={{
+    storeLifecycleWorkspace: async () => ({ kind: 'ok', value: live }),
+    storeShiftClosing: async () => ({ kind: 'ok', value: saved }),
+  }} />)
+  const currentTables = within(await screen.findByRole('region', { name: 'สถานะโต๊ะล่าสุด' }))
+  expect(currentTables.getByText('3 โต๊ะ')).toBeTruthy()
+  expect(currentTables.getByText('1 โต๊ะ')).toBeTruthy()
+  fireEvent.click(screen.getAllByRole('button', { name: 'ดูผลปิดกะ' })[0])
+  const dialog = within(screen.getByRole('dialog'))
+  const recorded = within(await dialog.findByRole('region', { name: 'โต๊ะ ณ เวลาปิด' }))
+  expect(recorded.getByText('2 โต๊ะ')).toBeTruthy()
+  expect(recorded.getByText('0 โต๊ะ')).toBeTruthy()
+  expect(recorded.queryByText('3 โต๊ะ')).toBeNull()
+})

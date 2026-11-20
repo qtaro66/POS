@@ -92,7 +92,7 @@ public sealed class SqliteStoreLifecycleTests : IDisposable
                 VALUES ('branch','partial','table','PartiallyPaid',1);
             """;
         await seed.ExecuteNonQueryAsync();
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<StoreClosingBlockedException>(() =>
             store.ExecuteStoreLifecycleAsync("branch", Command("end", StoreLifecycleAction.CloseStore, 500)));
         Assert.Equal("shift", (await store.ReadStoreLifecycleAsync("branch", "store"))!.ActiveShiftId);
     }

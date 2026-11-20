@@ -1,4 +1,4 @@
-import { parseStoreCashSummary } from '../src/api/storeLifecycleContracts.ts'
+import { parseStoreCashSummary, parseStoreTableTotals, readClosingBlockedTables } from '../src/api/storeLifecycleContracts.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createOrderingClient } from '../src/api/orderingClient.ts'
@@ -650,4 +650,21 @@ test('cash summary rejects incomplete, negative or mismatched captured financial
     assert.throws(() => parseStoreCashSummary({ source: 'CashSales',
       store: { receiptCount: 1, appliedCashAmount: 110, financials: { ...financials, ...changed } }, shift: null }))
   }
+})
+
+test('table totals validate counts and preserve optional historical cash summary fields', () => {
+  const tables = { openTableCount: 3, awaitingPaymentTableCount: 2, partiallyPaidTableCount: 1 }
+  assert.deepEqual(parseStoreTableTotals(tables), tables)
+  const summary = { source: 'CashSales', store: { receiptCount: 0, appliedCashAmount: 0 }, shift: null, tables }
+  assert.deepEqual(parseStoreCashSummary(summary), summary)
+  assert.throws(() => parseStoreTableTotals({ ...tables, openTableCount: 1 }))
+  assert.throws(() => parseStoreTableTotals({ ...tables, partiallyPaidTableCount: -1 }))
+  assert.throws(() => parseStoreTableTotals({ ...tables, awaitingPaymentTableCount: 1.5 }))
+})
+
+test('closing blockers require the structured Branch response and valid table identifiers', () => {
+  const tables = [{ tableSessionId: 'SESSION-A', tableId: 'A01' }]
+  assert.deepEqual(readClosingBlockedTables({ error: 'StoreLifecyclePartialPayments', tables }), tables)
+  assert.equal(readClosingBlockedTables({ error: 'Other', tables }), null)
+  assert.equal(readClosingBlockedTables({ error: 'StoreLifecyclePartialPayments', tables: [{}] }), null)
 })

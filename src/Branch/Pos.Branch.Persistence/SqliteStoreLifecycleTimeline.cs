@@ -11,7 +11,8 @@ public sealed record StoreSessionTimelineEntry(string StoreSessionId, DateOnly B
     StoreOperationContext Opened, bool IsClosed, IReadOnlyList<StoreShiftTimelineEntry> Shifts);
 
 public sealed record StoreLifecycleWorkspace(string BranchId, DateOnly BusinessDate, DateTimeOffset AsOf,
-    StoreLifecycleResult? Current, IReadOnlyList<StoreSessionTimelineEntry> Stores, StoreCashSummary? CashSummary = null);
+    StoreLifecycleResult? Current, IReadOnlyList<StoreSessionTimelineEntry> Stores, StoreCashSummary? CashSummary = null,
+    StoreTableTotals? Tables = null);
 
 public sealed partial class SqliteTableSessionCommandStore
 {
@@ -53,7 +54,8 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         }).ToArray();
         var summary = current is not null && !current.IsClosed
             ? await ReadStoreCashSummaryAsync(branchId, current.StoreSessionId, current.ActiveShiftId, token) : null;
-        return new(branchId, businessDate, asOf.ToUniversalTime(), current, stores, summary);
+        return new(branchId, businessDate, asOf.ToUniversalTime(), current, stores, summary,
+            summary?.Tables ?? await ReadStoreTableTotalsAsync(branchId, token));
     }
 
     internal async Task<StoreShiftTimelineEntry?> ReadStoreShiftClosingAsync(string branchId,
