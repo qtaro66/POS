@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { StoreLifecycleState, StoreShiftEntry, StoreWorkspace } from '../api/storeLifecycleContracts.ts'
+import type { StoreCashSummary, StoreCashTotals, StoreLifecycleState, StoreShiftEntry, StoreWorkspace } from '../api/storeLifecycleContracts.ts'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 
 type Port = Pick<OrderingReadClient, 'storeLifecycleWorkspace' | 'storeShiftClosing'>
@@ -11,6 +11,20 @@ function duration(start: string, end: string) {
 }
 function Timestamp({ value }: { value: string }) { return <time dateTime={value}>{dateTime.format(new Date(value))}</time> }
 
+function CashTotals({ totals, label }: { totals: StoreCashTotals; label: string }) {
+  return <section aria-label={label}><h4>{label}</h4><dl className="store-attribution">
+    <div><dt>ใบเสร็จขายเงินสด</dt><dd>{totals.receiptCount} ใบ</dd></div>
+    <div><dt>เงินสดรับจากการขาย</dt><dd>{money(totals.appliedCashAmount)} บาท</dd></div>
+  </dl></section>
+}
+function CashSummary({ value, frozen = false, contextLabel }: { value: StoreCashSummary; frozen?: boolean; contextLabel?: string }) {
+  return <section aria-label={frozen ? 'สรุปเงินสดที่บันทึก ณ เวลาปิด' : 'สรุปเงินสดที่บันทึกล่าสุด'}>
+    <h3>{frozen ? 'ยอดขายเงินสด ณ เวลาปิด' : 'ยอดขายเงินสดที่บันทึก'}</h3>
+    {contextLabel && <p>{contextLabel}</p>}
+    {value.shift && <CashTotals totals={value.shift} label={frozen ? 'เงินสดของกะที่ปิด' : 'เงินสดของกะปัจจุบัน'} />}
+    <CashTotals totals={value.store} label={frozen ? 'เงินสดสะสมรอบร้าน ณ เวลาปิด' : 'เงินสดสะสมรอบร้าน'} />
+  </section>
+}
 export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceState: StoreLifecycleState | null }) {
   const [workspace, setWorkspace] = useState<StoreWorkspace | null>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'unavailable'>('loading')
@@ -52,7 +66,8 @@ export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceSt
   if (!readWorkspace) return null
   const currentStore = workspace?.stores.find(store => store.storeSessionId === workspace.current?.storeSessionId)
   const currentShift = currentStore?.shifts.find(shift => shift.shiftId === workspace?.current?.activeShiftId)
-  const recorded = closing?.storeSessionId === viewing?.storeId && closing?.shiftId === viewing?.shiftId ? closing?.closing : null
+  const selectedClosing = closing?.storeSessionId === viewing?.storeId && closing?.shiftId === viewing?.shiftId ? closing : null
+  const recorded = selectedClosing?.closing
   const count = workspace?.stores.reduce((sum, store) => sum + store.shifts.length, 0)
   return <section className="panel store-timeline" aria-labelledby="store-timeline-title">
     <header><h3 id="store-timeline-title">กะในวันธุรกิจ</h3><button className="refresh-button" onClick={() => setRefresh(value => value + 1)} disabled={phase === 'loading'}>อ่านประวัติกะอีกครั้ง</button></header>
@@ -66,6 +81,8 @@ export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceSt
       {currentShift && <dl className="store-attribution"><div><dt>ผู้เปิดกะปัจจุบัน</dt><dd>{currentShift.opened.employeeId}</dd></div>
         <div><dt>เวลาเปิดกะปัจจุบัน</dt><dd><Timestamp value={currentShift.opened.occurredAt} /></dd></div>
         <div><dt>ระยะเวลากะ ณ เวลาที่อ่าน</dt><dd>{duration(currentShift.opened.occurredAt, workspace.asOf)}</dd></div></dl>}
+      {workspace.current && !workspace.current.isClosed && (workspace.cashSummary ?
+        <CashSummary value={workspace.cashSummary} contextLabel={'รอบร้าน ' + workspace.current.storeSessionId + ' · Business Date ' + workspace.current.businessDate} /> : <p>ยังไม่มีสรุปเงินสดสำหรับรอบร้านนี้</p>)}
       {count === 0 && <p>ยังไม่มีกะในวันธุรกิจนี้</p>}
       <ol className="store-shift-list">{workspace.stores.flatMap(store => store.shifts.map(shift =>
         <li key={store.storeSessionId + ':' + shift.shiftId}>
@@ -82,6 +99,8 @@ export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceSt
       {closingPhase === 'loading' && <p role="status">กำลังอ่านผลปิดกะ</p>}
       {closingPhase === 'unavailable' && <p role="alert">ยังอ่านผลปิดกะนี้ไม่ได้</p>}
       {closingPhase === 'ready' && recorded && <>
+        {selectedClosing?.cashSummary ? <CashSummary value={selectedClosing.cashSummary} frozen /> :
+          <p>ผลปิดกะนี้ไม่มีสรุปยอดขายเงินสดที่บันทึกไว้</p>}
         <p>กะ {recorded.shiftId} · {recorded.closesStore ? 'ปิดร้าน' : 'ปิดกะระหว่างวัน'}</p>
         <dl className="store-attribution"><div><dt>ยอดที่ควรมี</dt><dd>{money(recorded.expectedCashAmount)} บาท</dd></div>
           <div><dt>ยอดนับจริง</dt><dd>{recorded.actualCashAmount === null ? 'ไม่ได้กระทบยอด (NotReconciled)' : money(recorded.actualCashAmount) + ' บาท'}</dd></div>

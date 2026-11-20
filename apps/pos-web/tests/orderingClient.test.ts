@@ -599,3 +599,34 @@ test('store workspace rejects cross-Branch data and saved closing rejects anothe
   response = json({}, 404)
   assert.deepEqual(await client.storeShiftClosing('S1', 'H1'), { kind: 'notFound' })
 })
+
+test('store cash summaries preserve applied totals and captured closing data, with legacy absence supported', async () => {
+  const context = { employeeId: 'E1', deviceId: 'D1', occurredAt: '2026-11-20T01:00:00Z', branchLocalDate: '2026-11-20' }
+  const captured = { source: 'CashSales', store: { receiptCount: 1, appliedCashAmount: 100 }, shift: { receiptCount: 1, appliedCashAmount: 100 } }
+  const entry = { storeSessionId: 'S1', shiftId: 'H1', openingCashAmount: 500, opened: context,
+    cashSummary: captured, closing: { storeSessionId: 'S1', shiftId: 'H1', closesStore: false, expectedCashAmount: 600, actualCashAmount: null, cashDifference: null, reconciliationStatus: 'NotReconciled', context } }
+  let response = json(entry)
+  const client = createOrderingClient(session, { fetch: async () => response.clone() })
+  assert.deepEqual(await client.storeShiftClosing('S1', 'H1'), { kind: 'ok', value: entry })
+  const legacy = { ...entry, cashSummary: null }
+  response = json(legacy)
+  assert.deepEqual(await client.storeShiftClosing('S1', 'H1'), { kind: 'ok', value: legacy })
+  response = json({ branchId: session.branchId, businessDate: '2026-11-20', asOf: '2026-11-20T03:00:00Z', current: null, stores: [],
+    cashSummary: { source: 'CashSales', store: { receiptCount: 2, appliedCashAmount: 300 }, shift: null } })
+  const result = await client.storeLifecycleWorkspace()
+  assert.ok(result.kind === 'ok')
+  assert.equal(result.value.cashSummary!.store.appliedCashAmount, 300)
+})
+
+test('store cash summaries reject malformed counts, values and unknown sources', async () => {
+  const base = { branchId: session.branchId, businessDate: '2026-11-20', asOf: '2026-11-20T03:00:00Z', current: null, stores: [] }
+  for (const cashSummary of [
+    { source: 'Other', store: { receiptCount: 1, appliedCashAmount: 100 }, shift: null },
+    { source: 'CashSales', store: { receiptCount: -1, appliedCashAmount: 100 }, shift: null },
+    { source: 'CashSales', store: { receiptCount: 1, appliedCashAmount: '100' }, shift: null },
+    { source: 'CashSales', store: { receiptCount: 1, appliedCashAmount: 100 }, shift: { receiptCount: 1.5, appliedCashAmount: 100 } },
+  ]) {
+    const client = createOrderingClient(session, { fetch: async () => json({ ...base, cashSummary }) })
+    assert.deepEqual(await client.storeLifecycleWorkspace(), { kind: 'unavailable', reason: 'protocol' })
+  }
+})

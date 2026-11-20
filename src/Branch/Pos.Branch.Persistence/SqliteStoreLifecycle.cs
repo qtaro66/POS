@@ -158,6 +158,10 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         write.Parameters.AddWithValue("$command", json);
         write.Parameters.AddWithValue("$result", JsonSerializer.Serialize(result));
         await write.ExecuteNonQueryAsync(token);
+        if (command.Action is StoreLifecycleAction.CloseShift or StoreLifecycleAction.CloseStore)
+        {
+            await CaptureStoreCashSummaryAsync(branchId, command, token);
+        }
         return result;
     }
 
