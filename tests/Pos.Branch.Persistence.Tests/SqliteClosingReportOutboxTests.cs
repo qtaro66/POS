@@ -147,7 +147,7 @@ public sealed class SqliteClosingReportOutboxTests : IDisposable
         Assert.NotNull(workspace.Current);
         Assert.False(workspace.Current.IsClosed);
         Assert.Equal("first", workspace.Current.ActiveShiftId);
-        Assert.Null((await store.ReadStoreShiftClosingAsync("branch", "store", "first"))!.Closing);
+        Assert.Null(await store.ReadStoreShiftClosingAsync("branch", "store", "first"));
         Assert.Equal(0, (await store.ReadClosingReportOutboxAsync("branch", Now)).PendingCount);
         await Sql("DROP TRIGGER fail_report;");
         await store.ExecuteStoreLifecycleAsync("branch", close);
