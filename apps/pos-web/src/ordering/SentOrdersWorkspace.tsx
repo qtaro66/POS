@@ -108,7 +108,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
     storePage={!preview && client.scope && client.storeLifecycleCurrent && client.storeLifecycleCommand ?
       <StoreShiftWorkspace key={JSON.stringify(client.scope)} storageKey={'pos-store-lifecycle:' + JSON.stringify(client.scope)}
-        port={{ storeLifecycleCurrent: client.storeLifecycleCurrent, storeLifecycleCommand: client.storeLifecycleCommand }} /> : undefined}
+        port={{ storeLifecycleCurrent: client.storeLifecycleCurrent, storeLifecycleCommand: client.storeLifecycleCommand, storeLifecycleRequestStatus: client.storeLifecycleRequestStatus, retireStoreLifecycleRequest: client.retireStoreLifecycleRequest }} /> : undefined}
     sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
     homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh() }}
       openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} client={client} freshness={freshnessState} canAdjust={!preview} />}

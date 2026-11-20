@@ -9,7 +9,7 @@ using Pos.Domain.StoreSessions;
 
 namespace Pos.Branch.Api.Ordering;
 
-public static class StoreLifecycleEndpoints
+public static partial class StoreLifecycleEndpoints
 {
     public sealed record Request(string RequestId, string StoreSessionId, string ShiftId, string Operation, decimal? CashAmount, string Pin);
 

@@ -142,6 +142,7 @@ public sealed class SqliteStoreLifecycleTests : IDisposable
         await connection.OpenAsync();
         using var old = connection.CreateCommand();
         old.CommandText = """
+            DROP TABLE store_lifecycle_retirements;
             DROP TABLE store_lifecycle_commands;
             DROP TABLE store_lifecycle_sessions;
             INSERT INTO table_sessions VALUES ('existing','sale','table','Completed',1);
@@ -154,7 +155,7 @@ public sealed class SqliteStoreLifecycleTests : IDisposable
         check.CommandText = "SELECT count(*) FROM table_sessions WHERE branch_id='existing';";
         Assert.Equal(1L, await check.ExecuteScalarAsync());
         check.CommandText = "PRAGMA user_version;";
-        Assert.Equal(30L, await check.ExecuteScalarAsync());
+        Assert.Equal(31L, await check.ExecuteScalarAsync());
         await store.ExecuteStoreLifecycleAsync("branch", Command("open", StoreLifecycleAction.OpenStore, 0));
     }
 

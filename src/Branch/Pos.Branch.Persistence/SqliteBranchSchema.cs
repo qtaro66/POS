@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 30;
+    public const int CurrentVersion = 31;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1508,6 +1508,21 @@ internal static class SqliteBranchSchema
                         REFERENCES store_lifecycle_sessions(branch_id, store_session_id)
                 );
                 CREATE INDEX IF NOT EXISTS ix_store_lifecycle_history ON store_lifecycle_commands(branch_id,store_session_id,sequence);
+                """, cancellationToken);
+        }
+
+        if (storedVersion < 31)
+        {
+            await ExecuteAsync(connection, transaction, """
+                CREATE TABLE IF NOT EXISTS store_lifecycle_retirements (
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    target_json TEXT NOT NULL CHECK (json_valid(target_json)),
+                    retired_by_employee_id TEXT NOT NULL,
+                    retired_at TEXT NOT NULL,
+                    PRIMARY KEY (branch_id, request_id)
+                );
                 """, cancellationToken);
         }
 
