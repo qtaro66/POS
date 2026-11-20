@@ -70,3 +70,86 @@ export function parseStoreLifecycleRecovery(value: unknown, command: StoreLifecy
   }
   return { status: 'Completed', result: state }
 }
+
+export interface StoreOperationContext {
+  employeeId: string
+  deviceId: string
+  occurredAt: string
+  branchLocalDate: string
+}
+export interface StoreShiftEntry {
+  storeSessionId: string
+  shiftId: string
+  openingCashAmount: number | null
+  opened: StoreOperationContext
+  closing: StoreLifecycleState['closing']
+}
+export interface StoreWorkspace {
+  branchId: string
+  businessDate: string
+  asOf: string
+  current: StoreLifecycleState | null
+  stores: {
+    storeSessionId: string
+    businessDate: string
+    openingCashAmount: number
+    opened: StoreOperationContext
+    isClosed: boolean
+    shifts: StoreShiftEntry[]
+  }[]
+}
+
+function parseOperationContext(value: unknown): StoreOperationContext {
+  if (!object(value) || !identifier(value.employeeId) || !identifier(value.deviceId) ||
+      typeof value.occurredAt !== 'string' || !/(Z|\+00:00)$/.test(value.occurredAt) || !Number.isFinite(Date.parse(value.occurredAt)) ||
+      typeof value.branchLocalDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.branchLocalDate)) {
+    throw new Error('Invalid shift attribution.')
+  }
+  return value as unknown as StoreOperationContext
+}
+
+export function parseStoreShiftEntry(value: unknown, storeSessionId: string, shiftId?: string): StoreShiftEntry {
+  if (!object(value) || value.storeSessionId !== storeSessionId || !identifier(value.shiftId) ||
+      shiftId !== undefined && value.shiftId !== shiftId ||
+      !(value.openingCashAmount === null || money(value.openingCashAmount) && value.openingCashAmount >= 0)) {
+    throw new Error('Invalid shift entry.')
+  }
+  const opened = parseOperationContext(value.opened)
+  if (value.closing !== null) {
+    const state = parseStoreLifecycle({
+      storeSessionId, activeShiftId: null, isClosed: false, businessDate: opened.branchLocalDate,
+      openingCashAmount: 0, closing: value.closing,
+    })
+    if (state.closing!.shiftId !== value.shiftId) {
+      throw new Error('Invalid saved closing.')
+    }
+  }
+  return { ...value, opened } as unknown as StoreShiftEntry
+}
+
+export function parseStoreWorkspace(value: unknown, branchId: string): StoreWorkspace {
+  if (!object(value) || value.branchId !== branchId || typeof value.businessDate !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(value.businessDate) ||
+      typeof value.asOf !== 'string' || !/(Z|\+00:00)$/.test(value.asOf) || !Number.isFinite(Date.parse(value.asOf)) ||
+      !Array.isArray(value.stores)) throw new Error('Invalid store workspace.')
+  const current = value.current === null ? null : parseStoreLifecycle(value.current)
+  const storeIds = new Set<string>()
+  const stores = value.stores.map((store: unknown) => {
+    if (!object(store) || !identifier(store.storeSessionId) || storeIds.has(store.storeSessionId) ||
+        store.businessDate !== value.businessDate || typeof store.isClosed !== 'boolean' ||
+        !money(store.openingCashAmount) || store.openingCashAmount < 0 || !Array.isArray(store.shifts)) {
+      throw new Error('Invalid workspace store.')
+    }
+    storeIds.add(store.storeSessionId)
+    const opened = parseOperationContext(store.opened)
+    const shiftIds = new Set<string>()
+    const shifts = store.shifts.map((entry: unknown) => {
+      const shift = parseStoreShiftEntry(entry, store.storeSessionId as string)
+      if (shiftIds.has(shift.shiftId) || shift.opened.branchLocalDate !== store.businessDate) throw new Error('Invalid workspace shift.')
+      shiftIds.add(shift.shiftId)
+      return shift
+    })
+    return { ...store, opened, shifts }
+  })
+  return { ...value, current, stores } as unknown as StoreWorkspace
+}

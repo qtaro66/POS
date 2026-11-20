@@ -1,9 +1,10 @@
+import { StoreShiftTimeline } from './StoreShiftTimeline.tsx'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { StoreLifecycleCommand, StoreLifecycleState, StoreLifecycleRecovery, StoreOperation } from '../api/storeLifecycleContracts.ts'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 import './StoreShiftWorkspace.css'
 
-type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest'>
+type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest' | 'storeLifecycleWorkspace' | 'storeShiftClosing'>
 const labels: Record<StoreOperation, string> = { OpenStore: 'เปิดร้าน', OpenShift: 'เปิดกะ', CloseShift: 'ปิดกะ', CloseStore: 'ปิดร้าน' }
 const money = (amount: number) => amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -206,6 +207,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
           <div><dt>ผลต่าง</dt><dd>{closing.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(closing.cashDifference) + ' บาท'}</dd></div>
           <div><dt>ผู้ยืนยัน</dt><dd>{closing.context.employeeId}</dd></div></dl></div>}
     </section>}
+    {phase === 'ready' && <StoreShiftTimeline port={port} sourceState={state} />}
     {message && <p role="status">{message}</p>}
     {storageError && <p role="alert">ข้อมูลคำขอในเครื่องยังไม่พร้อม กรุณาตรวจสอบก่อนดำเนินการต่อ</p>}
     {pending && <div className="store-pending"><p>มีคำขอ{labels[pending.operation]}ที่ต้องตรวจสอบผล ใช้ PIN ผู้ยืนยันเดิมเพื่อส่งคำขอเดิมซ้ำ</p>
@@ -227,7 +229,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
           <input type="number" min="0" step="0.01" value={cash} onChange={event => setCash(event.target.value)} readOnly={!!pending} required={operation === 'OpenStore' || operation === 'CloseStore'} /></label>
         {(operation === 'CloseShift' || operation === 'CloseStore') && <p>ตรวจสอบยอดนับจริง {cash === '' ? 'ไม่ได้กระทบยอด' : cash + ' บาท'} เมื่อยืนยันแล้วจะแก้ไขไม่ได้</p>}
         <label>ยืนยัน PIN<input name="pin" type="password" autoComplete="off" inputMode="numeric" required disabled={busy} /></label>
-        {message && <p role="status">{message}</p>}
+    {message && <p role="status">{message}</p>}
         <div className="store-dialog-actions"><button type="button" disabled={busy} onClick={() => setOperation(null)}>กลับ</button><button disabled={busy}>ยืนยัน{labels[operation]}</button></div>
       </form>
     </dialog>}
@@ -238,7 +240,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
         <p>สาขาจะตรวจผลคำขอเดิมก่อน หากบันทึกแล้วจะแสดงผลเดิม หากยังไม่บันทึกจะยกเลิกและป้องกันการส่งคำขอเดิมซ้ำ</p>
         <p>คำขอ{labels[pending.operation]} · จำนวนเงิน {pending.cashAmount === null ? 'ไม่ได้ระบุ' : money(pending.cashAmount) + ' บาท'}</p>
         <label>ยืนยัน PIN<input name="pin" type="password" autoComplete="off" inputMode="numeric" required disabled={busy} /></label>
-        {message && <p role="status">{message}</p>}
+    {message && <p role="status">{message}</p>}
         <div className="store-dialog-actions"><button type="button" disabled={busy} onClick={() => setRetirement(false)}>กลับ</button><button disabled={busy}>ยืนยันยกเลิกคำขอ</button></div>
       </form>
     </dialog>}  </section>

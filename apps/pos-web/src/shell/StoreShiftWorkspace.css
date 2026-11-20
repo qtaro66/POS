@@ -16,3 +16,12 @@
 .store-dialog input { border: 1px solid #a7b7c1; border-radius: 6px; padding: 12px; font: inherit; }
 .store-dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
 .store-dialog button:disabled, .store-actions button:disabled { opacity: .5; cursor: wait; }
+.store-timeline { padding: 24px; }
+.store-timeline > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.store-timeline h3 { margin-top: 0; }
+.store-attribution { display: grid; gap: 12px; }
+.store-attribution > div { display: flex; justify-content: space-between; gap: 24px; }
+.store-attribution dd { margin: 0; text-align: right; }
+.store-shift-list { margin: 24px 0 0; padding-left: 22px; display: grid; gap: 20px; }
+.store-shift-list h4 { margin: 0; overflow-wrap: anywhere; }
+.store-shift-list p { margin: 8px 0; }

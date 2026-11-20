@@ -1,4 +1,4 @@
-import { parseStoreLifecycle, parseStoreLifecycleRecovery, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
+import { parseStoreLifecycle, parseStoreLifecycleRecovery, parseStoreWorkspace, parseStoreShiftEntry, type StoreWorkspace, type StoreShiftEntry, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
 import { parseSoldOutPage, soldOutAdjustmentOutcome, type SoldOutAdjustment, type SoldOutAdjustmentOutcome, type SoldOutPage } from './soldOutContracts.ts'
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
@@ -415,6 +415,24 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         const expected = result.status === 404 ? 'NoDurableResult' : record(result.body) && record(result.body.result) && result.body.result.status === 'Rejected' ? 'Rejected' : 'BranchAccepted'
         const response = commandResponse(result.body, requestId, expected)
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
+      } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async storeLifecycleWorkspace(signal?: AbortSignal): Promise<QueryResult<StoreWorkspace>> {
+      const result = await request('/store-lifecycle/workspace', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseStoreWorkspace(result.body, session.branchId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async storeShiftClosing(storeSessionId: string, shiftId: string, signal?: AbortSignal): Promise<QueryResult<StoreShiftEntry>> {
+      const result = await request('/store-lifecycle/' + encodeURIComponent(storeSessionId) + '/shifts/' + encodeURIComponent(shiftId) + '/closing', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try {
+        const value = parseStoreShiftEntry(result.body, storeSessionId, shiftId)
+        if (!value.closing) throw new Error('Closing is unavailable.')
+        return { kind: 'ok', value }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     async storeLifecycleCurrent(signal?: AbortSignal): Promise<QueryResult<StoreLifecycleState>> {
