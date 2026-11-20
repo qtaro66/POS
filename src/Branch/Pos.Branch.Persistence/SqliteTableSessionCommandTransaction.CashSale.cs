@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Pos.Application.TableSessions;
 using Pos.Domain.Payments;
+using Pos.Domain.StoreSessions;
 using Pos.Domain.TableSessions;
 
 namespace Pos.Branch.Infrastructure.Sqlite;
@@ -24,10 +25,11 @@ internal sealed partial class SqliteTableSessionCommandTransaction
 
         if (await FindReceiptAsync(branchId, requestId, token) is not null) { return null; }
 
+        var shift = await ResolveCashLifecycleAsync(branchId, employeeId, deviceId, now, token);
+        if (shift is null) { return null; }
         read.CommandText = """
-            SELECT shift.shift_id, shift.store_session_id, shift.business_date, preview.content_json
-            FROM cash_sale_open_shifts shift
-            JOIN table_sessions session ON session.branch_id = shift.branch_id
+            SELECT preview.content_json
+            FROM table_sessions session
             JOIN bill_preview_snapshots preview ON preview.branch_id = session.branch_id
                 AND preview.table_session_id = session.table_session_id
             WHERE session.branch_id = $branch AND session.table_session_id = $session
@@ -41,13 +43,12 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         await using (var reader = await read.ExecuteReaderAsync(token))
         {
             if (!await reader.ReadAsync(token)) { return null; }
-            previewJson = reader.GetString(3);
+            previewJson = reader.GetString(0);
             using var preview = JsonDocument.Parse(previewJson);
             var due = preview.RootElement.GetProperty("netTotal").GetDecimal();
             if (tendered < due) { return null; }
             var cash = new CashSettlement(due, tendered);
-            sale = new(sessionId, employeeId, deviceId, expectedVersion, reader.GetString(0), reader.GetString(1),
-                reader.GetString(2), cash.TenderedAmount, cash.AppliedAmount, cash.ChangeAmount, "TEST-" + Guid.NewGuid().ToString("N"), "QueuedForSimulation");
+            sale = new(sessionId, employeeId, deviceId, expectedVersion, shift.ShiftId, shift.StoreId, shift.BusinessDate, cash.TenderedAmount, cash.AppliedAmount, cash.ChangeAmount, "TEST-" + Guid.NewGuid().ToString("N"), "QueuedForSimulation");
         }
 
         var session = await FindSessionAsync(branchId, TableSessionId.From(sessionId), token);
@@ -81,6 +82,33 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         return sale;
     }
 
+    private sealed record CashLifecycle(string ShiftId, string StoreId, string BusinessDate);
+
+    private async Task<CashLifecycle?> ResolveCashLifecycleAsync(string branchId, string employeeId, string deviceId,
+        DateTimeOffset now, CancellationToken token)
+    {
+        var current = await ReadCurrentStoreLifecycleAsync(branchId, token);
+        if (current is not null)
+        {
+            if (current.IsClosed || current.ActiveShiftId is null) { return null; }
+            var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(now, "Asia/Bangkok").DateTime);
+            var store = await LoadStoreLifecycleAsync(branchId, current.StoreSessionId, token);
+            try
+            {
+                store!.EnsureCanCompletePayment(new StoreOperationContext(employeeId, deviceId, now, localDate));
+            }
+            catch (InvalidOperationException) { return null; }
+            return new(current.ActiveShiftId, current.StoreSessionId,
+                current.BusinessDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        using var read = CreateCommand("""
+            SELECT shift_id, store_session_id, business_date FROM cash_sale_open_shifts WHERE branch_id = $branch;
+            """);
+        read.Parameters.AddWithValue("$branch", branchId);
+        await using var reader = await read.ExecuteReaderAsync(token);
+        return await reader.ReadAsync(token) ? new(reader.GetString(0), reader.GetString(1), reader.GetString(2)) : null;
+    }
 }
 
 public sealed record CashSaleResult(string TableSessionId, string EmployeeId, string DeviceId, long ExpectedVersion,
