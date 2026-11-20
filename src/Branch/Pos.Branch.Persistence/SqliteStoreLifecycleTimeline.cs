@@ -5,13 +5,13 @@ using Pos.Domain.StoreSessions;
 namespace Pos.Branch.Infrastructure.Sqlite;
 
 public sealed record StoreShiftTimelineEntry(string StoreSessionId, string ShiftId, decimal? OpeningCashAmount,
-    StoreOperationContext Opened, ShiftClosing? Closing);
+    StoreOperationContext Opened, ShiftClosing? Closing, StoreCashSummary? CashSummary = null);
 
 public sealed record StoreSessionTimelineEntry(string StoreSessionId, DateOnly BusinessDate, decimal OpeningCashAmount,
     StoreOperationContext Opened, bool IsClosed, IReadOnlyList<StoreShiftTimelineEntry> Shifts);
 
 public sealed record StoreLifecycleWorkspace(string BranchId, DateOnly BusinessDate, DateTimeOffset AsOf,
-    StoreLifecycleResult? Current, IReadOnlyList<StoreSessionTimelineEntry> Stores);
+    StoreLifecycleResult? Current, IReadOnlyList<StoreSessionTimelineEntry> Stores, StoreCashSummary? CashSummary = null);
 
 public sealed partial class SqliteTableSessionCommandStore
 {
@@ -36,9 +36,10 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         ArgumentException.ThrowIfNullOrWhiteSpace(branchId);
         var current = await ReadCurrentStoreLifecycleAsync(branchId, token);
         using var read = CreateCommand("""
-            SELECT command_json,result_json FROM store_lifecycle_commands
-            WHERE branch_id = $branch AND json_extract(command_json, '$.Context.BranchLocalDate') = $date
-            ORDER BY sequence;
+            SELECT history.command_json,history.result_json,snapshot.summary_json FROM store_lifecycle_commands history
+            LEFT JOIN store_lifecycle_cash_snapshots snapshot ON snapshot.branch_id = history.branch_id AND snapshot.request_id = history.request_id
+            WHERE history.branch_id = $branch AND json_extract(history.command_json, '$.Context.BranchLocalDate') = $date
+            ORDER BY history.sequence;
             """);
         read.Parameters.AddWithValue("$branch", branchId);
         read.Parameters.AddWithValue("$date", businessDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
@@ -50,7 +51,9 @@ internal sealed partial class SqliteTableSessionCommandTransaction
             return new StoreSessionTimelineEntry(opening.StoreSessionId, latest.BusinessDate,
                 latest.OpeningCashAmount, opening.Context, latest.IsClosed, BuildShiftTimeline(group).ToArray());
         }).ToArray();
-        return new(branchId, businessDate, asOf.ToUniversalTime(), current, stores);
+        var summary = current is not null && !current.IsClosed
+            ? await ReadStoreCashSummaryAsync(branchId, current.StoreSessionId, current.ActiveShiftId, token) : null;
+        return new(branchId, businessDate, asOf.ToUniversalTime(), current, stores, summary);
     }
 
     internal async Task<StoreShiftTimelineEntry?> ReadStoreShiftClosingAsync(string branchId,
@@ -60,10 +63,11 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         ArgumentException.ThrowIfNullOrWhiteSpace(storeSessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(shiftId);
         using var read = CreateCommand("""
-            SELECT command_json,result_json FROM store_lifecycle_commands
-            WHERE branch_id = $branch AND store_session_id = $store
+            SELECT history.command_json,history.result_json,snapshot.summary_json FROM store_lifecycle_commands history
+            LEFT JOIN store_lifecycle_cash_snapshots snapshot ON snapshot.branch_id = history.branch_id AND snapshot.request_id = history.request_id
+            WHERE history.branch_id = $branch AND history.store_session_id = $store
                 AND json_extract(command_json, '$.ShiftId') = $shift
-            ORDER BY sequence;
+            ORDER BY history.sequence;
             """);
         read.Parameters.AddWithValue("$branch", branchId);
         read.Parameters.AddWithValue("$store", storeSessionId);
@@ -77,9 +81,9 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         {
             var opening = group.First().Command;
             var closing = group.LastOrDefault(entry =>
-                entry.Command.Action is StoreLifecycleAction.CloseShift or StoreLifecycleAction.CloseStore)?.Result.Closing;
+                entry.Command.Action is StoreLifecycleAction.CloseShift or StoreLifecycleAction.CloseStore);
             return new StoreShiftTimelineEntry(opening.StoreSessionId, opening.ShiftId,
-                opening.CashAmount, opening.Context, closing);
+                opening.CashAmount, opening.Context, closing?.Result.Closing, closing?.CashSummary);
         });
 
     private static async Task<List<TimelineCommand>> ReadTimelineCommandsAsync(
@@ -90,10 +94,11 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         while (await reader.ReadAsync(token))
         {
             commands.Add(new(JsonSerializer.Deserialize<StoreLifecycleCommand>(reader.GetString(0))!,
-                JsonSerializer.Deserialize<StoreLifecycleResult>(reader.GetString(1))!));
+                JsonSerializer.Deserialize<StoreLifecycleResult>(reader.GetString(1))!,
+                reader.IsDBNull(2) ? null : JsonSerializer.Deserialize<StoreCashSummary>(reader.GetString(2))));
         }
         return commands;
     }
 
-    private sealed record TimelineCommand(StoreLifecycleCommand Command, StoreLifecycleResult Result);
+    private sealed record TimelineCommand(StoreLifecycleCommand Command, StoreLifecycleResult Result, StoreCashSummary? CashSummary);
 }

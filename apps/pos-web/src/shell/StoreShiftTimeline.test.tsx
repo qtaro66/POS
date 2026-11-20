@@ -108,3 +108,80 @@ it('does not show empty financial values when workspace loading fails', async ()
   expect(screen.queryByText(/จำนวนกะ 0/)).toBeNull()
   expect(screen.queryByRole('listitem')).toBeNull()
 })
+
+it('shows current cash applied totals and receipt count from the normal store page', async () => {
+  const fixture = createOrderingPreview()
+  const summary = { source: 'CashSales' as const, store: { receiptCount: 3, appliedCashAmount: 360 }, shift: { receiptCount: 1, appliedCashAmount: 200 } }
+  const source = async () => ({ kind: 'ok' as const, value: { ...workspace, cashSummary: summary } })
+  const client = { ...fixture.client, storeLifecycleCurrent: async () => ({ kind: 'ok' as const, value: state }), storeLifecycleWorkspace: source }
+  render(<App client={client} />)
+  fireEvent.click(screen.getByRole('button', { name: 'ร้านและกะ' }))
+  const live = within(await screen.findByRole('region', { name: 'สรุปเงินสดที่บันทึกล่าสุด' }))
+  const currentShift = within(live.getByRole('region', { name: 'เงินสดของกะปัจจุบัน' }))
+  expect(currentShift.getByText('1 ใบ')).toBeTruthy()
+  expect(currentShift.getByText('200.00 บาท')).toBeTruthy()
+  expect(currentShift.queryByText('300.00 บาท')).toBeNull()
+  const currentStore = within(live.getByRole('region', { name: 'เงินสดสะสมรอบร้าน' }))
+  expect(currentStore.getByText('3 ใบ')).toBeTruthy()
+  expect(currentStore.getByText('360.00 บาท')).toBeTruthy()
+})
+
+it('keeps a frozen closing cash summary separate from later live totals', async () => {
+  const frozen = { source: 'CashSales' as const, store: { receiptCount: 1, appliedCashAmount: 100 }, shift: { receiptCount: 1, appliedCashAmount: 100 } }
+  const live = { source: 'CashSales' as const, store: { receiptCount: 2, appliedCashAmount: 300 }, shift: { receiptCount: 1, appliedCashAmount: 200 } }
+  const source = async () => ({ kind: 'ok' as const, value: { ...workspace, cashSummary: live } })
+  const closing = vi.fn(async () => ({ kind: 'ok' as const, value: { ...first, cashSummary: frozen } }))
+  render(<StoreShiftTimeline port={{ storeLifecycleWorkspace: source, storeShiftClosing: closing }} sourceState={state} />)
+  await screen.findByRole('region', { name: 'สรุปเงินสดที่บันทึกล่าสุด' })
+  fireEvent.click(screen.getByRole('button', { name: 'ดูผลปิดกะ' }))
+  const recorded = within(await screen.findByRole('region', { name: 'สรุปเงินสดที่บันทึก ณ เวลาปิด' }))
+  expect(recorded.getAllByText('100.00 บาท')).toHaveLength(2)
+  expect(recorded.queryByText('300.00 บาท')).toBeNull()
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.getByText('ไม่ได้กระทบยอด (NotReconciled)')).toBeTruthy()
+})
+
+it('shows legacy missing captured cash totals as unavailable and never substitutes live cash totals', async () => {
+  const source = async () => ({ kind: 'ok' as const, value: { ...workspace, cashSummary: {
+    source: 'CashSales' as const, store: { receiptCount: 2, appliedCashAmount: 300 }, shift: null,
+  } } })
+  const closing = vi.fn(async () => ({ kind: 'ok' as const, value: { ...first, cashSummary: null } }))
+  render(<StoreShiftTimeline port={{ storeLifecycleWorkspace: source, storeShiftClosing: closing }} sourceState={state} />)
+  await screen.findByRole('button', { name: 'ดูผลปิดกะ' })
+  fireEvent.click(screen.getByRole('button', { name: 'ดูผลปิดกะ' }))
+  const dialog = within(screen.getByRole('dialog'))
+  await dialog.findByText('ผลปิดกะนี้ไม่มีสรุปยอดขายเงินสดที่บันทึกไว้')
+  expect(dialog.queryByText('300.00 บาท')).toBeNull()
+  expect(dialog.queryByText('0.00 บาท')).toBeNull()
+})
+
+it('invalidates live cash totals while refreshing and keeps them hidden on a failed response', async () => {
+  let finish!: (value: { kind: 'unavailable'; reason: 'protocol' }) => void
+  const source = vi.fn()
+    .mockResolvedValueOnce({ kind: 'ok', value: { ...workspace, cashSummary: {
+      source: 'CashSales', store: { receiptCount: 1, appliedCashAmount: 999 }, shift: null,
+    } } })
+    .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  render(<StoreShiftTimeline port={{ storeLifecycleWorkspace: source }} sourceState={state} />)
+  await screen.findByText('999.00 บาท')
+  fireEvent.click(screen.getByRole('button', { name: 'อ่านประวัติกะอีกครั้ง' }))
+  await screen.findByText('กำลังอ่านประวัติกะ')
+  expect(screen.queryByText('999.00 บาท')).toBeNull()
+  await act(async () => finish({ kind: 'unavailable', reason: 'protocol' }))
+  await screen.findByText('ยังอ่านประวัติกะไม่ได้')
+  expect(screen.queryByText('999.00 บาท')).toBeNull()
+  expect(screen.queryByText('0.00 บาท')).toBeNull()
+})
+
+it('associates live cash totals with the actual older open-store Business Date after rollover', async () => {
+  const old = { ...state, businessDate: '2026-11-19' }
+  const source = async () => ({ kind: 'ok' as const, value: { ...workspace, current: old, stores: [], cashSummary: {
+    source: 'CashSales' as const, store: { receiptCount: 1, appliedCashAmount: 900 }, shift: { receiptCount: 1, appliedCashAmount: 900 },
+  } } })
+  render(<StoreShiftTimeline port={{ storeLifecycleWorkspace: source }} sourceState={old} />)
+  await screen.findByText('Business Date 2026-11-20 · จำนวนกะ 0 กะ')
+  const summary = within(screen.getByRole('region', { name: 'สรุปเงินสดที่บันทึกล่าสุด' }))
+  expect(summary.getByText('รอบร้าน S1 · Business Date 2026-11-19')).toBeTruthy()
+  expect(summary.getAllByText('900.00 บาท')).toHaveLength(2)
+  expect(summary.queryByText(/Business Date 2026-11-20/)).toBeNull()
+})

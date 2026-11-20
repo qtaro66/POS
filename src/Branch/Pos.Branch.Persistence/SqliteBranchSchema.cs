@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 31;
+    public const int CurrentVersion = 32;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1522,6 +1522,23 @@ internal static class SqliteBranchSchema
                     retired_by_employee_id TEXT NOT NULL,
                     retired_at TEXT NOT NULL,
                     PRIMARY KEY (branch_id, request_id)
+                );
+                """, cancellationToken);
+        }
+
+        if (storedVersion < 32)
+        {
+            await ExecuteAsync(connection, transaction, """
+                CREATE TABLE IF NOT EXISTS store_lifecycle_cash_snapshots (
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    store_session_id TEXT NOT NULL,
+                    shift_id TEXT NOT NULL,
+                    summary_json TEXT NOT NULL CHECK (json_valid(summary_json)),
+                    PRIMARY KEY (branch_id, request_id),
+                    UNIQUE (branch_id, store_session_id, shift_id),
+                    FOREIGN KEY (branch_id, request_id)
+                        REFERENCES store_lifecycle_commands(branch_id, request_id)
                 );
                 """, cancellationToken);
         }

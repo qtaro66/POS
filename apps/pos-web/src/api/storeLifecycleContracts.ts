@@ -77,7 +77,17 @@ export interface StoreOperationContext {
   occurredAt: string
   branchLocalDate: string
 }
+export interface StoreCashTotals {
+  receiptCount: number
+  appliedCashAmount: number
+}
+export interface StoreCashSummary {
+  source: 'CashSales'
+  store: StoreCashTotals
+  shift: StoreCashTotals | null
+}
 export interface StoreShiftEntry {
+  cashSummary?: StoreCashSummary | null
   storeSessionId: string
   shiftId: string
   openingCashAmount: number | null
@@ -85,6 +95,7 @@ export interface StoreShiftEntry {
   closing: StoreLifecycleState['closing']
 }
 export interface StoreWorkspace {
+  cashSummary?: StoreCashSummary | null
   branchId: string
   businessDate: string
   asOf: string
@@ -99,6 +110,15 @@ export interface StoreWorkspace {
   }[]
 }
 
+export function parseStoreCashSummary(value: unknown): StoreCashSummary {
+  if (!object(value) || value.source !== 'CashSales') throw new Error('Invalid cash summary source.')
+  function totals(entry: unknown): StoreCashTotals {
+    if (!object(entry) || !Number.isSafeInteger(entry.receiptCount) || (entry.receiptCount as number) < 0 ||
+        !money(entry.appliedCashAmount) || entry.appliedCashAmount < 0) throw new Error('Invalid cash summary totals.')
+    return { receiptCount: entry.receiptCount as number, appliedCashAmount: entry.appliedCashAmount }
+  }
+  return { source: 'CashSales', store: totals(value.store), shift: value.shift === null ? null : totals(value.shift) }
+}
 function parseOperationContext(value: unknown): StoreOperationContext {
   if (!object(value) || !identifier(value.employeeId) || !identifier(value.deviceId) ||
       typeof value.occurredAt !== 'string' || !/(Z|\+00:00)$/.test(value.occurredAt) || !Number.isFinite(Date.parse(value.occurredAt)) ||
@@ -114,6 +134,7 @@ export function parseStoreShiftEntry(value: unknown, storeSessionId: string, shi
       !(value.openingCashAmount === null || money(value.openingCashAmount) && value.openingCashAmount >= 0)) {
     throw new Error('Invalid shift entry.')
   }
+  if (value.cashSummary !== undefined && value.cashSummary !== null) parseStoreCashSummary(value.cashSummary)
   const opened = parseOperationContext(value.opened)
   if (value.closing !== null) {
     const state = parseStoreLifecycle({
@@ -132,6 +153,7 @@ export function parseStoreWorkspace(value: unknown, branchId: string): StoreWork
       !/^\d{4}-\d{2}-\d{2}$/.test(value.businessDate) ||
       typeof value.asOf !== 'string' || !/(Z|\+00:00)$/.test(value.asOf) || !Number.isFinite(Date.parse(value.asOf)) ||
       !Array.isArray(value.stores)) throw new Error('Invalid store workspace.')
+  if (value.cashSummary !== undefined && value.cashSummary !== null) parseStoreCashSummary(value.cashSummary)
   const current = value.current === null ? null : parseStoreLifecycle(value.current)
   const storeIds = new Set<string>()
   const stores = value.stores.map((store: unknown) => {

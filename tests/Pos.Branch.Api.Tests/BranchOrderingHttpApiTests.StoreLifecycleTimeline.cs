@@ -26,6 +26,8 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal("BRANCH-01", workspace.Body.GetProperty("branchId").GetString());
         Assert.True(DateTimeOffset.TryParse(workspace.Body.GetProperty("asOf").GetString(), out _));
         var store = Assert.Single(workspace.Body.GetProperty("stores").EnumerateArray());
+        Assert.Equal("CashSales", workspace.Body.GetProperty("cashSummary").GetProperty("source").GetString());
+        Assert.Equal(0, workspace.Body.GetProperty("cashSummary").GetProperty("store").GetProperty("receiptCount").GetInt32());
         Assert.Equal(open.StoreSessionId, store.GetProperty("storeSessionId").GetString());
         Assert.Equal("EMP-2", store.GetProperty("opened").GetProperty("employeeId").GetString());
         Assert.Single(store.GetProperty("shifts").EnumerateArray());
@@ -35,6 +37,8 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal("no-store", snapshot.CacheControl);
         Assert.Equal("NotReconciled", snapshot.Body.GetProperty("closing").GetProperty("reconciliationStatus").GetString());
         Assert.Equal(500, snapshot.Body.GetProperty("closing").GetProperty("expectedCashAmount").GetDecimal());
+        Assert.Equal("CashSales", snapshot.Body.GetProperty("cashSummary").GetProperty("source").GetString());
+        Assert.Equal(0, snapshot.Body.GetProperty("cashSummary").GetProperty("shift").GetProperty("appliedCashAmount").GetDecimal());
         Assert.Equal(404, (await fixture.Call("GetStoreShiftClosing", routeValue: open.StoreSessionId,
             shiftId: open.ShiftId, principal: LifecyclePrincipal(branch: "OTHER"))).Status);
         Assert.Empty((await fixture.Call("GetStoreLifecycleWorkspace", principal: LifecyclePrincipal(branch: "OTHER")))
