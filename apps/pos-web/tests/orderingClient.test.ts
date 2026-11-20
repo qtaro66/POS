@@ -564,3 +564,38 @@ test('lifecycle recovery rejects changed immutable cash and unsupported retireme
   const valid = await client.storeLifecycleRequestStatus(command)
   assert.ok('status' in valid && valid.status === 200 && valid.body.status === 'Completed')
 })
+
+test('store workspace and closing reads use scoped authenticated paths without PIN', async () => {
+  const context = { employeeId: 'E1', deviceId: 'D1', occurredAt: '2026-11-20T01:00:00Z', branchLocalDate: '2026-11-20' }
+  const closing = { storeSessionId: 'S/1', shiftId: 'H/1', closesStore: false, expectedCashAmount: 500, actualCashAmount: null, cashDifference: null, reconciliationStatus: 'NotReconciled', context }
+  const entry = { storeSessionId: 'S/1', shiftId: 'H/1', openingCashAmount: 500, opened: context, closing }
+  const workspace = { branchId: session.branchId, businessDate: '2026-11-20', asOf: '2026-11-20T03:00:00Z', current: null,
+    stores: [{ storeSessionId: 'S/1', businessDate: '2026-11-20', openingCashAmount: 500, opened: context, isClosed: false, shifts: [entry] }] }
+  const paths: string[] = []
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    paths.push(url)
+    assert.equal(init.method, 'GET')
+    assert.equal(init.body, undefined)
+    assert.equal((init.headers as Record<string, string>).Authorization, 'Device ' + session.deviceCredential)
+    return json(url.endsWith('/workspace') ? workspace : entry)
+  } })
+  assert.deepEqual(await client.storeLifecycleWorkspace(), { kind: 'ok', value: workspace })
+  assert.deepEqual(await client.storeShiftClosing('S/1', 'H/1'), { kind: 'ok', value: entry })
+  assert.equal(paths[0], session.serviceOrigin + '/api/v1/ordering/store-lifecycle/workspace')
+  assert.equal(paths[1], session.serviceOrigin + '/api/v1/ordering/store-lifecycle/S%2F1/shifts/H%2F1/closing')
+})
+
+test('store workspace rejects cross-Branch data and saved closing rejects another shift while retaining backward clock records', async () => {
+  const context = { employeeId: 'E1', deviceId: 'D1', occurredAt: '2026-11-20T01:00:00Z', branchLocalDate: '2026-11-20' }
+  const closing = { storeSessionId: 'S1', shiftId: 'H1', closesStore: false, expectedCashAmount: 500, actualCashAmount: null, cashDifference: null, reconciliationStatus: 'NotReconciled',
+    context: { ...context, occurredAt: '2026-11-20T00:59:00Z' } }
+  const entry = { storeSessionId: 'S1', shiftId: 'H1', openingCashAmount: 500, opened: context, closing }
+  let response = json({ branchId: 'OTHER', businessDate: '2026-11-20', asOf: '2026-11-20T03:00:00Z', current: null, stores: [] })
+  const client = createOrderingClient(session, { fetch: async () => response.clone() })
+  assert.deepEqual(await client.storeLifecycleWorkspace(), { kind: 'unavailable', reason: 'protocol' })
+  response = json(entry)
+  assert.deepEqual(await client.storeShiftClosing('S1', 'H2'), { kind: 'unavailable', reason: 'protocol' })
+  assert.deepEqual(await client.storeShiftClosing('S1', 'H1'), { kind: 'ok', value: entry })
+  response = json({}, 404)
+  assert.deepEqual(await client.storeShiftClosing('S1', 'H1'), { kind: 'notFound' })
+})

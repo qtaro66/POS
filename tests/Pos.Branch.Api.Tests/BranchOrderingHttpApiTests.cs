@@ -279,7 +279,7 @@ public sealed partial class BranchOrderingHttpApiTests
         }
 
         public async Task<(int Status, JsonElement Body, string CacheControl)> Call(string name, object? body = null,
-            string? routeValue = null, ClaimsPrincipal? principal = null, bool https = true, bool unknownLength = false, string? query = null)
+            string? routeValue = null, ClaimsPrincipal? principal = null, bool https = true, bool unknownLength = false, string? query = null, string? shiftId = null)
         {
             var endpoint = ((IEndpointRouteBuilder)_app).DataSources.SelectMany(source => source.Endpoints)
                 .Single(candidate => candidate.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == name);
@@ -290,6 +290,7 @@ public sealed partial class BranchOrderingHttpApiTests
             context.Request.QueryString = new QueryString(query);
             context.Request.Method = body is null ? "GET" : "POST";
             context.Request.RouteValues["storeSessionId"] = routeValue;
+            context.Request.RouteValues["shiftId"] = shiftId;
             context.Request.RouteValues["requestId"] = routeValue;
             context.Request.RouteValues["cancellationId"] = routeValue;
             context.Request.RouteValues["tableSessionId"] = routeValue;
