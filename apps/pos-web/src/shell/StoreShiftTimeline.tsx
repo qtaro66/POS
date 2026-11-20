@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { StoreCashSummary, StoreCashTotals, StoreLifecycleState, StoreShiftEntry, StoreWorkspace } from '../api/storeLifecycleContracts.ts'
+import type { StoreCashSummary, StoreCashTotals, StoreLifecycleState, StoreShiftEntry, StoreWorkspace, StoreTableTotals } from '../api/storeLifecycleContracts.ts'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 
 type Port = Pick<OrderingReadClient, 'storeLifecycleWorkspace' | 'storeShiftClosing'>
@@ -10,6 +10,17 @@ function duration(start: string, end: string) {
   return Math.floor(minutes / 60) + ' ชม. ' + minutes % 60 + ' นาที'
 }
 function Timestamp({ value }: { value: string }) { return <time dateTime={value}>{dateTime.format(new Date(value))}</time> }
+
+function TableTotals({ value, frozen = false }: { value: StoreTableTotals; frozen?: boolean }) {
+  return <section aria-label={frozen ? 'โต๊ะ ณ เวลาปิด' : 'สถานะโต๊ะล่าสุด'}>
+    <h3>{frozen ? 'โต๊ะที่ยังเปิด ณ เวลาปิด' : 'สถานะโต๊ะของสาขา'}</h3>
+    <dl className="store-attribution">
+      <div><dt>โต๊ะที่ยังไม่ปิด</dt><dd>{value.openTableCount} โต๊ะ</dd></div>
+      <div><dt>โต๊ะรอชำระ รวมชำระบางส่วน</dt><dd>{value.awaitingPaymentTableCount} โต๊ะ</dd></div>
+      <div><dt>โต๊ะชำระบางส่วน</dt><dd>{value.partiallyPaidTableCount} โต๊ะ</dd></div>
+    </dl>
+  </section>
+}
 
 function CashTotals({ totals, label }: { totals: StoreCashTotals; label: string }) {
   const financials = totals.financials
@@ -87,6 +98,7 @@ export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceSt
     {phase === 'ready' && workspace && <>
       <p>Business Date {workspace.businessDate} · จำนวนกะ {count} กะ</p>
       <p>ข้อมูล ณ <Timestamp value={workspace.asOf} /></p>
+      {workspace.tables && <TableTotals value={workspace.tables} />}
       {currentStore && <dl className="store-attribution"><div><dt>ผู้เปิดร้าน</dt><dd>{currentStore.opened.employeeId}</dd></div>
         <div><dt>เวลาเปิดร้าน</dt><dd><Timestamp value={currentStore.opened.occurredAt} /></dd></div></dl>}
       {currentShift && <dl className="store-attribution"><div><dt>ผู้เปิดกะปัจจุบัน</dt><dd>{currentShift.opened.employeeId}</dd></div>
@@ -110,6 +122,8 @@ export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceSt
       {closingPhase === 'loading' && <p role="status">กำลังอ่านผลปิดกะ</p>}
       {closingPhase === 'unavailable' && <p role="alert">ยังอ่านผลปิดกะนี้ไม่ได้</p>}
       {closingPhase === 'ready' && recorded && <>
+        {selectedClosing?.cashSummary?.tables ? <TableTotals value={selectedClosing.cashSummary.tables} frozen /> :
+          <p>ยังไม่มีจำนวนโต๊ะที่บันทึก ณ เวลาปิด</p>}
         {selectedClosing?.cashSummary ? <CashSummary value={selectedClosing.cashSummary} frozen /> :
           <p>ผลปิดกะนี้ไม่มีสรุปยอดขายเงินสดที่บันทึกไว้</p>}
         <p>กะ {recorded.shiftId} · {recorded.closesStore ? 'ปิดร้าน' : 'ปิดกะระหว่างวัน'}</p>

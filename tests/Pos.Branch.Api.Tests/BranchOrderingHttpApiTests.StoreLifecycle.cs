@@ -111,6 +111,39 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal("0", await fixture.Scalar("SELECT count(*) FROM store_lifecycle_commands"));
         Assert.Equal(400, (await fixture.Call("ExecuteStoreLifecycle", request with { Operation = "OpenStore", CashAmount = 1.001m }, principal: LifecyclePrincipal())).Status);
     }
+    [Theory]
+    [InlineData("CloseShift")]
+    [InlineData("CloseStore")]
+    public async Task Closing_lists_own_partially_paid_tables_and_does_not_capture_a_failed_close(string operation)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var principal = LifecyclePrincipal();
+        var open = new StoreLifecycleEndpoints.Request(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(), "OpenStore", 0, "111111");
+        Assert.Equal(200, (await fixture.Call("ExecuteStoreLifecycle", open, principal: principal)).Status);
+        await fixture.Execute("""
+            INSERT INTO table_sessions VALUES
+              ('BRANCH-01','partial','A01','PartiallyPaid',1),
+              ('OTHER','foreign','PRIVATE-TABLE','PartiallyPaid',1);
+            """);
+        var close = open with { RequestId = Guid.NewGuid().ToString(), Operation = operation };
+        var blocked = await fixture.Call("ExecuteStoreLifecycle", close, principal: principal);
+        Assert.Equal(409, blocked.Status);
+        Assert.Equal("StoreLifecyclePartialPayments", blocked.Body.GetProperty("error").GetString());
+        var table = Assert.Single(blocked.Body.GetProperty("tables").EnumerateArray());
+        Assert.Equal("A01", table.GetProperty("tableId").GetString());
+        Assert.DoesNotContain("PRIVATE-TABLE", blocked.Body.GetRawText());
+        Assert.Equal("1", await fixture.Scalar("SELECT count(*) FROM store_lifecycle_commands"));
+        Assert.Equal("0", await fixture.Scalar("SELECT count(*) FROM store_lifecycle_cash_snapshots"));
+        var live = await fixture.Call("GetStoreLifecycleWorkspace", principal: principal);
+        Assert.Equal(1, live.Body.GetProperty("tables").GetProperty("partiallyPaidTableCount").GetInt32());
+        await fixture.Execute("UPDATE table_sessions SET status='PaymentPending' WHERE branch_id='BRANCH-01';");
+        Assert.Equal(200, (await fixture.Call("ExecuteStoreLifecycle", close, principal: principal)).Status);
+        var saved = await fixture.Call("GetStoreShiftClosing", routeValue: open.StoreSessionId,
+            shiftId: open.ShiftId, principal: principal);
+        Assert.Equal(1, saved.Body.GetProperty("cashSummary").GetProperty("tables").GetProperty("awaitingPaymentTableCount").GetInt32());
+        Assert.Equal("2", await fixture.Scalar("SELECT count(*) FROM store_lifecycle_commands"));
+    }
 }
 
 public sealed class StoreOpeningPermissionTests

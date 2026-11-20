@@ -13,7 +13,7 @@ public sealed record StoreBillTotals(decimal ItemGrossAmount, decimal LineDiscou
         RoundingAdjustment + other.RoundingAdjustment, AmountDue + other.AmountDue,
         VatInclusiveAmount + other.VatInclusiveAmount, AmountBeforeVat + other.AmountBeforeVat);
 }
-public sealed record StoreCashSummary(string Source, StoreCashTotals Store, StoreCashTotals? Shift);
+public sealed record StoreCashSummary(string Source, StoreCashTotals Store, StoreCashTotals? Shift, StoreTableTotals? Tables = null);
 
 internal sealed partial class SqliteTableSessionCommandTransaction
 {
@@ -26,27 +26,30 @@ internal sealed partial class SqliteTableSessionCommandTransaction
             """);
         read.Parameters.AddWithValue("$branch", branchId);
         read.Parameters.AddWithValue("$store", storeId);
-        await using var reader = await read.ExecuteReaderAsync(token);
         int storeCount = 0, shiftCount = 0;
         decimal storeCash = 0, shiftCash = 0;
         StoreBillTotals? storeBills = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
         StoreBillTotals? shiftBills = storeBills;
-        while (await reader.ReadAsync(token))
+        await using (var reader = await read.ExecuteReaderAsync(token))
         {
-            var sale = JsonSerializer.Deserialize<CashSaleResult>(reader.GetString(0))!;
-            storeCount++;
-            storeCash += sale.AppliedAmount;
-            var bill = ReadCapturedBillTotals(reader.GetString(1), sale.AppliedAmount);
-            storeBills = storeBills is not null && bill is not null ? storeBills.Add(bill) : null;
-            if (sale.ShiftId == shiftId)
+            while (await reader.ReadAsync(token))
             {
-                shiftCount++;
-                shiftCash += sale.AppliedAmount;
-                shiftBills = shiftBills is not null && bill is not null ? shiftBills.Add(bill) : null;
+                var sale = JsonSerializer.Deserialize<CashSaleResult>(reader.GetString(0))!;
+                storeCount++;
+                storeCash += sale.AppliedAmount;
+                var bill = ReadCapturedBillTotals(reader.GetString(1), sale.AppliedAmount);
+                storeBills = storeBills is not null && bill is not null ? storeBills.Add(bill) : null;
+                if (sale.ShiftId == shiftId)
+                {
+                    shiftCount++;
+                    shiftCash += sale.AppliedAmount;
+                    shiftBills = shiftBills is not null && bill is not null ? shiftBills.Add(bill) : null;
+                }
             }
         }
         return new("CashSales", new(storeCount, storeCash, storeCount == 0 ? null : storeBills),
-            shiftId is null ? null : new(shiftCount, shiftCash, shiftCount == 0 ? null : shiftBills));
+            shiftId is null ? null : new(shiftCount, shiftCash, shiftCount == 0 ? null : shiftBills),
+            await ReadStoreTableTotalsAsync(branchId, token));
     }
 
     private static StoreBillTotals? ReadCapturedBillTotals(string json, decimal appliedCash)

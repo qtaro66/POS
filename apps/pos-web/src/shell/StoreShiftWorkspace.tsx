@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { StoreLifecycleCommand, StoreLifecycleState, StoreLifecycleRecovery, StoreOperation } from '../api/storeLifecycleContracts.ts'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 import './StoreShiftWorkspace.css'
+import { readClosingBlockedTables } from '../api/storeLifecycleContracts.ts'
 
 type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest' | 'storeLifecycleWorkspace' | 'storeShiftClosing'>
 const labels: Record<StoreOperation, string> = { OpenStore: 'เปิดร้าน', OpenShift: 'เปิดกะ', CloseShift: 'ปิดกะ', CloseStore: 'ปิดร้าน' }
@@ -177,7 +178,9 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
         if (!wasPending && 'status' in result && [400, 401, 403, 409].includes(result.status)) {
           try { localStorage.removeItem(storageKey); setPending(null) } catch { setStorageError(true) }
         }
-        setMessage('status' in result && result.status === 401 ? 'PIN ไม่ถูกต้องหรือพนักงานไม่ Active กรุณายืนยันคำขอเดิมอีกครั้ง' :
+        const blocked = 'status' in result && result.status === 409 ? readClosingBlockedTables(result.body) : null
+        setMessage(blocked ? 'ยังปิดกะหรือร้านไม่ได้ มีรายการชำระบางส่วนที่โต๊ะ ' + blocked.map(table => table.tableId).join(', ') + ' กรุณาแก้รายการจากเมนูโต๊ะก่อนยืนยันอีกครั้ง' :
+          'status' in result && result.status === 401 ? 'PIN ไม่ถูกต้องหรือพนักงานไม่ Active กรุณายืนยันคำขอเดิมอีกครั้ง' :
           'status' in result && result.status === 403 ? 'พนักงานหรือเครื่องไม่มีสิทธิ์ดำเนินการ กรุณายืนยันคำขอเดิม' :
           'status' in result && result.status === 409 ? 'คำขอขัดแย้งกับสถานะสาขา กรุณาตรวจสอบสถานะและใช้ PIN ผู้ยืนยันเดิม' :
           'ยังยืนยันผลจากสาขาไม่ได้ กรุณาส่งคำขอเดิมซ้ำด้วย PIN ผู้ยืนยันเดิม')

@@ -123,20 +123,15 @@ internal sealed partial class SqliteTableSessionCommandTransaction
                     throw new InvalidOperationException("The command must target the active shift.");
                 }
                 var applied = await ReadStoreAppliedCashAsync(branchId, command.StoreSessionId, token);
-                using var partial = CreateCommand("""
-                    SELECT EXISTS(SELECT 1 FROM table_sessions
-                        WHERE branch_id = $branch AND status = 'PartiallyPaid');
-                    """);
-                partial.Parameters.AddWithValue("$branch", branchId);
-                var hasPartial = (long)(await partial.ExecuteScalarAsync(token))! != 0;
+                await EnsureNoPartiallyPaidTablesAsync(branchId, token);
                 switch (command.Action)
                 {
                     case StoreLifecycleAction.CloseShift:
-                        state.CloseShift(applied, command.CashAmount, hasPartial, command.Context);
+                        state.CloseShift(applied, command.CashAmount, false, command.Context);
                         break;
                     case StoreLifecycleAction.CloseStore:
                         if (command.CashAmount is null) { throw new ArgumentException("A store closing count is required."); }
-                        state.CloseStore(applied, command.CashAmount.Value, hasPartial, command.Context);
+                        state.CloseStore(applied, command.CashAmount.Value, false, command.Context);
                         break;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(command));
