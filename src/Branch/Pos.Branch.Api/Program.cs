@@ -70,6 +70,7 @@ builder.Services.AddBranchCommandStatusQuery(builder.Configuration);
 builder.Services.AddBranchOrdering(builder.Configuration);
 builder.Services.AddBranchCloudDataSentStatus(builder.Configuration);
 builder.Services.AddBranchCloudOutboxDelivery(builder.Configuration);
+builder.Services.AddClosingReportDelivery(builder.Configuration);
 builder.Services.AddPrintSpoolPolling(builder.Configuration);
 builder.Services.AddPrintSpoolRetention(builder.Configuration);
 builder.Services.AddEscPosRasterRendering(builder.Configuration);
