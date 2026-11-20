@@ -55,7 +55,7 @@ public sealed partial class BranchOrderingHttpApiTests
         var retired = await fixture.Call("RetireStoreLifecycleRequest", close with { Pin = "222222" }, principal: principal);
         Assert.Equal(saved.Body.GetRawText(), retired.Body.GetProperty("result").GetRawText());
         var foreign = new ClaimsPrincipal(new ClaimsIdentity(principal.Claims.Where(c => c.Type != BranchPosClaimTypes.DeviceId)
-            .Append(new Claim(BranchPosClaimTypes.DeviceId, "OTHER")), "test"));
+            .Append(new Claim(BranchPosClaimTypes.DeviceId, "OTHER")), principal.Identity!.AuthenticationType));
         Assert.Equal(409, (await fixture.Call("GetStoreLifecycleRequest", routeValue: close.RequestId, principal: foreign, query: query)).Status);
         Assert.Equal(409, (await fixture.Call("RetireStoreLifecycleRequest", close with { CashAmount = 1 }, principal: principal)).Status);
         Assert.Equal("0", await fixture.Scalar("SELECT count(*) FROM store_lifecycle_retirements"));
