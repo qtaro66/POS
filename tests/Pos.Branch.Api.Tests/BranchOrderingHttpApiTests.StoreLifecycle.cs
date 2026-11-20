@@ -26,6 +26,33 @@ public sealed partial class BranchOrderingHttpApiTests
         ], BranchEmployeeSessionAuthenticationDefaults.SchemeName));
 
     [Fact]
+    public async Task Current_lifecycle_recovers_latest_store_on_each_branch()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var principal = LifecyclePrincipal();
+        Assert.Equal(404, (await fixture.Call("GetCurrentStoreLifecycle", principal: principal)).Status);
+        Assert.Equal(403, (await fixture.Call("GetCurrentStoreLifecycle", principal: LifecyclePrincipal("Mobile"))).Status);
+        var request = new StoreLifecycleEndpoints.Request(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(), "OpenStore", 0, "111111");
+        Assert.Equal(200, (await fixture.Call("ExecuteStoreLifecycle", request, principal: principal)).Status);
+        var current = await fixture.Call("GetCurrentStoreLifecycle", principal: principal);
+        Assert.Equal(200, current.Status);
+        Assert.Equal(request.StoreSessionId, current.Body.GetProperty("storeSessionId").GetString());
+        Assert.Equal("no-store", current.CacheControl);
+        Assert.Equal(404, (await fixture.Call("GetCurrentStoreLifecycle", principal: LifecyclePrincipal(branch: "OTHER"))).Status);
+        var close = request with { RequestId = Guid.NewGuid().ToString(), Operation = "CloseStore" };
+        Assert.Equal(200, (await fixture.Call("ExecuteStoreLifecycle", close, principal: principal)).Status);
+        var next = request with
+        {
+            RequestId = Guid.NewGuid().ToString(),
+            StoreSessionId = Guid.NewGuid().ToString(),
+            ShiftId = Guid.NewGuid().ToString()
+        };
+        Assert.Equal(200, (await fixture.Call("ExecuteStoreLifecycle", next, principal: principal)).Status);
+        var latest = await fixture.Call("GetCurrentStoreLifecycle", principal: principal);
+        Assert.Equal(next.StoreSessionId, latest.Body.GetProperty("storeSessionId").GetString());
+    }
+    [Fact]
     public async Task Lifecycle_routes_use_pinned_employee_and_replay_across_server_time_changes()
     {
         await using var fixture = await Fixture.CreateAsync();

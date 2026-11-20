@@ -19,6 +19,12 @@ public sealed partial class SqliteTableSessionCommandStore
             ((SqliteTableSessionCommandTransaction)transaction).ExecuteStoreLifecycleAsync(branchId, command, token),
             cancellationToken);
 
+    public Task<StoreLifecycleResult?> ReadCurrentStoreLifecycleAsync(string branchId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteAtomicallyAsync((transaction, token) =>
+            ((SqliteTableSessionCommandTransaction)transaction).ReadCurrentStoreLifecycleAsync(branchId, token),
+            cancellationToken);
+
     public Task<StoreLifecycleResult?> ReadStoreLifecycleAsync(string branchId, string storeSessionId,
         CancellationToken cancellationToken = default) =>
         ExecuteAtomicallyAsync((transaction, token) =>
@@ -28,6 +34,18 @@ public sealed partial class SqliteTableSessionCommandStore
 
 internal sealed partial class SqliteTableSessionCommandTransaction
 {
+    internal async Task<StoreLifecycleResult?> ReadCurrentStoreLifecycleAsync(string branchId, CancellationToken token)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(branchId);
+        using var read = CreateCommand("""
+            SELECT store_session_id FROM store_lifecycle_commands
+            WHERE branch_id = $branch ORDER BY sequence DESC LIMIT 1;
+            """);
+        read.Parameters.AddWithValue("$branch", branchId);
+        var storeId = await read.ExecuteScalarAsync(token) as string;
+        return storeId is null ? null : await ReadStoreLifecycleAsync(branchId, storeId, token);
+    }
+
     internal async Task<StoreLifecycleResult?> ReadStoreLifecycleAsync(string branchId, string storeSessionId,
         CancellationToken token)
     {

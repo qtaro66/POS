@@ -1,0 +1,18 @@
+.store-workspace { display: flex; flex-direction: column; min-height: calc(100vh - 140px); gap: 20px; }
+.store-state { padding: 24px; }
+.store-state h3 { margin-top: 0; }
+.store-state dl { display: grid; gap: 14px; }
+.store-state dl > div { display: flex; justify-content: space-between; gap: 24px; }
+.store-state dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.store-closing { border-top: 1px solid #dce2e6; margin-top: 24px; padding-top: 24px; }
+.store-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: auto; }
+.store-actions button, .store-pending button, .store-dialog button { padding: 12px 22px; border: 1px solid #becbd2; border-radius: 8px; background: white; color: #203c4a; font: inherit; cursor: pointer; }
+.store-actions button:last-child, .store-dialog-actions button:last-child { background: #164e63; color: white; }
+.store-dialog { width: min(500px, calc(100vw - 48px)); border: 0; border-radius: 14px; padding: 28px; color: #203c4a; }
+.store-dialog::backdrop { background: #102c3db3; }
+.store-dialog form { display: flex; flex-direction: column; gap: 18px; }
+.store-dialog h2, .store-dialog p { margin: 0; }
+.store-dialog label { display: flex; flex-direction: column; gap: 8px; }
+.store-dialog input { border: 1px solid #a7b7c1; border-radius: 6px; padding: 12px; font: inherit; }
+.store-dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.store-dialog button:disabled, .store-actions button:disabled { opacity: .5; cursor: wait; }

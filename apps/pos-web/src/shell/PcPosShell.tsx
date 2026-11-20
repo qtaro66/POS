@@ -12,8 +12,8 @@ const pages = [
 type PageId = typeof pages[number]['id']
 export type SystemFocusTarget = 'print-attention-title' | 'cloud-outbox-title'
 
-export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStatus, systemPage, homePage }: {
-  branchLabel: string; preview: boolean; onLock: () => void; children: ReactNode; sidebarStatus?: ReactNode; systemPage?: ReactNode
+export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStatus, systemPage, homePage, storePage }: {
+  branchLabel: string; preview: boolean; onLock: () => void; children: ReactNode; sidebarStatus?: ReactNode; systemPage?: ReactNode; storePage?: ReactNode
   homePage?: (openTables: () => void, openSystem: (target?: SystemFocusTarget) => void) => ReactNode
 }) {
   const [page, setPage] = useState<PageId>('tables')
@@ -45,7 +45,7 @@ export function PcPosShell({ branchLabel, preview, onLock, children, sidebarStat
           <span aria-hidden="true">{value.icon}</span>{value.label}</button>)}
       </nav>{sidebarStatus ?? <p>ข้อมูลจากบริการสาขา<br />ตามเวลาที่อ่านล่าสุด</p>}</aside>
       <main className="ordering-main" ref={main} tabIndex={-1} aria-label={selected.label}>
-        {page === 'tables' ? children : page === 'home' && homePage ? homePage(() => navigate('tables'), target => navigate('system', target)) : page === 'system' && systemPage ? systemPage : <section className="shell-unavailable panel" aria-labelledby="shell-page-title">
+        {page === 'tables' ? children : page === 'home' && homePage ? homePage(() => navigate('tables'), target => navigate('system', target)) : page === 'system' && systemPage ? systemPage : page === 'store' && storePage ? storePage : <section className="shell-unavailable panel" aria-labelledby="shell-page-title">
           <p className="eyebrow">PC POS / {selected.label}</p><h2 id="shell-page-title">{selected.label}</h2>
           <p role="status">หน้านี้ยังไม่เชื่อมต่อข้อมูลและคำสั่ง จึงยังไม่พร้อมใช้งาน</p>
           <p>เลือกโต๊ะจากเมนูหลักเพื่อกลับไปยังงานเดิม</p>
