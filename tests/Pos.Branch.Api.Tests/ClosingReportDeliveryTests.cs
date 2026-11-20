@@ -112,7 +112,10 @@ public sealed class ClosingReportDeliveryTests : IDisposable
     private static ClosingReportDeliveryCycle Cycle(SqliteTableSessionCommandStore store, IClosingReportTransport transport, TimeProvider time) =>
         new(store, transport, time, Options.Create(new ClosingReportDeliveryOptions
         {
-            Enabled = true, BranchId = "branch", RetryDelay = TimeSpan.FromSeconds(10), MaximumRetryDelay = TimeSpan.FromSeconds(20)
+            Enabled = true,
+            BranchId = "branch",
+            RetryDelay = TimeSpan.FromSeconds(10),
+            MaximumRetryDelay = TimeSpan.FromSeconds(20)
         }));
 
     [Fact]
@@ -129,7 +132,10 @@ public sealed class ClosingReportDeliveryTests : IDisposable
             if (++calls == 1) { throw new HttpRequestException("central persisted, response lost"); }
             return Json(JsonSerializer.Serialize(new
             {
-                schemaVersion = 1, branchId = "branch", reportId = payload.RootElement.GetProperty("reportId").GetString(), status = "AlreadyAccepted"
+                schemaVersion = 1,
+                branchId = "branch",
+                reportId = payload.RootElement.GetProperty("reportId").GetString(),
+                status = "AlreadyAccepted"
             }));
         });
         Assert.True(await Cycle(store, Transport(handler), clock).RunOnceAsync());
@@ -283,9 +289,11 @@ public sealed class ClosingReportDeliveryTests : IDisposable
     }
     private Dictionary<string, string?> ValidConfiguration() => new()
     {
-        ["ClosingReportDelivery:Enabled"] = "true", ["ClosingReportDelivery:BranchId"] = "branch",
+        ["ClosingReportDelivery:Enabled"] = "true",
+        ["ClosingReportDelivery:BranchId"] = "branch",
         ["ClosingReportDelivery:CentralOrigin"] = "https://central.example",
-        ["BranchOrdering:Enabled"] = "true", ["BranchOrdering:DatabasePath"] = _path,
+        ["BranchOrdering:Enabled"] = "true",
+        ["BranchOrdering:DatabasePath"] = _path,
         ["BranchCentralMtls:Enabled"] = "true"
     };
     private sealed class Clock : TimeProvider
