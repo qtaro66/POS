@@ -57,6 +57,8 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetStoreLifecycleWorkspace");
         group.MapGet("/store-lifecycle/{storeSessionId}/shifts/{shiftId}/closing", StoreLifecycleEndpoints.ShiftClosingAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetStoreShiftClosing");
+        group.MapGet("/store-lifecycle/closing-outbox", StoreLifecycleEndpoints.ClosingOutboxAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetStoreClosingOutbox");
         group.MapGet("/store-lifecycle/current", StoreLifecycleEndpoints.CurrentAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCurrentStoreLifecycle");
         group.MapGet("/store-lifecycle/{storeSessionId}", StoreLifecycleEndpoints.StatusAsync)

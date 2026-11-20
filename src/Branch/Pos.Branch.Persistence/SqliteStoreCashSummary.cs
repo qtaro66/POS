@@ -94,5 +94,6 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         write.Parameters.AddWithValue("$shift", command.ShiftId);
         write.Parameters.AddWithValue("$summary", JsonSerializer.Serialize(summary));
         await write.ExecuteNonQueryAsync(token);
+        await SqliteClosingReportOutboxWriter.EnqueueAsync(_connection, _transaction, branchId, command.RequestId, token);
     }
 }
