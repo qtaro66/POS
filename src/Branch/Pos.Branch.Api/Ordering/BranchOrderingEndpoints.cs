@@ -49,6 +49,10 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(0))
             .Produces<BranchCloudOutboxStatusResponse>().Produces<BranchCloudOutboxStatusError>(400).Produces<BranchCloudOutboxStatusError>(503)
             .WithName("GetBranchCloudOutboxStatus");
+        group.MapGet("/store-lifecycle/requests/{requestId}", StoreLifecycleEndpoints.RequestStatusAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetStoreLifecycleRequest");
+        group.MapPost("/store-lifecycle/requests/retire", StoreLifecycleEndpoints.RetireRequestAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBodySize)).WithName("RetireStoreLifecycleRequest");
         group.MapGet("/store-lifecycle/current", StoreLifecycleEndpoints.CurrentAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCurrentStoreLifecycle");
         group.MapGet("/store-lifecycle/{storeSessionId}", StoreLifecycleEndpoints.StatusAsync)

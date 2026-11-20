@@ -159,3 +159,126 @@ it('refreshes authoritative state after a replay returns an older saved result',
   expect(screen.getByText('ร้านปิด')).toBeTruthy()
   expect(localStorage.getItem(key)).toBeNull()
 })
+
+it('recovers a saved command after reload by checking its durable result and reading the latest store', async () => {
+  const saved: StoreLifecycleCommand = { requestId: '00000000-0000-4000-8000-000000000003', storeSessionId: store, shiftId: shift, operation: 'OpenStore', cashAmount: 500 }
+  localStorage.setItem(key, JSON.stringify(saved))
+  const closed = { ...state, isClosed: true, activeShiftId: null }
+  const read = vi.fn(async () => ({ kind: 'ok' as const, value: closed }))
+  const status = vi.fn(async () => ({ status: 200, body: { status: 'Completed' as const, result: state } }))
+  const command = vi.fn()
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: read, storeLifecycleCommand: command, storeLifecycleRequestStatus: status }} />)
+  await screen.findByRole('button', { name: 'ตรวจสอบผลคำขอ' })
+  fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบผลคำขอ' }))
+  await screen.findByRole('button', { name: 'เปิดร้าน' })
+  expect(status).toHaveBeenCalledWith(saved)
+  expect(command).not.toHaveBeenCalled()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(screen.getByText('ร้านปิด')).toBeTruthy()
+  expect(localStorage.getItem(key)).toBeNull()
+})
+
+it.each([
+  { status: 200, body: { status: 'NotFound', result: null } },
+  { status: 404, body: null },
+  { reason: 'protocol' as const },
+])('retains a pending command when status cannot prove completion or retirement', async result => {
+  const saved: StoreLifecycleCommand = { requestId: '00000000-0000-4000-8000-000000000003', storeSessionId: store, shiftId: shift, operation: 'CloseStore', cashAmount: 500 }
+  localStorage.setItem(key, JSON.stringify(saved))
+  const status = vi.fn(async () => result)
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: current, storeLifecycleCommand: vi.fn(), storeLifecycleRequestStatus: status }} />)
+  await screen.findByRole('button', { name: 'ตรวจสอบผลคำขอ' })
+  fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบผลคำขอ' }))
+  await waitFor(() => expect(status).toHaveBeenCalledTimes(1))
+  expect(JSON.parse(localStorage.getItem(key)!)).toEqual(saved)
+  expect(screen.queryByRole('button', { name: 'ปิดร้าน' })).toBeNull()
+})
+
+it('retires an unresolved command through the Branch and uses a fresh transient PIN', async () => {
+  const saved: StoreLifecycleCommand = { requestId: '00000000-0000-4000-8000-000000000003', storeSessionId: store, shiftId: shift, operation: 'CloseStore', cashAmount: 500 }
+  localStorage.setItem(key, JSON.stringify(saved))
+  const retire = vi.fn(async () => ({ status: 200, body: { status: 'Retired' as const, result: null } }))
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: current, storeLifecycleCommand: vi.fn(), retireStoreLifecycleRequest: retire }} />)
+  await screen.findByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' })
+  fireEvent.click(screen.getByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' }))
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.getByText(/ป้องกันการส่งคำขอเดิมซ้ำ/)).toBeTruthy()
+  fireEvent.change(dialog.getByLabelText('ยืนยัน PIN'), { target: { value: '123456' } })
+  fireEvent.submit(dialog.getByRole('button', { name: 'ยืนยันยกเลิกคำขอ' }).closest('form')!)
+  await screen.findByRole('button', { name: 'ปิดร้าน' })
+  expect(retire).toHaveBeenCalledWith(saved, '123456')
+  expect(localStorage.getItem(key)).toBeNull()
+})
+
+it('preserves unresolved command and clears typed PIN when retirement fails', async () => {
+  const saved: StoreLifecycleCommand = { requestId: '00000000-0000-4000-8000-000000000003', storeSessionId: store, shiftId: shift, operation: 'CloseStore', cashAmount: 500 }
+  localStorage.setItem(key, JSON.stringify(saved))
+  const retire = vi.fn(async () => ({ reason: 'network' as const }))
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: current, storeLifecycleCommand: vi.fn(), retireStoreLifecycleRequest: retire }} />)
+  await screen.findByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' })
+  fireEvent.click(screen.getByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' }))
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.change(dialog.getByLabelText('ยืนยัน PIN'), { target: { value: '123456' } })
+  fireEvent.submit(dialog.getByRole('button', { name: 'ยืนยันยกเลิกคำขอ' }).closest('form')!)
+  await waitFor(() => expect(retire).toHaveBeenCalledTimes(1))
+  expect((dialog.getByLabelText('ยืนยัน PIN') as HTMLInputElement).value).toBe('')
+  expect(JSON.parse(localStorage.getItem(key)!)).toEqual(saved)
+  expect(localStorage.getItem(key)).not.toContain('123456')
+})
+
+it('uses an already completed result when completion wins the retirement race', async () => {
+  const saved: StoreLifecycleCommand = { requestId: '00000000-0000-4000-8000-000000000003', storeSessionId: store, shiftId: shift, operation: 'OpenStore', cashAmount: 500 }
+  localStorage.setItem(key, JSON.stringify(saved))
+  const closed = { ...state, activeShiftId: null, isClosed: true }
+  const read = vi.fn(async () => ({ kind: 'ok' as const, value: closed }))
+  const retire = vi.fn(async () => ({ status: 200, body: { status: 'Completed' as const, result: state } }))
+  const command = vi.fn()
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: read, storeLifecycleCommand: command, retireStoreLifecycleRequest: retire }} />)
+  await screen.findByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' })
+  fireEvent.click(screen.getByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' }))
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.change(dialog.getByLabelText('ยืนยัน PIN'), { target: { value: '123456' } })
+  fireEvent.submit(dialog.getByRole('button', { name: 'ยืนยันยกเลิกคำขอ' }).closest('form')!)
+  await screen.findByRole('button', { name: 'เปิดร้าน' })
+  expect(screen.getByText('สาขาบันทึกคำขอเดิมแล้ว')).toBeTruthy()
+  expect(screen.getByText('ร้านปิด')).toBeTruthy()
+  expect(command).not.toHaveBeenCalled()
+  expect(read).toHaveBeenCalledTimes(2)
+})
+
+it('preserves original confirmed close totals when retirement discovers a completed close', async () => {
+  const saved: StoreLifecycleCommand = { requestId: '00000000-0000-4000-8000-000000000003', storeSessionId: store, shiftId: shift, operation: 'CloseStore', cashAmount: 490 }
+  localStorage.setItem(key, JSON.stringify(saved))
+  const completed = { ...state, activeShiftId: null, isClosed: true, closing: {
+    storeSessionId: store, shiftId: shift, closesStore: true, expectedCashAmount: 500,
+    actualCashAmount: 490, cashDifference: -10, reconciliationStatus: 'Reconciled',
+    context: { employeeId: 'E1', deviceId: 'D1', occurredAt: '2026-11-20T00:00:00Z', branchLocalDate: '2026-11-20' },
+  } }
+  const read = vi.fn(async () => ({ kind: 'ok' as const, value: state }))
+  const retire = vi.fn(async () => ({ status: 200, body: { status: 'Completed' as const, result: completed } }))
+  const command = vi.fn()
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: read, storeLifecycleCommand: command, retireStoreLifecycleRequest: retire }} />)
+  await screen.findByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' })
+  fireEvent.click(screen.getByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' }))
+  const dialog = within(screen.getByRole('dialog'))
+  fireEvent.change(dialog.getByLabelText('ยืนยัน PIN'), { target: { value: '123456' } })
+  fireEvent.submit(dialog.getByRole('button', { name: 'ยืนยันยกเลิกคำขอ' }).closest('form')!)
+  await screen.findByText('สาขาบันทึกคำขอเดิมแล้ว · ยอดนับจริง 490.00 บาท · ผลต่าง -10.00 บาท')
+  expect(localStorage.getItem(key)).toBeNull()
+  expect(command).not.toHaveBeenCalled()
+})
+
+it('exposes recovery actions from the normal store-and-shift page', async () => {
+  const fixture = createOrderingPreview()
+  const saved: StoreLifecycleCommand = { requestId: '00000000-0000-4000-8000-000000000003', storeSessionId: store, shiftId: shift, operation: 'CloseStore', cashAmount: 500 }
+  localStorage.setItem('pos-store-lifecycle:' + JSON.stringify(fixture.client.scope), JSON.stringify(saved))
+  const status = vi.fn(async () => ({ status: 200, body: { status: 'NotFound' as const, result: null } }))
+  const client = { ...fixture.client, storeLifecycleCurrent: current, storeLifecycleCommand: vi.fn(),
+    storeLifecycleRequestStatus: status, retireStoreLifecycleRequest: vi.fn() }
+  render(<App client={client} />)
+  fireEvent.click(screen.getByRole('button', { name: 'ร้านและกะ' }))
+  await screen.findByRole('button', { name: 'ตรวจสอบผลคำขอ' })
+  expect(screen.getByRole('button', { name: 'ยกเลิกคำขอที่ยังไม่บันทึก' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'ตรวจสอบผลคำขอ' }))
+  await waitFor(() => expect(status).toHaveBeenCalledWith(saved))
+})

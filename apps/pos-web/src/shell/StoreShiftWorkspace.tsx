@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { StoreLifecycleCommand, StoreLifecycleState, StoreOperation } from '../api/storeLifecycleContracts.ts'
+import type { StoreLifecycleCommand, StoreLifecycleState, StoreLifecycleRecovery, StoreOperation } from '../api/storeLifecycleContracts.ts'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 import './StoreShiftWorkspace.css'
 
-type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>>
+type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest'>
 const labels: Record<StoreOperation, string> = { OpenStore: 'เปิดร้าน', OpenShift: 'เปิดกะ', CloseShift: 'ปิดกะ', CloseStore: 'ปิดร้าน' }
 const money = (amount: number) => amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -25,6 +25,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
   const [phase, setPhase] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [operation, setOperation] = useState<StoreOperation | null>(null)
   const [cash, setCash] = useState('')
+  const [retirement, setRetirement] = useState(false)
   const [message, setMessage] = useState('')
   const [saved] = useState(() => {
     try { return { pending: readPending(storageKey), invalid: false } }
@@ -36,6 +37,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
   const inFlight = useRef(false)
   const alive = useRef(true)
   const dialog = useRef<HTMLDialogElement>(null)
+  const retirementDialog = useRef<HTMLDialogElement>(null)
 
   const readCurrent = port.storeLifecycleCurrent
   useEffect(() => {
@@ -54,6 +56,65 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
     if (operation && dialog.current && !dialog.current.open) dialog.current.showModal()
   }, [operation])
 
+  useEffect(() => {
+    if (retirement && retirementDialog.current && !retirementDialog.current.open) retirementDialog.current.showModal()
+  }, [retirement])
+
+  async function resolveRecovery(recovery: StoreLifecycleRecovery) {
+    if (recovery.status === 'NotFound') {
+      setMessage('ยังไม่พบผลคำขอ คำขอเดิมยังคงอยู่ กรุณาตรวจสอบอีกครั้งหรือยกเลิกผ่านสาขา')
+      return
+    }
+    try { localStorage.removeItem(storageKey); setPending(null) }
+    catch { setStorageError(true); setMessage('สาขายืนยันผลแล้ว แต่ยังล้างคำขอในเครื่องไม่ได้'); return }
+    setOperation(null)
+    setRetirement(false)
+    const recoveredClose = recovery.status === 'Completed' && pending &&
+      (pending.operation === 'CloseShift' || pending.operation === 'CloseStore') ? recovery.result?.closing : null
+    const closeSummary = recoveredClose ? ' · ยอดนับจริง ' +
+      (recoveredClose.actualCashAmount === null ? 'ไม่ได้กระทบยอด' : money(recoveredClose.actualCashAmount) + ' บาท') +
+      ' · ผลต่าง ' + (recoveredClose.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(recoveredClose.cashDifference) + ' บาท') : ''
+    setMessage(recovery.status === 'Completed' ? 'สาขาบันทึกคำขอเดิมแล้ว' + closeSummary : 'สาขายืนยันยกเลิกคำขอที่ยังไม่บันทึกแล้ว')
+    if (recovery.result) setState(recovery.result)
+    setPhase('loading')
+    try {
+      const current = await port.storeLifecycleCurrent()
+      if (!alive.current) return
+      if (current.kind === 'ok') { setState(current.value); setPhase('ready') }
+      else if (current.kind === 'notFound') { setState(null); setPhase('ready') }
+      else setPhase('unavailable')
+    } catch { if (alive.current) setPhase('unavailable') }
+  }
+
+  async function inspectPending() {
+    if (!pending || !port.storeLifecycleRequestStatus || inFlight.current || storageError) return
+    inFlight.current = true
+    setBusy(true)
+    try {
+      const result = await port.storeLifecycleRequestStatus(pending)
+      if (!alive.current) return
+      if ('status' in result && result.status === 200) await resolveRecovery(result.body as StoreLifecycleRecovery)
+      else setMessage('ยังตรวจสอบผลคำขอไม่ได้ คำขอเดิมยังคงอยู่')
+    } catch { if (alive.current) setMessage('ยังตรวจสอบผลคำขอไม่ได้ คำขอเดิมยังคงอยู่') }
+    finally { inFlight.current = false; if (alive.current) setBusy(false) }
+  }
+
+  async function retirePending(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!pending || !port.retireStoreLifecycleRequest || inFlight.current || storageError) return
+    const pinInput = event.currentTarget.elements.namedItem('pin') as HTMLInputElement
+    const pin = pinInput.value
+    pinInput.value = ''
+    inFlight.current = true
+    setBusy(true)
+    try {
+      const result = await port.retireStoreLifecycleRequest(pending, pin)
+      if (!alive.current) return
+      if ('status' in result && result.status === 200) await resolveRecovery(result.body as StoreLifecycleRecovery)
+      else setMessage('สาขายังไม่ยืนยันการยกเลิก คำขอเดิมยังคงอยู่ กรุณาตรวจสอบ PIN หรือเชื่อมต่ออีกครั้ง')
+    } catch { if (alive.current) setMessage('สาขายังไม่ยืนยันการยกเลิก คำขอเดิมยังคงอยู่') }
+    finally { inFlight.current = false; if (alive.current) setBusy(false) }
+  }
   async function refresh() {
     if (inFlight.current) return
     inFlight.current = true
@@ -148,7 +209,10 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
     {message && <p role="status">{message}</p>}
     {storageError && <p role="alert">ข้อมูลคำขอในเครื่องยังไม่พร้อม กรุณาตรวจสอบก่อนดำเนินการต่อ</p>}
     {pending && <div className="store-pending"><p>มีคำขอ{labels[pending.operation]}ที่ต้องตรวจสอบผล ใช้ PIN ผู้ยืนยันเดิมเพื่อส่งคำขอเดิมซ้ำ</p>
-      <button disabled={busy || storageError} onClick={() => { setCash(pending.cashAmount === null ? '' : String(pending.cashAmount)); setOperation(pending.operation) }}>ยืนยันคำขอเดิม</button></div>}
+      <button disabled={busy || storageError} onClick={() => { setCash(pending.cashAmount === null ? '' : String(pending.cashAmount)); setOperation(pending.operation) }}>ยืนยันคำขอเดิม</button>
+      {port.storeLifecycleRequestStatus && <button disabled={busy || storageError} onClick={() => { void inspectPending() }}>ตรวจสอบผลคำขอ</button>}
+      {port.retireStoreLifecycleRequest && <button disabled={busy || storageError} onClick={() => { setMessage(''); setRetirement(true) }}>ยกเลิกคำขอที่ยังไม่บันทึก</button>}
+    </div>}
     {phase === 'ready' && !pending && !storageError && <footer className="store-actions">
       {!state || state.isClosed ? <button disabled={busy} onClick={() => open('OpenStore')}>เปิดร้าน</button> :
         active ? <><button disabled={busy} onClick={() => open('CloseShift')}>ปิดกะ</button><button disabled={busy} onClick={() => open('CloseStore')}>ปิดร้าน</button></> :
@@ -167,5 +231,15 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
         <div className="store-dialog-actions"><button type="button" disabled={busy} onClick={() => setOperation(null)}>กลับ</button><button disabled={busy}>ยืนยัน{labels[operation]}</button></div>
       </form>
     </dialog>}
-  </section>
+    {retirement && pending && <dialog ref={retirementDialog} className="store-dialog" aria-labelledby="store-retirement-title"
+      onCancel={event => { if (busy) event.preventDefault(); else setRetirement(false) }}>
+      <form onSubmit={event => { void retirePending(event) }}>
+        <h2 id="store-retirement-title">ยกเลิกคำขอที่ยังไม่บันทึก</h2>
+        <p>สาขาจะตรวจผลคำขอเดิมก่อน หากบันทึกแล้วจะแสดงผลเดิม หากยังไม่บันทึกจะยกเลิกและป้องกันการส่งคำขอเดิมซ้ำ</p>
+        <p>คำขอ{labels[pending.operation]} · จำนวนเงิน {pending.cashAmount === null ? 'ไม่ได้ระบุ' : money(pending.cashAmount) + ' บาท'}</p>
+        <label>ยืนยัน PIN<input name="pin" type="password" autoComplete="off" inputMode="numeric" required disabled={busy} /></label>
+        {message && <p role="status">{message}</p>}
+        <div className="store-dialog-actions"><button type="button" disabled={busy} onClick={() => setRetirement(false)}>กลับ</button><button disabled={busy}>ยืนยันยกเลิกคำขอ</button></div>
+      </form>
+    </dialog>}  </section>
 }

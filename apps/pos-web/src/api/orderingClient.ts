@@ -1,4 +1,4 @@
-import { parseStoreLifecycle, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
+import { parseStoreLifecycle, parseStoreLifecycleRecovery, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
 import { parseSoldOutPage, soldOutAdjustmentOutcome, type SoldOutAdjustment, type SoldOutAdjustmentOutcome, type SoldOutPage } from './soldOutContracts.ts'
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
 import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type PrintAttentionPage } from './printAttentionContracts.ts'
@@ -424,6 +424,29 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
       try { return { kind: 'ok', value: parseStoreLifecycle(result.body) } }
       catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async storeLifecycleRequestStatus(command: StoreLifecycleCommand) {
+      const query = new URLSearchParams({
+        storeSessionId: command.storeSessionId, shiftId: command.shiftId, operation: command.operation,
+      })
+      if (command.cashAmount !== null) query.set('cashAmount', String(command.cashAmount))
+      const result = await request('/store-lifecycle/requests/' + encodeURIComponent(command.requestId) + '?' + query, 'GET')
+      if ('status' in result && result.status === 200) {
+        try { return { status: 200, body: parseStoreLifecycleRecovery(result.body, command) } }
+        catch { return { reason: 'protocol' as const } }
+      }
+      return result
+    },
+    async retireStoreLifecycleRequest(command: StoreLifecycleCommand, pin: string) {
+      const result = await request('/store-lifecycle/requests/retire', 'POST', JSON.stringify({ ...command, pin }))
+      if ('status' in result && result.status === 200) {
+        try {
+          const body = parseStoreLifecycleRecovery(result.body, command)
+          if (body.status === 'NotFound') throw new Error('Retirement was not confirmed.')
+          return { status: 200, body }
+        } catch { return { reason: 'protocol' as const } }
+      }
+      return result
     },
     async storeLifecycleCommand(command: StoreLifecycleCommand, pin: string) {
       const result = await request('/store-lifecycle', 'POST', JSON.stringify({ ...command, pin }))

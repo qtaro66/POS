@@ -46,3 +46,27 @@ export function parseStoreLifecycle(value: unknown): StoreLifecycleState {
   }
   return value as unknown as StoreLifecycleState
 }
+
+export interface StoreLifecycleRecovery {
+  status: 'Completed' | 'Retired' | 'NotFound'
+  result: StoreLifecycleState | null
+}
+
+export function parseStoreLifecycleRecovery(value: unknown, command: StoreLifecycleCommand): StoreLifecycleRecovery {
+  if (!object(value) || !['Completed', 'Retired', 'NotFound'].includes(value.status as string)) throw new Error('Invalid recovery result.')
+  if (value.status !== 'Completed') {
+    if (value.result !== null) throw new Error('Unexpected recovery state.')
+    return { status: value.status as 'Retired' | 'NotFound', result: null }
+  }
+  const state = parseStoreLifecycle(value.result)
+  if (state.storeSessionId !== command.storeSessionId) throw new Error('Different recovery store.')
+  if (command.operation === 'OpenStore' || command.operation === 'OpenShift') {
+    if (state.isClosed || state.activeShiftId !== command.shiftId ||
+        command.operation === 'OpenStore' && state.openingCashAmount !== command.cashAmount) throw new Error('Different recovered shift.')
+  } else if (state.activeShiftId !== null || state.isClosed !== (command.operation === 'CloseStore') ||
+      state.closing?.shiftId !== command.shiftId || state.closing.closesStore !== (command.operation === 'CloseStore') ||
+      state.closing.actualCashAmount !== command.cashAmount) {
+    throw new Error('Different recovered closing.')
+  }
+  return { status: 'Completed', result: state }
+}

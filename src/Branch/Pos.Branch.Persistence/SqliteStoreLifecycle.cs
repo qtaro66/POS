@@ -64,6 +64,15 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         ArgumentException.ThrowIfNullOrWhiteSpace(command.StoreSessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(command.ShiftId);
         ArgumentNullException.ThrowIfNull(command.Context);
+        using var retired = CreateCommand("""
+            SELECT 1 FROM store_lifecycle_retirements WHERE branch_id = $branch AND request_id = $request;
+            """);
+        retired.Parameters.AddWithValue("$branch", branchId);
+        retired.Parameters.AddWithValue("$request", command.RequestId);
+        if (await retired.ExecuteScalarAsync(token) is not null)
+        {
+            throw new InvalidOperationException("The request identifier has been retired.");
+        }
         var json = JsonSerializer.Serialize(command);
         using var prior = CreateCommand("""
             SELECT command_json, result_json FROM store_lifecycle_commands

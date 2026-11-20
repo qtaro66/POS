@@ -526,3 +526,41 @@ test('store lifecycle distinguishes an absent store and rejects malformed succes
   response = json({ storeSessionId: 'OTHER', activeShiftId: 'SHIFT', isClosed: false, businessDate: '2026-11-19', openingCashAmount: 0, closing: null })
   assert.deepEqual(await client.storeLifecycleCommand({ requestId: 'R', storeSessionId: 'EXPECTED', shiftId: 'SHIFT', operation: 'OpenStore', cashAmount: 0 }, '123456'), { reason: 'protocol' })
 })
+
+test('lifecycle recovery uses authenticated target-scoped reads and retirement with transient PIN', async () => {
+  const command = { requestId: 'REQUEST/1', storeSessionId: 'STORE/1', shiftId: 'SHIFT/1', operation: 'CloseShift' as const, cashAmount: null }
+  const urls: string[] = []
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    urls.push(url)
+    assert.equal((init.headers as Record<string, string>).Authorization, 'Device ' + session.deviceCredential)
+    if (init.method === 'GET') {
+      const parsed = new URL(url)
+      assert.equal(parsed.searchParams.get('storeSessionId'), command.storeSessionId)
+      assert.equal(parsed.searchParams.get('shiftId'), command.shiftId)
+      assert.equal(parsed.searchParams.has('cashAmount'), false)
+      assert.equal(init.body, undefined)
+      return json({ status: 'NotFound', result: null })
+    }
+    assert.deepEqual(JSON.parse(init.body as string), { ...command, pin: '123456' })
+    return json({ status: 'Retired', result: null })
+  } })
+  assert.deepEqual(await client.storeLifecycleRequestStatus(command), { status: 200, body: { status: 'NotFound', result: null } })
+  assert.deepEqual(await client.retireStoreLifecycleRequest(command, '123456'), { status: 200, body: { status: 'Retired', result: null } })
+  assert.match(urls[0], /requests\/REQUEST%2F1\?/)
+  assert.equal(urls[1], session.serviceOrigin + '/api/v1/ordering/store-lifecycle/requests/retire')
+})
+
+test('lifecycle recovery rejects changed immutable cash and unsupported retirement responses', async () => {
+  const command = { requestId: 'R', storeSessionId: 'S', shiftId: 'H', operation: 'CloseStore' as const, cashAmount: 500 }
+  const completed = { storeSessionId: 'S', activeShiftId: null, isClosed: true, businessDate: '2026-11-20', openingCashAmount: 500,
+    closing: { storeSessionId: 'S', shiftId: 'H', closesStore: true, expectedCashAmount: 500, actualCashAmount: 400, cashDifference: -100,
+      reconciliationStatus: 'Reconciled', context: { employeeId: 'E', deviceId: 'D', occurredAt: '2026-11-20T00:00:00Z', branchLocalDate: '2026-11-20' } } }
+  let response = json({ status: 'Completed', result: completed })
+  const client = createOrderingClient(session, { fetch: async () => response })
+  assert.deepEqual(await client.storeLifecycleRequestStatus(command), { reason: 'protocol' })
+  response = json({ status: 'NotFound', result: null })
+  assert.deepEqual(await client.retireStoreLifecycleRequest(command, '123456'), { reason: 'protocol' })
+  response = json({ status: 'Completed', result: { ...completed, closing: { ...completed.closing, actualCashAmount: 500, cashDifference: 0 } } })
+  const valid = await client.storeLifecycleRequestStatus(command)
+  assert.ok('status' in valid && valid.status === 200 && valid.body.status === 'Completed')
+})
