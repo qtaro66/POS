@@ -21,7 +21,7 @@ public static partial class StoreLifecycleEndpoints
         try
         {
             var result = await runtime.TableCommands.ReadCurrentStoreLifecycleAsync(identity!.BranchId, token);
-            return result is null ? TypedResults.NotFound() : TypedResults.Ok(result);
+            return result is null ? TypedResults.NotFound(new { error = "StoreLifecycleNotFound" }) : TypedResults.Ok(result);
         }
         catch (SqliteException) { return TypedResults.StatusCode(503); }
     }
@@ -35,7 +35,7 @@ public static partial class StoreLifecycleEndpoints
         try
         {
             var result = await runtime.TableCommands.ReadStoreLifecycleAsync(identity!.BranchId, storeSessionId, token);
-            return result is null ? TypedResults.NotFound() : TypedResults.Ok(result);
+            return result is null ? TypedResults.NotFound(new { error = "StoreLifecycleNotFound" }) : TypedResults.Ok(result);
         }
         catch (SqliteException) { return TypedResults.StatusCode(503); }
     }
@@ -76,8 +76,8 @@ public static partial class StoreLifecycleEndpoints
         }
         catch (OverflowException) { return TypedResults.BadRequest(); }
         catch (ArgumentException) { return TypedResults.BadRequest(); }
-        catch (InvalidOperationException) { return TypedResults.Conflict(); }
-        catch (SqliteException error) when (error.SqliteErrorCode == 19) { return TypedResults.Conflict(); }
+        catch (InvalidOperationException) { return TypedResults.Conflict(new { error = "StoreLifecycleConflict" }); }
+        catch (SqliteException error) when (error.SqliteErrorCode == 19) { return TypedResults.Conflict(new { error = "StoreLifecycleConflict" }); }
         catch (SqliteException) { return TypedResults.StatusCode(503); }
     }
 

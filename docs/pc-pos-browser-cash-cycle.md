@@ -121,9 +121,9 @@ runs the full thirty-case suite.
 pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes EmployeeIsolationUnsent -Scenarios Short
 ```
 
-The default run includes 32 cases: seven recovery modes across three cash
-scenarios, nine shift-handoff combinations, one shift-transition case, and one
-two-Branch receipt-isolation case. ShiftTransitions and BranchIsolation use
+The default run includes 33 cases: seven recovery modes across three cash
+scenarios, nine shift-handoff combinations, one store-lifecycle case, one shift-transition case, and one
+two-Branch receipt-isolation case. StoreLifecycle, ShiftTransitions and BranchIsolation use
 fixed fixture amounts and run once when the scenario filter includes Balanced.
 
 Use `-ListCases` to preview the selected mode and shift combinations without
@@ -274,3 +274,28 @@ pwsh tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -RerunFromReport prev
 | D04.5 cash and change | Exercise single-tender test settlement, exact and excessive tender, and independent shift totals | Verify the production payment flow, including split tender, rounding and the change overlay |
 | D04.11.5 store and shift | Exercise test shift transitions, concurrent commands and reconciliation | Verify production store and shift controls, optional drawer count and close reports |
 | Receipts and Central reconnect | Exercise simulated receipt stability, cross-Branch lookup and idempotent delivery to fixture Central | Verify deployed synchronization and receipt issuance. Physical printer and drawer acceptance remains deferred |
+
+### Durable store lifecycle through Edge
+
+Run the fixed-amount store scenario from PowerShell:
+
+```powershell
+& ./tests/Pos.PcPos.BrowserHost/Test-EdgeCashRecovery.ps1 -Modes StoreLifecycle
+```
+
+The fixture grants OpenStore to its primary employee and retains the second
+active employee for handover and close commands. The browser opens the store
+with 500, sells 100 in each of two shifts, recovers a committed CloseShift after
+losing its response, and reads its immutable NotReconciled cash snapshot.
+After restarting the Branch, it closes the same second shift with 690 and
+checks expected 700 and difference -10. It retires an unsent opening request,
+verifies a late submission conflicts, and reconnects fixture Central to confirm
+one delivery per committed sale.
+
+Lifecycle not-found and conflict responses include JSON error bodies so the
+ordering client can distinguish an absent store and a definite conflict from
+an unreadable response. The first-visit open-store screen exercises this
+contract over a real HTTPS connection.
+
+The scenario uses simulated receipts and an isolated fixture Central. Store
+and shift lifecycle events are not yet delivered to Central.

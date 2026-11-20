@@ -30,7 +30,9 @@ public sealed partial class BranchOrderingHttpApiTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var principal = LifecyclePrincipal();
-        Assert.Equal(404, (await fixture.Call("GetCurrentStoreLifecycle", principal: principal)).Status);
+        var missing = await fixture.Call("GetCurrentStoreLifecycle", principal: principal);
+        Assert.Equal(404, missing.Status);
+        Assert.Equal("StoreLifecycleNotFound", missing.Body.GetProperty("error").GetString());
         Assert.Equal(403, (await fixture.Call("GetCurrentStoreLifecycle", principal: LifecyclePrincipal("Mobile"))).Status);
         var request = new StoreLifecycleEndpoints.Request(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(),
             Guid.NewGuid().ToString(), "OpenStore", 0, "111111");

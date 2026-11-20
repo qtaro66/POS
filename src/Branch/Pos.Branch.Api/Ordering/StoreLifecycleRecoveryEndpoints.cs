@@ -33,7 +33,7 @@ public static partial class StoreLifecycleEndpoints
             return TypedResults.Ok(await runtime.TableCommands.ReadStoreLifecycleRequestAsync(
                 identity!.BranchId, identity.DeviceId, target, token));
         }
-        catch (InvalidOperationException) { return TypedResults.Conflict(); }
+        catch (InvalidOperationException) { return TypedResults.Conflict(new { error = "StoreLifecycleConflict" }); }
         catch (SqliteException) { return TypedResults.StatusCode(503); }
     }
 
@@ -60,8 +60,8 @@ public static partial class StoreLifecycleEndpoints
                 new StoreOperationContext(employee.EmployeeId, identity.DeviceId, now, localDate), token));
         }
         catch (ArgumentException) { return TypedResults.BadRequest(); }
-        catch (InvalidOperationException) { return TypedResults.Conflict(); }
-        catch (SqliteException error) when (error.SqliteErrorCode == 19) { return TypedResults.Conflict(); }
+        catch (InvalidOperationException) { return TypedResults.Conflict(new { error = "StoreLifecycleConflict" }); }
+        catch (SqliteException error) when (error.SqliteErrorCode == 19) { return TypedResults.Conflict(new { error = "StoreLifecycleConflict" }); }
         catch (SqliteException) { return TypedResults.StatusCode(503); }
     }
 
