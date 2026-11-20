@@ -668,3 +668,42 @@ test('closing blockers require the structured Branch response and valid table id
   assert.equal(readClosingBlockedTables({ error: 'Other', tables }), null)
   assert.equal(readClosingBlockedTables({ error: 'StoreLifecyclePartialPayments', tables: [{}] }), null)
 })
+
+const closingQueue = { branchId: session.branchId, pendingCount: 3, leasedCount: 1, deliveredCount: 2, lastDeliveredAt: '2026-11-20T03:00:00.0000000+00:00' }
+test('closing report queue is authenticated, branch-bound and projects only public status', async () => {
+  const client = createOrderingClient(session, { fetch: async (url, init) => {
+    assert.equal(url, `${session.serviceOrigin}/api/v1/ordering/store-lifecycle/closing-outbox`)
+    assert.equal(init.method, 'GET'); assert.equal(init.body, undefined); assert.equal(init.redirect, 'error'); assert.equal(init.cache, 'no-store')
+    const headers = new Headers(init.headers)
+    assert.equal(headers.get('Authorization'), `Device ${session.deviceCredential}`)
+    assert.equal(headers.get('X-POS-Employee-Session'), session.employeeSessionToken)
+    return json({ ...closingQueue, payload: 'PRIVATE', leaseOwner: 'PRIVATE' })
+  } })
+  assert.deepEqual(await client.closingReportQueueStatus(), { kind: 'ok', value: closingQueue })
+  const differentBranch = createOrderingClient(session, { fetch: async () => json({ ...closingQueue, branchId: 'OTHER' }) })
+  assert.deepEqual(await differentBranch.closingReportQueueStatus(), { kind: 'unavailable', reason: 'protocol' })
+})
+
+test('closing report queue rejects inconsistent counts, timestamps and incomplete acknowledgements', async () => {
+  const patches = [{ pendingCount: -1 }, { leasedCount: 4 }, { leasedCount: 0.5 }, { deliveredCount: Number.MAX_SAFE_INTEGER + 1 },
+    { lastDeliveredAt: null }, { deliveredCount: 0 }, { lastDeliveredAt: '2026-02-30T03:00:00Z' },
+    { lastDeliveredAt: '2026-11-20T03:00:00+07:00' }, { lastDeliveredAt: undefined }]
+  for (const patch of patches) {
+    const client = createOrderingClient(session, { fetch: async () => json({ ...closingQueue, ...patch }) })
+    assert.deepEqual(await client.closingReportQueueStatus(), { kind: 'unavailable', reason: 'protocol' })
+  }
+  const empty = { ...closingQueue, pendingCount: 0, leasedCount: 0, deliveredCount: 0, lastDeliveredAt: null }
+  const client = createOrderingClient(session, { fetch: async () => json(empty) })
+  assert.deepEqual(await client.closingReportQueueStatus(), { kind: 'ok', value: empty })
+})
+
+test('closing report queue failures never become an empty or confirmed queue', async () => {
+  for (const status of [401, 403, 404, 503]) {
+    const client = createOrderingClient(session, { fetch: async () => json({ error: 'PRIVATE' }, status) })
+    assert.deepEqual(await client.closingReportQueueStatus(), { kind: 'unavailable', reason: 'http', httpStatus: status })
+  }
+  const network = createOrderingClient(session, { fetch: async () => { throw new TypeError('offline') } })
+  assert.deepEqual(await network.closingReportQueueStatus(), { kind: 'unavailable', reason: 'network' })
+  const abort = new AbortController(); abort.abort()
+  assert.deepEqual(await network.closingReportQueueStatus(abort.signal), { kind: 'unavailable', reason: 'aborted' })
+})

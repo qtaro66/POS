@@ -1,3 +1,4 @@
+import { parseClosingReportQueueStatus, type ClosingReportQueueStatus } from './closingReportContracts.ts'
 import { parseStoreLifecycle, parseStoreLifecycleRecovery, parseStoreWorkspace, parseStoreShiftEntry, type StoreWorkspace, type StoreShiftEntry, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
 import { parseSoldOutPage, soldOutAdjustmentOutcome, type SoldOutAdjustment, type SoldOutAdjustmentOutcome, type SoldOutPage } from './soldOutContracts.ts'
 import type { ActiveTables, CommandResponse, MenuItem, OrderLine, OrderOption, SessionDetail, SessionMenu } from './orderingContracts.ts'
@@ -416,6 +417,13 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         const response = commandResponse(result.body, requestId, expected)
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async closingReportQueueStatus(signal?: AbortSignal): Promise<QueryResult<ClosingReportQueueStatus>> {
+      const result = await request('/store-lifecycle/closing-outbox', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseClosingReportQueueStatus(result.body, session.branchId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     async storeLifecycleWorkspace(signal?: AbortSignal): Promise<QueryResult<StoreWorkspace>> {
       const result = await request('/store-lifecycle/workspace', 'GET', undefined, signal)

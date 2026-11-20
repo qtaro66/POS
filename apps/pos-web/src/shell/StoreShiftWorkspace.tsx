@@ -1,3 +1,4 @@
+import { ClosingReportQueue } from './ClosingReportQueue.tsx'
 import { StoreShiftTimeline } from './StoreShiftTimeline.tsx'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { StoreLifecycleCommand, StoreLifecycleState, StoreLifecycleRecovery, StoreOperation } from '../api/storeLifecycleContracts.ts'
@@ -5,7 +6,7 @@ import type { OrderingReadClient } from '../ordering/readController.ts'
 import './StoreShiftWorkspace.css'
 import { readClosingBlockedTables } from '../api/storeLifecycleContracts.ts'
 
-type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest' | 'storeLifecycleWorkspace' | 'storeShiftClosing'>
+type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest' | 'storeLifecycleWorkspace' | 'storeShiftClosing' | 'closingReportQueueStatus'>
 const labels: Record<StoreOperation, string> = { OpenStore: 'เปิดร้าน', OpenShift: 'เปิดกะ', CloseShift: 'ปิดกะ', CloseStore: 'ปิดร้าน' }
 const money = (amount: number) => amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -35,6 +36,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
   })
   const [pending, setPending] = useState<StoreLifecycleCommand | null>(saved.pending)
   const [storageError, setStorageError] = useState(saved.invalid)
+  const [reportRefreshKey, setReportRefreshKey] = useState(0)
   const [busy, setBusy] = useState(false)
   const inFlight = useRef(false)
   const alive = useRef(true)
@@ -78,6 +80,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
       ' · ผลต่าง ' + (recoveredClose.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(recoveredClose.cashDifference) + ' บาท') : ''
     setMessage(recovery.status === 'Completed' ? 'สาขาบันทึกคำขอเดิมแล้ว' + closeSummary : 'สาขายืนยันยกเลิกคำขอที่ยังไม่บันทึกแล้ว')
     if (recovery.result) setState(recovery.result)
+    if (recovery.status === 'Completed') setReportRefreshKey(previous => previous + 1)
     setPhase('loading')
     try {
       const current = await port.storeLifecycleCurrent()
@@ -119,6 +122,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
   }
   async function refresh() {
     if (inFlight.current) return
+    setReportRefreshKey(previous => previous + 1)
     inFlight.current = true
     setBusy(true)
     setPhase('loading')
@@ -158,6 +162,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
       const result = await port.storeLifecycleCommand(command, pin)
       if (!alive.current) return
       if ('status' in result && result.status === 200) {
+        setReportRefreshKey(previous => previous + 1)
         setState(result.body as StoreLifecycleState)
         setPhase('ready')
         try { localStorage.removeItem(storageKey); setPending(null) }
@@ -210,6 +215,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
           <div><dt>ผลต่าง</dt><dd>{closing.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(closing.cashDifference) + ' บาท'}</dd></div>
           <div><dt>ผู้ยืนยัน</dt><dd>{closing.context.employeeId}</dd></div></dl></div>}
     </section>}
+    <ClosingReportQueue read={port.closingReportQueueStatus} scopeKey={storageKey} refreshKey={reportRefreshKey} />
     {phase === 'ready' && <StoreShiftTimeline port={port} sourceState={state} />}
     {message && <p role="status">{message}</p>}
     {storageError && <p role="alert">ข้อมูลคำขอในเครื่องยังไม่พร้อม กรุณาตรวจสอบก่อนดำเนินการต่อ</p>}
