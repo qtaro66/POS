@@ -13,7 +13,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 describe('PC POS data freshness', () => {
   it('keeps the confirmed sidebar labels on all pages, explains narrow provenance and never claims overall health', async () => {
     const user = userEvent.setup(), fixture = createOrderingPreview()
-    render(<StrictMode><App client={fixture.client} preview /></StrictMode>)
+    render(<StrictMode><App client={{ ...fixture.client, deliveryOverview: undefined }} preview /></StrictMode>)
     const sidebar = within(screen.getByRole('region', { name: 'สถานะข้อมูลส่วนกลาง' }))
     await waitFor(() => expect(sidebar.getByText('Data Synced').nextElementSibling?.getAttribute('datetime')).toBe('2026-11-01T08:45:00Z'))
     expect(sidebar.getByText('Data Sent').nextElementSibling?.getAttribute('datetime')).toBe('2026-11-01T09:00:00Z')
@@ -33,10 +33,10 @@ describe('PC POS data freshness', () => {
     const user = userEvent.setup(), fixture = createOrderingPreview()
     const dataSyncStatus = vi.fn(async () => ok(null))
     const dataSentStatus = vi.fn(async (): Promise<QueryResult<string | null>> => { throw new Error('private diagnostic') })
-    render(<App client={{ ...fixture.client, dataSyncStatus, dataSentStatus }} />)
+    render(<App client={{ ...fixture.client, deliveryOverview: undefined, dataSyncStatus, dataSentStatus }} />)
     await user.click(screen.getByRole('button', { name: 'สถานะระบบ' }))
     const main = within(screen.getByRole('main'))
-    await main.findByText('ยังไม่มีบันทึก'); await main.findByText('อ่านข้อมูลไม่ได้')
+    await main.findByText('ยังไม่มีบันทึก'); await within(main.getByText('Data Sent').closest('div')!).findByText('อ่านข้อมูลไม่ได้')
     expect(screen.queryByText('private diagnostic')).toBeNull()
     dataSentStatus.mockResolvedValue(ok('2026-11-02T03:00:00Z'))
     await user.click(main.getByRole('button', { name: 'อ่านสถานะใหม่' }))
@@ -49,7 +49,10 @@ describe('PC POS data freshness', () => {
     const fixture = createOrderingPreview(), user = userEvent.setup()
     render(<App client={{ activeTables: fixture.client.activeTables, sessionDetail: fixture.client.sessionDetail }} />)
     await user.click(screen.getByRole('button', { name: 'สถานะระบบ' }))
-    expect(within(screen.getByRole('main')).getAllByText('ยังไม่เชื่อมต่อ')).toHaveLength(3)
+    const main = within(screen.getByRole('main'))
+    expect(within(main.getByText('Data Synced').closest('div')!).getByText('ยังไม่เชื่อมต่อ')).toBeTruthy()
+    expect(within(main.getByText('Data Sent').closest('div')!).getByText('ยังไม่เชื่อมต่อ')).toBeTruthy()
+    expect(within(main.getByRole('region', { name: 'สรุปการส่งธุรกรรมและรายงาน' })).getByText('ยังไม่เชื่อมต่อ')).toBeTruthy()
     expect(screen.queryByText('ยังไม่มีบันทึก')).toBeNull()
   })
 
@@ -62,7 +65,7 @@ describe('PC POS data freshness', () => {
     const branchReadiness = vi.fn((_signal?: AbortSignal) => pending.promise)
     const dataSyncStatus = vi.fn(fixture.client.dataSyncStatus)
     const dataSentStatus = vi.fn(fixture.client.dataSentStatus)
-    render(<App client={{ ...fixture.client, printerInventory, printAttention, cloudOutboxStatus, cloudReplayStatus, branchReadiness, dataSyncStatus, dataSentStatus }} />)
+    render(<App client={{ ...fixture.client, deliveryOverview: undefined, printerInventory, printAttention, cloudOutboxStatus, cloudReplayStatus, branchReadiness, dataSyncStatus, dataSentStatus }} />)
     await user.click(screen.getByRole('button', { name: 'สถานะระบบ' }))
     await user.click(await screen.findByRole('button', { name: 'อ่านสถานะใหม่' }))
     for (const read of [printerInventory, printAttention, cloudOutboxStatus, cloudReplayStatus]) {
@@ -124,7 +127,7 @@ describe('PC POS data freshness', () => {
   it('cancels observation on screen lock and ignores its late result', async () => {
     const pending = deferred<QueryResult<string | null>>(), fixture = createOrderingPreview(), user = userEvent.setup()
     let signal: AbortSignal | undefined
-    render(<App client={{ ...fixture.client, dataSyncStatus: async value => { signal = value; return pending.promise } }} />)
+    render(<App client={{ ...fixture.client, deliveryOverview: undefined, dataSyncStatus: async value => { signal = value; return pending.promise } }} />)
     await user.click(screen.getByRole('button', { name: 'ล็อกหน้าจอ' }))
     expect(signal?.aborted).toBe(true)
     await act(async () => { pending.resolve(ok('2026-11-02T03:00:00Z')) })
@@ -134,8 +137,8 @@ describe('PC POS data freshness', () => {
 
   it('never carries status from one authenticated client into a replacement client', async () => {
     const fixture = createOrderingPreview(), old = deferred<QueryResult<string | null>>()
-    const view = render(<App client={{ ...fixture.client, dataSyncStatus: () => old.promise }} />)
-    view.rerender(<App client={{ ...fixture.client, dataSyncStatus: async () => ok(null), dataSentStatus: async () => ok(null) }} />)
+    const view = render(<App client={{ ...fixture.client, deliveryOverview: undefined, dataSyncStatus: () => old.promise }} />)
+    view.rerender(<App client={{ ...fixture.client, deliveryOverview: undefined, dataSyncStatus: async () => ok(null), dataSentStatus: async () => ok(null) }} />)
     const sidebar = within(screen.getByRole('region', { name: 'สถานะข้อมูลส่วนกลาง' }))
     await waitFor(() => expect(sidebar.getAllByText('ยังไม่มีบันทึก')).toHaveLength(2))
     await act(async () => { old.resolve(ok('2026-11-02T03:00:00Z')) })

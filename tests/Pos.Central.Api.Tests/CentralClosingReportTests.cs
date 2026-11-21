@@ -194,6 +194,11 @@ public sealed class CentralClosingReportTests
                 new("employee", "device", Now, Day));
             await store.ExecuteStoreLifecycleAsync("branch", open);
             await store.ExecuteStoreLifecycleAsync("branch", open with { RequestId = "close", Action = closeStore ? StoreLifecycleAction.CloseStore : StoreLifecycleAction.CloseShift, CashAmount = closeStore ? 490 : null });
+            var overviewQuery = new SqliteBranchDeliveryOverviewQuery(path);
+            var initialOverview = await overviewQuery.ReadAsync("branch", Now);
+            Assert.Equal("Pending", initialOverview.State);
+            Assert.Equal(1, initialOverview.ClosingReports.PendingCount);
+            Assert.Null(initialOverview.LastConfirmedAt);
             var originalPage = await store.ReadClosingReportPageAsync("branch", Now, new ClosingReportQuery());
             var originalReport = Assert.Single(originalPage.Items);
             Assert.Equal("Queued", originalReport.DeliveryState);
@@ -216,6 +221,10 @@ public sealed class CentralClosingReportTests
             var settings = Options.Create(new ClosingReportDeliveryOptions { Enabled = true, BranchId = "branch", RetryDelay = TimeSpan.FromSeconds(10) });
             Assert.True(await new ClosingReportDeliveryCycle(store, transport, clock, settings).RunOnceAsync());
             Assert.Single(receiver.Store.Reports);
+            var uncertainOverview = await overviewQuery.ReadAsync("branch", clock.Utc);
+            Assert.Equal("Pending", uncertainOverview.State);
+            Assert.Equal(0, uncertainOverview.ClosingReports.DeliveredCount);
+            Assert.Null(uncertainOverview.LastConfirmedAt);
             Assert.Equal(1, (await store.ReadClosingReportOutboxAsync("branch", clock.Utc)).PendingCount);
             var pending = Assert.Single((await store.ReadClosingReportPageAsync("branch", clock.Utc,
                 new ClosingReportQuery(Status: "Pending"))).Items);
@@ -230,6 +239,12 @@ public sealed class CentralClosingReportTests
             var confirmed = Assert.Single((await reopened.ReadClosingReportPageAsync("branch", clock.Utc,
                 new ClosingReportQuery(Status: "Delivered"))).Items);
             Assert.Equal(originalReport.ReportId, confirmed.ReportId);
+            var recoveredOverview = await new SqliteBranchDeliveryOverviewQuery(path).ReadAsync("branch", clock.Utc);
+            Assert.Equal("Current", recoveredOverview.State);
+            Assert.Equal(0, recoveredOverview.ClosingReports.PendingCount);
+            Assert.Equal(1, recoveredOverview.ClosingReports.DeliveredCount);
+            Assert.Equal(clock.Utc, recoveredOverview.LastConfirmedAt);
+            Assert.Equal("NoHistory", (await overviewQuery.ReadAsync("foreign", clock.Utc)).State);
             Assert.Equal("Delivered", confirmed.DeliveryState);
             Assert.Equal(2, confirmed.AttemptCount);
             Assert.Equal(clock.Utc, confirmed.DeliveredAt);
@@ -241,6 +256,7 @@ public sealed class CentralClosingReportTests
             Assert.Equal(posted[0], posted[1]);
             Assert.Equal(posted[0], receiver.Store.Reports.Single().PayloadJson);
             Assert.Single(receiver.Store.Reports);
+
             var status = await reopened.ReadClosingReportOutboxAsync("branch", clock.Utc);
             Assert.Equal(0, status.PendingCount);
             Assert.Equal(1, status.DeliveredCount);

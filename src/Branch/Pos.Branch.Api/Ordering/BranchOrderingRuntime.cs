@@ -15,6 +15,8 @@ public sealed class BranchOrderingOptions
 
 public sealed class BranchOrderingRuntime(string databasePath, TimeProvider time, IBranchCloudOutboxStatusQuery? outboxStatusQuery = null, IBranchCloudReplayStatusQuery? replayStatusQuery = null)
 {
+    public string DatabasePath { get; } = Path.GetFullPath(databasePath);
+    public SqliteBranchDeliveryOverviewQuery DeliveryOverview { get; } = new(databasePath);
     public SqliteBranchSoldOutQuery SoldOut { get; } = new(databasePath);
     public SqliteBranchSoldOutAdjustmentStore SoldOutAdjustments { get; } = new(databasePath);
     public SqliteTableSessionCommandStore TableCommands { get; } = new(databasePath);

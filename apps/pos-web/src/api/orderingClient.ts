@@ -1,3 +1,4 @@
+import { parseDeliveryOverview, type DeliveryOverview } from './deliveryOverviewContracts.ts'
 import { isClosingReportId, validateClosingReportQuery, parseClosingReportPage, parseClosingReportDetail, parseClosingReportDelivery, type ClosingReportQuery, type ClosingReportPage, type ClosingReportDetail, type ClosingReportDelivery } from './closingReportWorkspaceContracts.ts'
 import { parseClosingReportQueueStatus, type ClosingReportQueueStatus } from './closingReportContracts.ts'
 import { parseStoreLifecycle, parseStoreLifecycleRecovery, parseStoreWorkspace, parseStoreShiftEntry, type StoreWorkspace, type StoreShiftEntry, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
@@ -371,6 +372,13 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
       try { return { kind: 'ok', value: parsePrintAttentionPage(result.body) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async deliveryOverview(signal?: AbortSignal): Promise<QueryResult<DeliveryOverview>> {
+      const result = await request('/delivery-overview', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseDeliveryOverview(result.body, session.branchId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     dataSyncStatus: (signal?: AbortSignal) => freshness('/employee-data-sync-status', 'lastSynchronizedAt', signal),
     dataSentStatus: (signal?: AbortSignal) => freshness('/cloud-data-sent-status', 'lastSentAt', signal),

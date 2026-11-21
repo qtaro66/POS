@@ -14,7 +14,7 @@ import { PcPosShell } from '../shell/PcPosShell.tsx'
 import './TableWorkspace.css'
 import { OrderEntryWorkspace, type OrderingEntryPort } from './OrderEntryWorkspace.tsx'
 import type { BasketSubmissionResult } from './basketSubmission.ts'
-import { createDataFreshness } from '../shell/dataFreshness.ts'
+import { browserFreshnessHost, createDataFreshness, observeDataFreshness } from '../shell/dataFreshness.ts'
 import { DataFreshnessPanel, DataFreshnessSidebar } from '../shell/DataFreshnessPanel.tsx'
 import { HomeDashboard } from '../shell/HomeDashboard.tsx'
 
@@ -76,7 +76,10 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
   const controller = useMemo(() => createOrderingReadController(client), [client])
   const freshness = useMemo(() => createDataFreshness(client), [client])
   const freshnessState = useSyncExternalStore(freshness.subscribe, freshness.getSnapshot, freshness.getSnapshot)
-  useEffect(() => { void freshness.refresh(); return freshness.cancel }, [freshness])
+  useEffect(() => {
+    if (client.deliveryOverview) return observeDataFreshness(freshness, browserFreshnessHost())
+    void freshness.refresh(); return freshness.cancel
+  }, [freshness, client.deliveryOverview])
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   useEffect(() => { void controller.refresh(); return controller.cancel }, [controller])
   const [floorRefresh, setFloorRefresh] = useState(0)
@@ -102,27 +105,27 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       {detail.hasOpenCancellationRequest && <p className="cancellation-notice" role="status">{s.cancellationPending}</p>}
       <div className="batch-list" role="region" aria-label={s.batches} tabIndex={0}>{detail.batches.length === 0 ? <p className="empty-state">{s.noOrders}</p> : detail.batches.map((batch, index) => <Batch key={batch.orderBatchId} batch={batch} index={index} />)}</div>
       {!preview && client.cashStep && detail.billPreviewTotals && <CashSaleForm key={detail.session.tableSessionId}
-        detail={detail} send={client.cashRecovery?.submit ?? client.cashStep} simulateReceipt={client.simulateReceipt} refresh={() => { void controller.refresh() }} />}
+        detail={detail} send={client.cashRecovery?.submit ?? client.cashStep} simulateReceipt={client.simulateReceipt} refresh={() => { void controller.refresh(); void freshness.refresh() }} />}
       <Totals detail={detail} compact={inSession} /></>}
   </section>
   return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
     storePage={!preview && client.scope && client.storeLifecycleCurrent && client.storeLifecycleCommand ?
       <StoreShiftWorkspace key={JSON.stringify(client.scope)} storageKey={'pos-store-lifecycle:' + JSON.stringify(client.scope)}
-        port={{ closingReports: client.closingReports, closingReportDetail: client.closingReportDetail, closingReportDelivery: client.closingReportDelivery, closingReportQueueStatus: client.closingReportQueueStatus, storeLifecycleWorkspace: client.storeLifecycleWorkspace, storeShiftClosing: client.storeShiftClosing, storeLifecycleCurrent: client.storeLifecycleCurrent, storeLifecycleCommand: client.storeLifecycleCommand, storeLifecycleRequestStatus: client.storeLifecycleRequestStatus, retireStoreLifecycleRequest: client.retireStoreLifecycleRequest }} /> : undefined}
+        onAccepted={() => { void freshness.refresh() }} port={{ closingReports: client.closingReports, closingReportDetail: client.closingReportDetail, closingReportDelivery: client.closingReportDelivery, closingReportQueueStatus: client.closingReportQueueStatus, storeLifecycleWorkspace: client.storeLifecycleWorkspace, storeShiftClosing: client.storeShiftClosing, storeLifecycleCurrent: client.storeLifecycleCurrent, storeLifecycleCommand: client.storeLifecycleCommand, storeLifecycleRequestStatus: client.storeLifecycleRequestStatus, retireStoreLifecycleRequest: client.retireStoreLifecycleRequest }} /> : undefined}
     sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
-    homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh() }}
+    homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh(); void freshness.refresh() }}
       openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} client={client} freshness={freshnessState} canAdjust={!preview} />}
     systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} closingReportPort={client} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
-          <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { setFloorRefresh(version => version + 1); void controller.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
+          <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { setFloorRefresh(version => version + 1); void controller.refresh(); void freshness.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         {!preview && (import.meta.env.DEV || import.meta.env.MODE === 'browser-fixture') && shiftStorageKey && client.testCashCycle && <TestCashShift key={shiftStorageKey} storageKey={shiftStorageKey} run={client.testCashCycle} status={client.testCashShiftStatus} />}
-        {!preview && client.cashRecovery && <CashReloadRecovery recovery={client.cashRecovery} refresh={() => { void controller.refresh() }} />}
+        {!preview && client.cashRecovery && <CashReloadRecovery recovery={client.cashRecovery} refresh={() => { void controller.refresh(); void freshness.refresh() }} />}
         {inSession && <button className="workspace-back" onClick={() => { moveFocus.current = true; setEntry(null) }}>{s.backToTables}</button>}
         {receipt?.owner === client && <div className="workspace-receipt" role="status"><strong>สาขารับออร์เดอร์แล้ว</strong> · Request ID: {receipt.outcome.requestId}
           {!receipt.outcome.localApplied && <p>ข้อมูลในเครื่องยังปรับปรุงไม่ครบ กรุณาตรวจผลคำขอเดิม ห้ามสร้างออร์เดอร์ใหม่แทน</p>}
           <button aria-label="ปิดข้อความรับออร์เดอร์" onClick={() => setReceipt(null)}>×</button></div>}
         {inSession && ordering ? <OrderEntryWorkspace port={ordering} sessionId={state.selectedSessionId!} sent={sentPanel} onAccepted={outcome => {
-          setReceipt({ owner: client, outcome }); void controller.refresh()
+          setReceipt({ owner: client, outcome }); void controller.refresh(); void freshness.refresh()
         }} /> : <div className={inSession ? 'session-ordering-panels' : 'ordering-panels'}>
           {!inSession && <section key="tables" className="table-panel panel" aria-labelledby="table-list-heading"><header><h2 id="table-list-heading">{s.tables}{state.tablesPhase === 'ready' && ` (${visibleTables.length})`}</h2><p>{s.partialFloorPlan}</p>
             {tableFilter && <p>สถานะ: {sessionLabels[tableFilter]} <button className="refresh-button" onClick={() => setTableFilter(undefined)}>แสดงโต๊ะที่เปิดอยู่ทั้งหมด</button></p>}</header>

@@ -23,7 +23,8 @@ function readPending(key: string): StoreLifecycleCommand | null {
     operation: value.operation, cashAmount: value.cashAmount }
 }
 
-export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageKey: string }) {
+export function StoreShiftWorkspace({ port, storageKey, onAccepted }: { port: Port; storageKey: string; onAccepted?: () => void }) {
+  function notifyAccepted() { try { onAccepted?.() } catch { /* Status refresh must not change the accepted command outcome. */ } }
   const [state, setState] = useState<StoreLifecycleState | null>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [operation, setOperation] = useState<StoreOperation | null>(null)
@@ -82,7 +83,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
       ' · ผลต่าง ' + (recoveredClose.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(recoveredClose.cashDifference) + ' บาท') : ''
     setMessage(recovery.status === 'Completed' ? 'สาขาบันทึกคำขอเดิมแล้ว' + closeSummary : 'สาขายืนยันยกเลิกคำขอที่ยังไม่บันทึกแล้ว')
     if (recovery.result) setState(recovery.result)
-    if (recovery.status === 'Completed') setReportRefreshKey(previous => previous + 1)
+    if (recovery.status === 'Completed') { setReportRefreshKey(previous => previous + 1); notifyAccepted() }
     setPhase('loading')
     try {
       const current = await port.storeLifecycleCurrent()
@@ -164,6 +165,7 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
       const result = await port.storeLifecycleCommand(command, pin)
       if (!alive.current) return
       if ('status' in result && result.status === 200) {
+        notifyAccepted()
         setReportRefreshKey(previous => previous + 1)
         setState(result.body as StoreLifecycleState)
         setPhase('ready')
