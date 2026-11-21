@@ -23,6 +23,8 @@ if (branchMtlsEnabled)
 builder.Services.AddCentralCloudIngestionRuntime(
     builder.Configuration);
 
+builder.Services.AddCentralClosingReports(builder.Configuration);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -31,6 +33,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseBranchCloudEventIngestionHttpsOnly(builder.Configuration);
+app.UseCentralClosingReportHttpsOnly(builder.Configuration);
 app.UseHttpsRedirection();
 app.UseCentralCloudIngestionSecurityIfEnabled(builder.Configuration);
 
@@ -43,6 +46,7 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapCentralCloudIngestionReadinessEndpointIfEnabled(
     builder.Configuration);
 app.MapBranchCloudEventIngestionEndpointIfEnabled(builder.Configuration);
+app.MapCentralClosingReportsIfEnabled(builder.Configuration);
 if (branchMtlsEnabled && builder.Configuration.GetValue<bool>("CentralEmployeePermissions:Enabled"))
 {
     app.MapGet(CentralBranchEmployeePermissions.Route, CentralBranchEmployeePermissions.Read)

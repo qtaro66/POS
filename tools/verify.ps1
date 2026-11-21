@@ -318,6 +318,9 @@ Invoke-Step -Name 'gate-self-test' -Tool 'pwsh' -Display 'verify.ps1 -SelfTest' 
 Invoke-Step -Name 'continue-self-test' -Tool 'pwsh' -Display 'continue-handoff.ps1 -SelfTest' `
     -Run { & $exe.pwsh -NoProfile -NonInteractive -File (Join-Path $repoRoot 'tools/continue-handoff.ps1') -SelfTest }
 
+Invoke-Step -Name 'closing-https-boundary' -Tool 'pwsh' -Display 'check-closing-report-https.ps1 -SelfTest' `
+    -Run { & $exe.pwsh -NoProfile -NonInteractive -File (Join-Path $repoRoot 'tools/check-closing-report-https.ps1') -SelfTest }
+
 # Same whitespace rule as ci.yml ("git diff --check origin/main...HEAD"), plus uncommitted changes.
 $diffBase = $null
 foreach ($ref in 'origin/main', 'main') {

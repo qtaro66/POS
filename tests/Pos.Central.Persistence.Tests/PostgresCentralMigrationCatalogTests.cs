@@ -8,9 +8,9 @@ public sealed class PostgresCentralMigrationCatalogTests
     public void Version_one_defines_durable_branch_event_identity()
     {
         var migration = Assert.Single(
-            PostgresCentralMigrationCatalog.GetMigrations());
+            PostgresCentralMigrationCatalog.GetMigrations(), migration => migration.Version == 1);
 
-        Assert.Equal(PostgresCentralMigrationCatalog.CurrentVersion, migration.Version);
+        Assert.Equal(1, migration.Version);
         Assert.Equal("0001_branch_cloud_events", migration.Name);
         Assert.Contains(
             "event_id text PRIMARY KEY",
@@ -26,7 +26,7 @@ public sealed class PostgresCentralMigrationCatalogTests
     public void Version_one_persists_the_complete_normalized_envelope()
     {
         var sql = Assert.Single(
-            PostgresCentralMigrationCatalog.GetMigrations()).Sql;
+            PostgresCentralMigrationCatalog.GetMigrations(), migration => migration.Version == 1).Sql;
         var requiredColumns = new[]
         {
             "event_id",
@@ -56,7 +56,7 @@ public sealed class PostgresCentralMigrationCatalogTests
     public void Version_one_records_schema_version_after_table_definition()
     {
         var sql = Assert.Single(
-            PostgresCentralMigrationCatalog.GetMigrations()).Sql;
+            PostgresCentralMigrationCatalog.GetMigrations(), migration => migration.Version == 1).Sql;
         var tablePosition = sql.IndexOf(
             "CREATE TABLE branch_cloud_events",
             StringComparison.Ordinal);

@@ -9,7 +9,8 @@ public sealed class PostgresCentralMigrationPlannerTests
     {
         var pending = PostgresCentralMigrationPlanner.Plan([]);
 
-        var migration = Assert.Single(pending);
+        Assert.Equal(2, pending.Count);
+        var migration = pending[0];
         Assert.Equal(1, migration.Version);
         Assert.Equal("0001_branch_cloud_events", migration.Name);
     }
@@ -19,7 +20,8 @@ public sealed class PostgresCentralMigrationPlannerTests
     {
         var pending = PostgresCentralMigrationPlanner.Plan(
         [
-            new PostgresAppliedMigration(1, "0001_branch_cloud_events")
+            new PostgresAppliedMigration(1, "0001_branch_cloud_events"),
+            new PostgresAppliedMigration(2, "0002_closing_reports")
         ]);
 
         Assert.Empty(pending);
