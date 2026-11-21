@@ -204,6 +204,7 @@ public sealed class CentralClosingReportTests
             Assert.Equal("Queued", originalReport.DeliveryState);
             Assert.Equal(0, originalReport.AttemptCount);
             var frozen = Assert.IsType<ClosingReportDetail>(await store.ReadClosingReportDetailAsync("branch", "close", Now));
+            Assert.NotNull(frozen.Lifecycle);
             await using var receiver = new Fixture();
             var posted = new List<string>();
             var clock = new Clock();
@@ -250,6 +251,9 @@ public sealed class CentralClosingReportTests
             Assert.Equal(clock.Utc, confirmed.DeliveredAt);
             var restored = Assert.IsType<ClosingReportDetail>(await reopened.ReadClosingReportDetailAsync("branch", "close", clock.Utc));
             Assert.Equal(JsonSerializer.Serialize(frozen.Snapshot), JsonSerializer.Serialize(restored.Snapshot));
+            Assert.Equal(JsonSerializer.Serialize(frozen.Lifecycle), JsonSerializer.Serialize(restored.Lifecycle));
+            using var sentPayload = JsonDocument.Parse(posted[0]);
+            Assert.False(sentPayload.RootElement.TryGetProperty("lifecycle", out _));
             Assert.Empty((await reopened.ReadClosingReportPageAsync("branch", clock.Utc,
                 new ClosingReportQuery(Status: "Pending"))).Items);
             Assert.Equal(2, posted.Count);

@@ -106,7 +106,9 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         {
             throw new InvalidDataException("Saved closing report identity is inconsistent.");
         }
-        return new(branchId, item, snapshot);
+        await reader.DisposeAsync();
+        var lifecycle = await ReadSavedClosingReportLifecycleAsync(branchId, requestId, snapshot, token);
+        return new(branchId, item, snapshot, lifecycle);
     }
 
     private static ClosingReportListItem ReadReportItem(SqliteDataReader reader, DateTimeOffset now)

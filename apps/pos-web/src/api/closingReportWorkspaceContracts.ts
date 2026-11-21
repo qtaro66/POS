@@ -12,7 +12,11 @@ export interface ClosingReportItem {
 }
 export interface ClosingReportPage { branchId: string; asOf: string; items: ClosingReportItem[]; nextCursor: string | null }
 export interface ClosingReportDelivery { branchId: string; asOf: string; deliveryEnabled: boolean }
+export type ClosingReportContext = NonNullable<StoreLifecycleState['closing']>['context']
+export interface ClosingReportShiftContext { shiftId: string; openingCashAmount: number | null; opened: ClosingReportContext; closing: NonNullable<StoreLifecycleState['closing']> }
+export interface ClosingReportLifecycle { schemaVersion: 1; branchId: string; requestId: string; storeSessionId: string; closingShiftId: string; businessDate: string; openingCashAmount: number; opened: ClosingReportContext; closesStore: boolean; shifts: ClosingReportShiftContext[] }
 export interface ClosingReportDetail {
+  lifecycle?: ClosingReportLifecycle | null
   branchId: string; report: ClosingReportItem
   snapshot: { schemaVersion: 1; branchId: string; reportId: string; requestId: string; storeSessionId: string; shiftId: string
     operation: 'CloseShift' | 'CloseStore'; businessDate: string; closing: NonNullable<StoreLifecycleState['closing']>; cashSummary: StoreCashSummary | null }
@@ -85,26 +89,55 @@ export function parseClosingReportDetail(value: unknown, branchId: string, reque
   if (report.requestId !== requestId || !object(saved) || saved.schemaVersion !== 1 || saved.branchId !== branchId ||
     saved.reportId !== report.reportId || saved.requestId !== requestId || saved.storeSessionId !== report.storeSessionId ||
     saved.shiftId !== report.shiftId || saved.operation !== report.operation || saved.businessDate !== report.businessDate || !object(saved.closing)) invalid()
-  const close = saved.closing
-  if (close.storeSessionId !== report.storeSessionId || close.shiftId !== report.shiftId || close.closesStore !== (report.operation === 'CloseStore') ||
-    !money(close.expectedCashAmount) || close.expectedCashAmount < 0 ||
-    !(close.actualCashAmount === null || money(close.actualCashAmount) && close.actualCashAmount >= 0) ||
-    !(close.cashDifference === null || money(close.cashDifference)) ||
-    (report.operation === 'CloseStore' && close.actualCashAmount === null) ||
-    ((close.actualCashAmount === null) !== (close.cashDifference === null)) ||
-    (close.actualCashAmount !== null && Math.round((close.actualCashAmount as number) * 100) - Math.round(close.expectedCashAmount * 100) !== Math.round((close.cashDifference as number) * 100)) ||
-    close.reconciliationStatus !== (close.actualCashAmount === null ? 'NotReconciled' : 'Reconciled') || !object(close.context) ||
-    !text(close.context.employeeId) || !text(close.context.deviceId) || !isUtcTimestamp(close.context.occurredAt) || !isClosingReportDate(close.context.branchLocalDate)) invalid()
-  const context = close.context
-  const closing: NonNullable<StoreLifecycleState['closing']> = { storeSessionId: report.storeSessionId, shiftId: report.shiftId,
-    closesStore: close.closesStore as boolean, expectedCashAmount: close.expectedCashAmount,
-    actualCashAmount: close.actualCashAmount as number | null, cashDifference: close.cashDifference as number | null,
-    reconciliationStatus: close.reconciliationStatus as string,
-    context: { employeeId: context.employeeId as string, deviceId: context.deviceId as string, occurredAt: context.occurredAt as string, branchLocalDate: context.branchLocalDate as string } }
+  const closing = parseSavedClosing(saved.closing, report.storeSessionId, report.shiftId, report.operation === 'CloseStore')
   const cashSummary = saved.cashSummary === null ? null : parseStoreCashSummary(saved.cashSummary)
   if (cashSummary) for (const totals of [cashSummary.store, cashSummary.shift]) {
     if (totals && (!money(totals.appliedCashAmount) || totals.financials && Object.values(totals.financials).some(amount => !money(amount)))) invalid()
   }
-  return { branchId, report, snapshot: { schemaVersion: 1, branchId, reportId: report.reportId, requestId,
+  const lifecycle = value.lifecycle === undefined || value.lifecycle === null ? null : parseLifecycle(value.lifecycle, branchId, report, closing)
+  return { branchId, report, lifecycle, snapshot: { schemaVersion: 1, branchId, reportId: report.reportId, requestId,
     storeSessionId: report.storeSessionId, shiftId: report.shiftId, operation: report.operation, businessDate: report.businessDate, closing, cashSummary } }
+}
+
+function parseContext(value: unknown): ClosingReportContext {
+  if (!object(value) || !text(value.employeeId) || !text(value.deviceId) || !isUtcTimestamp(value.occurredAt) || !isClosingReportDate(value.branchLocalDate)) invalid()
+  return { employeeId: value.employeeId, deviceId: value.deviceId, occurredAt: value.occurredAt, branchLocalDate: value.branchLocalDate }
+}
+function sameContext(left: ClosingReportContext, right: ClosingReportContext): boolean {
+  return left.employeeId === right.employeeId && left.deviceId === right.deviceId && left.branchLocalDate === right.branchLocalDate && utcOrder(left.occurredAt) === utcOrder(right.occurredAt)
+}
+function parseSavedClosing(value: unknown, storeId: string, shiftId: string, closesStore: boolean): NonNullable<StoreLifecycleState['closing']> {
+  if (!object(value) || value.storeSessionId !== storeId || value.shiftId !== shiftId || value.closesStore !== closesStore ||
+    !money(value.expectedCashAmount) || value.expectedCashAmount < 0 ||
+    !(value.actualCashAmount === null || money(value.actualCashAmount) && value.actualCashAmount >= 0) ||
+    !(value.cashDifference === null || money(value.cashDifference)) || (closesStore && value.actualCashAmount === null) ||
+    ((value.actualCashAmount === null) !== (value.cashDifference === null)) ||
+    (value.actualCashAmount !== null && Math.round((value.actualCashAmount as number) * 100) - Math.round(value.expectedCashAmount * 100) !== Math.round((value.cashDifference as number) * 100)) ||
+    value.reconciliationStatus !== (value.actualCashAmount === null ? 'NotReconciled' : 'Reconciled')) invalid()
+  return { storeSessionId: storeId, shiftId, closesStore, expectedCashAmount: value.expectedCashAmount,
+    actualCashAmount: value.actualCashAmount as number | null, cashDifference: value.cashDifference as number | null,
+    reconciliationStatus: value.reconciliationStatus as string, context: parseContext(value.context) }
+}
+function sameClosing(left: NonNullable<StoreLifecycleState['closing']>, right: NonNullable<StoreLifecycleState['closing']>): boolean {
+  return left.storeSessionId === right.storeSessionId && left.shiftId === right.shiftId && left.closesStore === right.closesStore &&
+    left.expectedCashAmount === right.expectedCashAmount && left.actualCashAmount === right.actualCashAmount &&
+    left.cashDifference === right.cashDifference && left.reconciliationStatus === right.reconciliationStatus && sameContext(left.context, right.context)
+}
+function parseLifecycle(value: unknown, branchId: string, report: ClosingReportItem, closing: NonNullable<StoreLifecycleState['closing']>): ClosingReportLifecycle {
+  if (!object(value) || value.schemaVersion !== 1 || value.branchId !== branchId || value.requestId !== report.requestId ||
+    value.storeSessionId !== report.storeSessionId || value.closingShiftId !== report.shiftId || value.businessDate !== report.businessDate ||
+    value.closesStore !== (report.operation === 'CloseStore') || !money(value.openingCashAmount) || value.openingCashAmount < 0 ||
+    !Array.isArray(value.shifts) || value.shifts.length === 0) invalid()
+  const opened = parseContext(value.opened)
+  if (opened.branchLocalDate !== value.businessDate) invalid()
+  const shifts = value.shifts.map((item: unknown, index: number): ClosingReportShiftContext => {
+    if (!object(item) || !isClosingReportId(item.shiftId) || !(item.openingCashAmount === null || money(item.openingCashAmount) && item.openingCashAmount >= 0)) invalid()
+    return { shiftId: item.shiftId, openingCashAmount: item.openingCashAmount as number | null, opened: parseContext(item.opened),
+      closing: parseSavedClosing(item.closing, report.storeSessionId, item.shiftId, index === (value.shifts as unknown[]).length - 1 && value.closesStore === true) }
+  })
+  if (shifts.some(item => item.opened.branchLocalDate !== report.businessDate || item.closing.context.branchLocalDate !== report.businessDate) ||
+    new Set(shifts.map(item => item.shiftId)).size !== shifts.length || shifts.at(-1)!.shiftId !== report.shiftId ||
+    shifts[0].openingCashAmount !== value.openingCashAmount || !sameContext(shifts[0].opened, opened) || !sameClosing(shifts.at(-1)!.closing, closing)) invalid()
+  return { schemaVersion: 1, branchId, requestId: report.requestId, storeSessionId: report.storeSessionId, closingShiftId: report.shiftId,
+    businessDate: report.businessDate, openingCashAmount: value.openingCashAmount, opened, closesStore: value.closesStore as boolean, shifts }
 }
