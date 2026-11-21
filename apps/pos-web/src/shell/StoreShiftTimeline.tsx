@@ -47,7 +47,7 @@ function CashSummary({ value, frozen = false, contextLabel }: { value: StoreCash
     <CashTotals totals={value.store} label={frozen ? 'เงินสดสะสมรอบร้าน ณ เวลาปิด' : 'เงินสดสะสมรอบร้าน'} />
   </section>
 }
-export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceState: StoreLifecycleState | null }) {
+export function StoreShiftTimeline({ port, sourceState, onOpenReport }: { port: Port; sourceState: StoreLifecycleState | null; onOpenReport?: (storeSessionId: string, shiftId: string) => void }) {
   const [workspace, setWorkspace] = useState<StoreWorkspace | null>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [viewing, setViewing] = useState<{ storeId: string; shiftId: string } | null>(null)
@@ -113,7 +113,8 @@ export function StoreShiftTimeline({ port, sourceState }: { port: Port; sourceSt
           <p>{shift.closing ? 'ปิดกะแล้ว' : 'กะเปิดอยู่'} · ผู้เปิด {shift.opened.employeeId}</p>
           <p>เปิด <Timestamp value={shift.opened.occurredAt} /> · ระยะเวลา {duration(shift.opened.occurredAt, shift.closing?.context.occurredAt ?? workspace.asOf)}</p>
           {shift.closing && <><p>ผู้ปิด {shift.closing.context.employeeId} · ปิด <Timestamp value={shift.closing.context.occurredAt} /></p>
-            {readClosing && <button className="refresh-button" onClick={() => setViewing({ storeId: store.storeSessionId, shiftId: shift.shiftId })}>ดูผลปิดกะ</button>}</>}
+            {readClosing && <button className="refresh-button" onClick={() => setViewing({ storeId: store.storeSessionId, shiftId: shift.shiftId })}>ดูผลปิดกะ</button>}
+            {onOpenReport && <button className="refresh-button" onClick={() => onOpenReport(store.storeSessionId, shift.shiftId)}>ดูการส่งรายงานของกะนี้</button>}</>}
         </li>
       ))}</ol>
     </>}

@@ -194,6 +194,11 @@ public sealed class CentralClosingReportTests
                 new("employee", "device", Now, Day));
             await store.ExecuteStoreLifecycleAsync("branch", open);
             await store.ExecuteStoreLifecycleAsync("branch", open with { RequestId = "close", Action = closeStore ? StoreLifecycleAction.CloseStore : StoreLifecycleAction.CloseShift, CashAmount = closeStore ? 490 : null });
+            var originalPage = await store.ReadClosingReportPageAsync("branch", Now, new ClosingReportQuery());
+            var originalReport = Assert.Single(originalPage.Items);
+            Assert.Equal("Queued", originalReport.DeliveryState);
+            Assert.Equal(0, originalReport.AttemptCount);
+            var frozen = Assert.IsType<ClosingReportDetail>(await store.ReadClosingReportDetailAsync("branch", "close", Now));
             await using var receiver = new Fixture();
             var posted = new List<string>();
             var clock = new Clock();
@@ -212,9 +217,26 @@ public sealed class CentralClosingReportTests
             Assert.True(await new ClosingReportDeliveryCycle(store, transport, clock, settings).RunOnceAsync());
             Assert.Single(receiver.Store.Reports);
             Assert.Equal(1, (await store.ReadClosingReportOutboxAsync("branch", clock.Utc)).PendingCount);
+            var pending = Assert.Single((await store.ReadClosingReportPageAsync("branch", clock.Utc,
+                new ClosingReportQuery(Status: "Pending"))).Items);
+            Assert.Equal("RetryScheduled", pending.DeliveryState);
+            Assert.Equal("TransportUnavailable", pending.LastFailure);
+            Assert.Null(pending.DeliveredAt);
+            Assert.Empty((await store.ReadClosingReportPageAsync("branch", clock.Utc,
+                new ClosingReportQuery(Status: "Delivered"))).Items);
             clock.Utc = Now.AddSeconds(10);
             var reopened = new SqliteTableSessionCommandStore(path);
             Assert.True(await new ClosingReportDeliveryCycle(reopened, transport, clock, settings).RunOnceAsync());
+            var confirmed = Assert.Single((await reopened.ReadClosingReportPageAsync("branch", clock.Utc,
+                new ClosingReportQuery(Status: "Delivered"))).Items);
+            Assert.Equal(originalReport.ReportId, confirmed.ReportId);
+            Assert.Equal("Delivered", confirmed.DeliveryState);
+            Assert.Equal(2, confirmed.AttemptCount);
+            Assert.Equal(clock.Utc, confirmed.DeliveredAt);
+            var restored = Assert.IsType<ClosingReportDetail>(await reopened.ReadClosingReportDetailAsync("branch", "close", clock.Utc));
+            Assert.Equal(JsonSerializer.Serialize(frozen.Snapshot), JsonSerializer.Serialize(restored.Snapshot));
+            Assert.Empty((await reopened.ReadClosingReportPageAsync("branch", clock.Utc,
+                new ClosingReportQuery(Status: "Pending"))).Items);
             Assert.Equal(2, posted.Count);
             Assert.Equal(posted[0], posted[1]);
             Assert.Equal(posted[0], receiver.Store.Reports.Single().PayloadJson);

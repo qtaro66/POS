@@ -1,4 +1,4 @@
-import { ClosingReportQueue } from './ClosingReportQueue.tsx'
+import { ClosingReportWorkspace, type ClosingReportFocus } from './ClosingReportWorkspace.tsx'
 import { StoreShiftTimeline } from './StoreShiftTimeline.tsx'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { StoreLifecycleCommand, StoreLifecycleState, StoreLifecycleRecovery, StoreOperation } from '../api/storeLifecycleContracts.ts'
@@ -6,7 +6,7 @@ import type { OrderingReadClient } from '../ordering/readController.ts'
 import './StoreShiftWorkspace.css'
 import { readClosingBlockedTables } from '../api/storeLifecycleContracts.ts'
 
-type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest' | 'storeLifecycleWorkspace' | 'storeShiftClosing' | 'closingReportQueueStatus'>
+type Port = Required<Pick<OrderingReadClient, 'storeLifecycleCurrent' | 'storeLifecycleCommand'>> & Pick<OrderingReadClient, 'storeLifecycleRequestStatus' | 'retireStoreLifecycleRequest' | 'storeLifecycleWorkspace' | 'storeShiftClosing' | 'closingReportQueueStatus' | 'closingReports' | 'closingReportDetail' | 'closingReportDelivery'>
 const labels: Record<StoreOperation, string> = { OpenStore: 'เปิดร้าน', OpenShift: 'เปิดกะ', CloseShift: 'ปิดกะ', CloseStore: 'ปิดร้าน' }
 const money = (amount: number) => amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -37,9 +37,11 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
   const [pending, setPending] = useState<StoreLifecycleCommand | null>(saved.pending)
   const [storageError, setStorageError] = useState(saved.invalid)
   const [reportRefreshKey, setReportRefreshKey] = useState(0)
+  const [reportFocus, setReportFocus] = useState<ClosingReportFocus | null>(null)
   const [busy, setBusy] = useState(false)
   const inFlight = useRef(false)
   const alive = useRef(true)
+  const reportBrowser = useRef<HTMLDivElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const retirementDialog = useRef<HTMLDialogElement>(null)
 
@@ -215,8 +217,8 @@ export function StoreShiftWorkspace({ port, storageKey }: { port: Port; storageK
           <div><dt>ผลต่าง</dt><dd>{closing.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(closing.cashDifference) + ' บาท'}</dd></div>
           <div><dt>ผู้ยืนยัน</dt><dd>{closing.context.employeeId}</dd></div></dl></div>}
     </section>}
-    <ClosingReportQueue read={port.closingReportQueueStatus} scopeKey={storageKey} refreshKey={reportRefreshKey} />
-    {phase === 'ready' && <StoreShiftTimeline port={port} sourceState={state} />}
+    <div ref={reportBrowser}><ClosingReportWorkspace port={port} scopeKey={storageKey} refreshKey={reportRefreshKey} focus={reportFocus} /></div>
+    {phase === 'ready' && <StoreShiftTimeline port={port} sourceState={state} onOpenReport={(storeSessionId, shiftId) => { setReportFocus(previous => ({ storeSessionId, shiftId, revision: (previous?.revision ?? 0) + 1 })); reportBrowser.current?.scrollIntoView?.({ block: 'start' }) }} />}
     {message && <p role="status">{message}</p>}
     {storageError && <p role="alert">ข้อมูลคำขอในเครื่องยังไม่พร้อม กรุณาตรวจสอบก่อนดำเนินการต่อ</p>}
     {pending && <div className="store-pending"><p>มีคำขอ{labels[pending.operation]}ที่ต้องตรวจสอบผล ใช้ PIN ผู้ยืนยันเดิมเพื่อส่งคำขอเดิมซ้ำ</p>

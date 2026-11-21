@@ -1,0 +1,12 @@
+.closing-report-workspace { min-width: 0; }
+.closing-report-workspace .page-header { flex-wrap: wrap; gap: .75rem; }
+.closing-report-filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; margin: 1rem 0; }
+.closing-report-filters label { display: flex; flex-direction: column; gap: .25rem; flex: 1 1 12rem; min-width: 0; }
+.closing-report-filters input, .closing-report-filters select { width: 100%; min-width: 0; box-sizing: border-box; padding: .5rem; }
+.closing-report-list { padding-left: 1.5rem; }
+.closing-report-list > li { border-bottom: 1px solid #d7dce3; padding: 1rem 0; }
+.closing-report-list p, .closing-report-detail dd { overflow-wrap: anywhere; }
+.closing-report-delivery { padding: .75rem; background: #f3f5f8; border-radius: .5rem; }
+.closing-report-detail { margin-top: 1rem; padding: 1rem; border: 1px solid #c7d2e2; border-radius: .5rem; min-width: 0; }
+.closing-report-detail h5 { font-size: 1rem; }
+@media (max-width: 640px) { .closing-report-detail { padding: .75rem; } .closing-report-filters > button { width: 100%; } }
