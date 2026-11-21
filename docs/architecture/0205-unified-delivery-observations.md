@@ -62,7 +62,10 @@ table-event timestamp after modern HTTP/protocol failure. A truly legacy port
 without the new reader retains only a clearly qualified table-event timestamp.
 
 Sidebar Data Sent and System Status show covered-source pending counts alongside
-last receipt and observation times. Home's existing Cloud summary uses the same
+last receipt and observation times. Modern System Status suppresses the old
+independently read report aggregate, including during failures, so stale legacy
+counts cannot contradict the atomic observation. Legacy ports retain their
+explicitly scoped details. Home's existing Cloud summary uses the same
 qualified observation. Global cards are not added to the store-and-shift main
 area. Read failures hide stale success instead of showing zero pending.
 

@@ -69,3 +69,17 @@ it('accepted-close notification failure cannot change committed closing state or
   expect(command).toHaveBeenCalledOnce(); expect(accepted).toHaveBeenCalledOnce()
   expect(localStorage.getItem('accepted-observer')).toBeNull(); expect(screen.queryByText(/ยังไม่ทราบผลคำขอ/)).toBeNull()
 })
+
+it('uses only the unified aggregate for modern clients even when legacy report readers exist', () => {
+  const overview = deliveryView(0, 1, 0, 1)
+  const legacyQueue = vi.fn()
+  const legacySettings = vi.fn()
+  const port = { deliveryOverview: async () => ({ kind: 'ok' as const, value: overview }), closingReportQueueStatus: legacyQueue, closingReportDelivery: legacySettings }
+  const view = render(<DataFreshnessPanel state={state()} onRefresh={() => {}} closingReportPort={port} />)
+  expect(screen.getByRole('region', { name: 'สรุปการส่งธุรกรรมและรายงาน' })).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'รายงานปิดกะและปิดร้านรอส่ง' })).toBeNull()
+  expect(legacyQueue).not.toHaveBeenCalled(); expect(legacySettings).not.toHaveBeenCalled()
+  view.rerender(<DataFreshnessPanel state={{ synced: { phase: 'unsupported' }, sent: { phase: 'unavailable' } }} onRefresh={() => {}} closingReportPort={port} />)
+  expect(legacyQueue).not.toHaveBeenCalled(); expect(legacySettings).not.toHaveBeenCalled()
+  expect(screen.queryByText('รายการในคิวที่อ่านได้รับการยืนยันแล้ว')).toBeNull()
+})

@@ -28,7 +28,7 @@ export function DataFreshnessSidebar({ state }: { state: FreshnessState }) {
   </section>
 }
 
-export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort, printerPort, readinessRead, closingReportPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort; printerPort?: PrinterInventoryPort; readinessRead?: OrderingReadClient['branchReadiness']; closingReportPort?: Pick<OrderingReadClient, 'scope' | 'closingReportQueueStatus' | 'closingReportDelivery'> }) {
+export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort, printerPort, readinessRead, closingReportPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort; printerPort?: PrinterInventoryPort; readinessRead?: OrderingReadClient['branchReadiness']; closingReportPort?: Pick<OrderingReadClient, 'scope' | 'closingReportQueueStatus' | 'closingReportDelivery' | 'deliveryOverview'> }) {
   const [refreshVersion, setRefreshVersion] = useState(0)
   const loading = state.synced.phase === 'loading' || state.sent.phase === 'loading'
   return <section className="system-status panel" aria-labelledby="system-status-title">
@@ -47,7 +47,7 @@ export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, re
     <p>หน้านี้อ่านอย่างเดียว ไม่มีคำสั่ง Retry, Reprint หรือทดสอบอุปกรณ์</p>
     <Fragment key={refreshVersion}>
       <BranchReadinessPanel read={readinessRead} />
-      {closingReportPort && <div key={JSON.stringify(closingReportPort.scope)}><ClosingReportDeliveryStatus read={closingReportPort.closingReportDelivery} /><ClosingReportQueue read={closingReportPort.closingReportQueueStatus} scopeKey={JSON.stringify(closingReportPort.scope) ?? 'system'} refreshKey={refreshVersion} /></div>}
+      {closingReportPort && !closingReportPort.deliveryOverview && <div key={JSON.stringify(closingReportPort.scope)}><ClosingReportDeliveryStatus read={closingReportPort.closingReportDelivery} /><ClosingReportQueue read={closingReportPort.closingReportQueueStatus} scopeKey={JSON.stringify(closingReportPort.scope) ?? 'system'} refreshKey={refreshVersion} /></div>}
       {printerPort && <PrinterInventoryPanel port={printerPort} />}
       {printPort && <PrintAttentionPanel port={printPort} />}
       {outboxPort && <CloudOutboxPanel port={outboxPort} />}
