@@ -1,3 +1,4 @@
+import { reportPage } from '../api/closingReportTestFixtures.ts'
 import App from '../App.tsx'
 import { createOrderingPreview } from '../ordering/orderingPreview.ts'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -299,19 +300,19 @@ it('shows the specific partial-payment table and permits correction after a defi
   expect((dialog.getByLabelText('ยอดเงินสดนับจริง') as HTMLInputElement).readOnly).toBe(false)
 })
 
-it('refreshes the closing report queue after closing and keeps closing available when the queue fails', async () => {
+it('refreshes saved report browsing after closing and keeps closing available when browsing fails', async () => {
   const queue = vi.fn().mockResolvedValueOnce({ kind: 'unavailable', reason: 'network' })
-    .mockResolvedValue({ kind: 'ok', value: { branchId: 'BRANCH', pendingCount: 1, leasedCount: 0, deliveredCount: 0, lastDeliveredAt: null } })
+    .mockResolvedValue({ kind: 'ok', value: reportPage() })
   const command = vi.fn(async () => ({ status: 200, body: { ...state, activeShiftId: null } }))
-  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: current, storeLifecycleCommand: command, closingReportQueueStatus: queue }} />)
+  render(<StoreShiftWorkspace storageKey={key} port={{ storeLifecycleCurrent: current, storeLifecycleCommand: command, closingReports: queue }} />)
   await screen.findByText('ร้านเปิด · มีกะเปิดอยู่')
-  await screen.findByText(/ยังอ่านคิวรายงานไม่ได้/)
+  await screen.findByText(/ยังอ่านรายการรายงานไม่ได้/)
   fireEvent.click(screen.getByRole('button', { name: 'ปิดกะ' }))
   const dialog = within(screen.getByRole('dialog'))
   fireEvent.change(dialog.getByLabelText('ยืนยัน PIN'), { target: { value: '123456' } })
   fireEvent.submit(dialog.getByRole('button', { name: 'ยืนยันปิดกะ' }).closest('form')!)
   await screen.findByText('ร้านเปิด · ระหว่างกะ')
-  await screen.findByText('1 รายงาน')
+  await screen.findByRole('button', { name: 'ดูรายงานที่บันทึกไว้' })
   expect(queue).toHaveBeenCalledTimes(2)
   expect(command).toHaveBeenCalledTimes(1)
   expect(localStorage.getItem(key)).toBeNull()

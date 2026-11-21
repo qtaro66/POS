@@ -247,3 +247,10 @@ it('shows live table state separately from the immutable carryover counts at clo
   expect(recorded.getByText('0 โต๊ะ')).toBeTruthy()
   expect(recorded.queryByText('3 โต๊ะ')).toBeNull()
 })
+
+it('opens report delivery browsing with the immutable historical store and shift identity', async () => {
+  const open = vi.fn()
+  render(<StoreShiftTimeline port={{ storeLifecycleWorkspace: read }} sourceState={state} onOpenReport={open} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'ดูการส่งรายงานของกะนี้' }))
+  expect(open).toHaveBeenCalledWith('S1', 'H1')
+})

@@ -1,3 +1,4 @@
+import { isClosingReportId, validateClosingReportQuery, parseClosingReportPage, parseClosingReportDetail, parseClosingReportDelivery, type ClosingReportQuery, type ClosingReportPage, type ClosingReportDetail, type ClosingReportDelivery } from './closingReportWorkspaceContracts.ts'
 import { parseClosingReportQueueStatus, type ClosingReportQueueStatus } from './closingReportContracts.ts'
 import { parseStoreLifecycle, parseStoreLifecycleRecovery, parseStoreWorkspace, parseStoreShiftEntry, type StoreWorkspace, type StoreShiftEntry, type StoreLifecycleCommand, type StoreLifecycleState } from './storeLifecycleContracts.ts'
 import { parseSoldOutPage, soldOutAdjustmentOutcome, type SoldOutAdjustment, type SoldOutAdjustmentOutcome, type SoldOutPage } from './soldOutContracts.ts'
@@ -417,6 +418,32 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         const response = commandResponse(result.body, requestId, expected)
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async closingReports(query: ClosingReportQuery = {}, signal?: AbortSignal): Promise<QueryResult<ClosingReportPage>> {
+      try { validateClosingReportQuery(query) } catch { return { kind: 'unavailable', reason: 'protocol' } }
+      const parameters = new URLSearchParams({ status: query.status ?? 'All', limit: String(query.limit ?? 20) })
+      for (const key of ['storeSessionId', 'shiftId', 'businessDate', 'cursor'] as const) if (query[key] !== undefined) parameters.set(key, query[key]!)
+      const result = await request('/store-lifecycle/closing-reports?' + parameters.toString(), 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseClosingReportPage(result.body, session.branchId, query) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async closingReportDetail(requestId: string, signal?: AbortSignal): Promise<QueryResult<ClosingReportDetail>> {
+      if (!isClosingReportId(requestId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/store-lifecycle/closing-reports/' + encodeURIComponent(requestId), 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseClosingReportDetail(result.body, session.branchId, requestId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async closingReportDelivery(signal?: AbortSignal): Promise<QueryResult<ClosingReportDelivery>> {
+      const result = await request('/store-lifecycle/closing-reports/delivery', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseClosingReportDelivery(result.body, session.branchId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     async closingReportQueueStatus(signal?: AbortSignal): Promise<QueryResult<ClosingReportQueueStatus>> {
       const result = await request('/store-lifecycle/closing-outbox', 'GET', undefined, signal)
