@@ -15,11 +15,11 @@ public sealed class CentralPostgresMigrationStartupServiceTests
         await service.StartAsync(CancellationToken.None);
 
         Assert.Equal(1, factory.OpenCount);
-        Assert.Equal(1, session.ApplyCount);
+        Assert.Equal(2, session.ApplyCount);
         Assert.Equal(1, session.CommitCount);
         Assert.True(session.Disposed);
         Assert.Equal(
-            new PostgresCentralMigrationExecutionResult(0, 1, 1),
+            new PostgresCentralMigrationExecutionResult(0, 2, 2),
             service.LastResult);
     }
 
