@@ -10,3 +10,10 @@
 .closing-report-detail { margin-top: 1rem; padding: 1rem; border: 1px solid #c7d2e2; border-radius: .5rem; min-width: 0; }
 .closing-report-detail h5 { font-size: 1rem; }
 @media (max-width: 640px) { .closing-report-detail { padding: .75rem; } .closing-report-filters > button { width: 100%; } }
+
+.closing-report-document { background: #fff; color: #162536; border: 1px solid #c7d2e2; padding: 1.5rem; max-width: 70rem; margin: 1rem auto; }
+.closing-report-lifecycle { border-top: 1px solid #c7d2e2; margin-top: 1rem; padding-top: 1rem; }
+.closing-report-shifts { padding-left: 1.5rem; }
+.closing-report-shifts > li { margin: .75rem 0; padding-bottom: .75rem; border-bottom: 1px solid #d7dce3; }
+.closing-report-lifecycle li, .closing-report-lifecycle dd { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .closing-report-document { padding: .75rem; } }

@@ -12,4 +12,5 @@ public sealed record ClosingReportPage(string BranchId, DateTimeOffset AsOf,
 public sealed record ClosingReportSnapshot(int SchemaVersion, string ReportId, string BranchId, string RequestId,
     string StoreSessionId, string ShiftId, string Operation, DateOnly BusinessDate, ShiftClosing Closing,
     StoreCashSummary? CashSummary);
-public sealed record ClosingReportDetail(string BranchId, ClosingReportListItem Report, ClosingReportSnapshot Snapshot);
+public sealed record ClosingReportDetail(string BranchId, ClosingReportListItem Report, ClosingReportSnapshot Snapshot,
+    ClosingReportLifecycleContext? Lifecycle = null);

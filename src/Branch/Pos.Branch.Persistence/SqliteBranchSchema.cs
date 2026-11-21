@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 33;
+    public const int CurrentVersion = 34;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1570,6 +1570,23 @@ internal static class SqliteBranchSchema
                     ON closing_report_outbox(branch_id,sequence) WHERE delivered_at IS NULL;
                 """, cancellationToken);
             await SqliteClosingReportOutboxWriter.EnqueueAsync(connection, transaction, null, null, cancellationToken);
+        }
+
+        if (storedVersion < 34)
+        {
+            await ExecuteAsync(connection, transaction, """
+                CREATE TABLE IF NOT EXISTS closing_report_lifecycle_snapshots (
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    store_session_id TEXT NOT NULL,
+                    shift_id TEXT NOT NULL,
+                    context_json TEXT NOT NULL CHECK (json_valid(context_json)),
+                    PRIMARY KEY (branch_id, request_id),
+                    UNIQUE (branch_id, store_session_id, shift_id),
+                    FOREIGN KEY (branch_id, request_id)
+                        REFERENCES closing_report_outbox(branch_id, request_id)
+                );
+                """, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

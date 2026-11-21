@@ -148,7 +148,7 @@ public sealed class SqliteClosingReportQueryTests : IDisposable
         await Close("later", storeId: "later");
         var reopened = await Store();
         var saved = (await reopened.ReadClosingReportDetailAsync("branch", "one", Now))!;
-        Assert.Equal(original, saved);
+        Assert.Equal(JsonSerializer.Serialize(original), JsonSerializer.Serialize(saved));
         Assert.Equal(490, saved.Snapshot.Closing.ActualCashAmount);
         Assert.Equal(-10, saved.Snapshot.Closing.CashDifference);
         await Execute("UPDATE closing_report_outbox SET payload_json=json_set(payload_json,'$.cashSummary',null) WHERE request_id='one';");

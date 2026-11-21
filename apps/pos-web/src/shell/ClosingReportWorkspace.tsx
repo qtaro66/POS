@@ -3,6 +3,7 @@ import type { OrderingReadClient } from '../ordering/readController.ts'
 import type { ClosingReportDelivery, ClosingReportDetail, ClosingReportFailure, ClosingReportFilter, ClosingReportItem, ClosingReportPage, ClosingReportQuery, ClosingReportState } from '../api/closingReportWorkspaceContracts.ts'
 import type { StoreCashTotals } from '../api/storeLifecycleContracts.ts'
 import './ClosingReportWorkspace.css'
+import { ClosingReportLifecycleView } from './ClosingReportLifecycleView.tsx'
 
 type Port = Pick<OrderingReadClient, 'closingReports' | 'closingReportDetail' | 'closingReportDelivery'>
 export interface ClosingReportFocus { storeSessionId: string; shiftId: string; revision: number }
@@ -43,6 +44,7 @@ function Totals({ value, title }: { value: StoreCashTotals; title: string }) {
   </dl>{!value.financials && <p>ยังไม่มีรายละเอียดภาษีและส่วนลดที่บันทึกไว้ครบ</p>}</section>
 }
 function Detail({ requestId, read, close }: { requestId: string; read: Port['closingReportDetail']; close: () => void }) {
+  const [preview, setPreview] = useState(false)
   const [snapshot, setSnapshot] = useState<{ reader: typeof read; value: ClosingReportDetail | null; missing: boolean } | null>(null)
   useEffect(() => {
     const abort = new AbortController()
@@ -56,6 +58,9 @@ function Detail({ requestId, read, close }: { requestId: string; read: Port['clo
   return <section className="closing-report-detail" aria-label="รายงานปิดที่บันทึกไว้">
     <header className="page-header"><h4>รายงานปิดที่บันทึกไว้</h4><button onClick={close}>ปิดรายละเอียดรายงาน</button></header>
     {!current && read ? <p role="status">กำลังอ่านรายงานที่บันทึกไว้</p> : !saved ? <p role="alert">{current?.missing ? 'ไม่พบรายงานนี้ในสาขา' : 'ยังอ่านรายงานนี้ไม่ได้ กรุณาตรวจสอบรายการอีกครั้ง'}</p> : <>
+      <button type="button" aria-pressed={preview} onClick={() => setPreview(value => !value)}>{preview ? 'กลับมุมมองรายละเอียดรายงาน' : 'เปิดตัวอย่างเอกสารรายงาน'}</button>
+      <article className={preview ? 'closing-report-document' : undefined} aria-label={preview ? 'ตัวอย่างเอกสารรายงานปิด' : 'รายละเอียดที่บันทึก ณ เวลาปิด'}>
+      {preview && <h4>{saved.operation === 'CloseStore' ? 'รายงานปิดร้าน' : 'รายงานปิดกะ'} · {saved.businessDate}</h4>}
       <p>ข้อมูล ณ เวลาปิดที่บันทึกไว้ ไม่คำนวณใหม่จากยอดปัจจุบัน</p>
       <dl className="store-attribution"><div><dt>ประเภทรายงาน</dt><dd>{saved.operation === 'CloseStore' ? 'ปิดร้าน' : 'ปิดกะระหว่างวัน'}</dd></div>
         <div><dt>วันธุรกิจ</dt><dd>{saved.businessDate}</dd></div><div><dt>รอบร้าน</dt><dd>{saved.storeSessionId}</dd></div><div><dt>กะ</dt><dd>{saved.shiftId}</dd></div>
@@ -63,7 +68,7 @@ function Detail({ requestId, read, close }: { requestId: string; read: Port['clo
         <div><dt>ยอดที่ควรมี</dt><dd>{money(saved.closing.expectedCashAmount)} บาท</dd></div>
         <div><dt>ยอดนับจริง</dt><dd>{saved.closing.actualCashAmount === null ? 'ไม่ได้กระทบยอด (NotReconciled)' : money(saved.closing.actualCashAmount) + ' บาท'}</dd></div>
         <div><dt>ผลต่าง</dt><dd>{saved.closing.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(saved.closing.cashDifference) + ' บาท'}</dd></div></dl>
-      <DeliveryDetails item={current!.value!.report} />
+      <ClosingReportLifecycleView value={current!.value!.lifecycle ?? null} />
       {saved.cashSummary ? <>
         {saved.cashSummary.shift && <Totals value={saved.cashSummary.shift} title="เงินสดของกะ ณ เวลาปิด" />}
         <Totals value={saved.cashSummary.store} title="เงินสดสะสมรอบร้าน ณ เวลาปิด" />
@@ -71,6 +76,9 @@ function Detail({ requestId, read, close }: { requestId: string; read: Port['clo
           <div><dt>โต๊ะที่ยังไม่ปิด</dt><dd>{saved.cashSummary.tables.openTableCount} โต๊ะ</dd></div><div><dt>โต๊ะรอชำระ รวมชำระบางส่วน</dt><dd>{saved.cashSummary.tables.awaitingPaymentTableCount} โต๊ะ</dd></div>
           <div><dt>โต๊ะชำระบางส่วน</dt><dd>{saved.cashSummary.tables.partiallyPaidTableCount} โต๊ะ</dd></div></dl></section> : <p>ยังไม่มีจำนวนโต๊ะที่บันทึก ณ เวลาปิด</p>}
       </> : <p>รายงานเดิมไม่มีสรุปยอดขายเงินสดและจำนวนโต๊ะที่บันทึกไว้</p>}
+      </article>
+      {preview && <p>ตัวอย่างเอกสารสำหรับอ่านเท่านั้น ยังไม่สั่งพิมพ์หรือส่งออกไฟล์</p>}
+      <section aria-label="สถานะส่งล่าสุดของรายงาน"><DeliveryDetails item={current!.value!.report} /></section>
     </>}
   </section>
 }

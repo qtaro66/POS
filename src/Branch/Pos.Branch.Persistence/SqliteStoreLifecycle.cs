@@ -156,6 +156,7 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         if (command.Action is StoreLifecycleAction.CloseShift or StoreLifecycleAction.CloseStore)
         {
             await CaptureStoreCashSummaryAsync(branchId, command, token);
+            await CaptureClosingReportLifecycleAsync(branchId, command, state, token);
         }
         return result;
     }

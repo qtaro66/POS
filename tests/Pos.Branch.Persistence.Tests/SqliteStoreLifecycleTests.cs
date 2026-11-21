@@ -156,7 +156,7 @@ public sealed class SqliteStoreLifecycleTests : IDisposable
         check.CommandText = "SELECT count(*) FROM table_sessions WHERE branch_id='existing';";
         Assert.Equal(1L, await check.ExecuteScalarAsync());
         check.CommandText = "PRAGMA user_version;";
-        Assert.Equal(33L, await check.ExecuteScalarAsync());
+        Assert.Equal(34L, await check.ExecuteScalarAsync());
         await store.ExecuteStoreLifecycleAsync("branch", Command("open", StoreLifecycleAction.OpenStore, 0));
     }
 
