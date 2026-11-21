@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { createCloudOutboxStatus, type CloudOutboxPort } from './cloudOutboxStatus.ts'
 import type { FreshnessState } from './dataFreshness.ts'
 import { FreshnessValue } from './DataFreshnessPanel.tsx'
+import { DataSentSummary } from './DeliveryOverviewPanel.tsx'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 
 export function HomeCloudStatus({ port, freshness, openDetails, refreshPermissions }: {
@@ -35,8 +36,8 @@ export function HomeCloudStatus({ port, freshness, openDetails, refreshPermissio
     <h3 id="home-cloud-status-title">ข้อมูลส่วนกลาง</h3>
     <dl className="system-readings">
       <div><dt>ซิงก์ข้อมูลพนักงานล่าสุด</dt><dd><FreshnessValue reading={freshness.synced} /></dd></div>
-      <div><dt>ส่วนกลางยืนยันรับล่าสุด</dt><dd><FreshnessValue reading={freshness.sent} /></dd></div>
-      <div><dt>รายการที่ยังไม่ได้รับการยืนยัน</dt><dd role="status">{state.page ? <>
+      <div><dt>การส่งข้อมูลจากสาขา</dt><dd><DataSentSummary reading={freshness.sent} /></dd></div>
+      <div><dt>ธุรกรรมโต๊ะที่ยังไม่ได้รับการยืนยัน</dt><dd role="status">{state.page ? <>
         <strong>{state.page.summary.unacknowledgedCount}</strong> รายการ · เวลาอ้างอิง <FreshnessValue reading={{ phase: 'ready', timestamp: state.page.observedAt }} />
       </> : ({
         loading: 'กำลังอ่านจำนวนรายการ',

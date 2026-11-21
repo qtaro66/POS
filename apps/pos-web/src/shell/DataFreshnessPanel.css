@@ -11,3 +11,9 @@
 .system-readings > div { border: 1px solid #c8dbe8; border-radius: 8px; padding: 16px; }
 .system-readings dt { font-weight: bold; }
 .system-readings dd { margin: 8px 0 0; }
+
+.delivery-summary { display: flex; flex-direction: column; gap: .35rem; overflow-wrap: anywhere; }
+.delivery-Pending > span { font-weight: 700; color: #754800; }
+.delivery-overview > section { margin-top: 1rem; }
+
+.pos-sidebar .delivery-Pending > span { color: #ffd28a; }
