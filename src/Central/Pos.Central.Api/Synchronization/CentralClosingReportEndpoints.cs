@@ -28,7 +28,6 @@ public static class CentralClosingReportEndpoints
         [FromServices] IPostgresClosingReportReadinessProbe readiness, CancellationToken token)
     {
         context.Response.Headers.CacheControl = "no-store";
-        if (!context.Request.IsHttps) { return TypedResults.BadRequest(new { error = "HttpsRequired" }); }
         if (!AuthenticatedCentralBranchIdentityResolver.TryResolve(context.User, out var identity)) { return TypedResults.Unauthorized(); }
         if (!context.Request.HasJsonContentType()) { return TypedResults.StatusCode(415); }
         if (context.Request.ContentLength > MaximumBodyBytes) { return TypedResults.StatusCode(413); }

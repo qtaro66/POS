@@ -146,14 +146,11 @@ public sealed class CentralClosingReportTests
     }
 
     [Fact]
-    public async Task Invalid_utf8_content_type_and_insecure_transport_are_rejected()
+    public async Task Invalid_utf8_and_content_type_are_rejected()
     {
         await using var fixture = new Fixture();
         Assert.Equal(400, (await fixture.CallBytes([0xff, 0xfe])).Status);
         Assert.Equal(415, (await fixture.Call(Payload(), contentType: "text/plain")).Status);
-        var insecure = await fixture.Call(Payload(), scheme: "http");
-        Assert.Equal(400, insecure.Status);
-        Assert.Equal("no-store", insecure.CacheControl);
         Assert.Equal(0, fixture.Store.Calls);
     }
 
@@ -316,6 +313,36 @@ public sealed class CentralClosingReportTests
         Assert.Equal(204, context.Response.StatusCode);
     }
 
+    [Fact]
+    public async Task Https_middleware_blocks_http_before_receiver_and_allows_https_through()
+    {
+        await using var fixture = new Fixture();
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var pipeline = new ApplicationBuilder(services);
+        pipeline.UseCentralClosingReportHttpsOnly(Config(true));
+        pipeline.Run(fixture.Route.RequestDelegate!);
+        var app = pipeline.Build();
+        foreach (var scheme in new[] { "http", "https" })
+        {
+            var context = new DefaultHttpContext
+            {
+                RequestServices = fixture.Services,
+                User = Principal("branch")
+            };
+            context.Request.Method = "POST";
+            context.Request.Path = CentralClosingReportEndpoints.Route;
+            context.Request.Scheme = scheme;
+            context.Request.ContentType = "application/json";
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(Payload()));
+            context.Response.Body = new MemoryStream();
+            await app(context);
+            Assert.Equal(scheme == "http" ? 400 : 200, context.Response.StatusCode);
+            Assert.Equal("no-store", context.Response.Headers.CacheControl);
+            Assert.Equal(scheme == "http" ? 0 : 1, fixture.Readiness.Calls);
+            Assert.Equal(scheme == "http" ? 0 : 1, fixture.Store.Calls);
+        }
+    }
+
     private static IConfiguration Config(bool enabled, string? key = null, string? value = null)
     {
         var entries = new Dictionary<string, string?>
@@ -336,6 +363,7 @@ public sealed class CentralClosingReportTests
         internal Store Store { get; } = new();
         internal Readiness Readiness { get; } = new();
         internal RouteEndpoint Route { get; }
+        internal IServiceProvider Services => _app.Services;
         internal Fixture()
         {
             var builder = WebApplication.CreateBuilder();
