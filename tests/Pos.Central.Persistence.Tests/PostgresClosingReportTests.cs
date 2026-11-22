@@ -193,7 +193,7 @@ public sealed class PostgresClosingReportTests
     public void Version_one_upgrade_contains_only_the_new_migration()
     {
         var pending = PostgresCentralMigrationPlanner.Plan([new(1, "0001_branch_cloud_events")]);
-        Assert.Equal(2, Assert.Single(pending).Version);
+        Assert.Equal(new[] { 2, 3 }, pending.Select(migration => migration.Version));
     }
 
     private sealed class Factory(Session session) : IPostgresClosingReportSessionFactory

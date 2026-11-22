@@ -66,6 +66,8 @@ public sealed partial class BranchOrderingHttpApiTests
             var at = OverviewTime.AddSeconds(2);
             var lease = Assert.IsType<ClosingReportLease>(await store.ClaimClosingReportAsync(branch, "PRIVATE-REPORT-WORKER", at, TimeSpan.FromMinutes(1)));
             Assert.True(await store.ConfirmClosingReportAsync(lease, at));
+            var contextLease = Assert.IsType<ClosingLifecycleLease>(await store.ClaimClosingLifecycleAsync(branch, "PRIVATE-CONTEXT-WORKER", at, TimeSpan.FromMinutes(1)));
+            Assert.True(await store.ConfirmClosingLifecycleAsync(contextLease, at));
         }
         return close.RequestId;
     }
@@ -91,7 +93,7 @@ public sealed partial class BranchOrderingHttpApiTests
         var response = await fixture.Call("GetDeliveryOverview", principal: LifecyclePrincipal());
         Assert.Equal(200, response.Status);
         Assert.Equal("no-store", response.CacheControl);
-        Assert.Equal(1, response.Body.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, response.Body.GetProperty("schemaVersion").GetInt32());
         Assert.False(response.Body.GetProperty("tableDeliveryEnabled").GetBoolean());
         Assert.False(response.Body.GetProperty("reportDeliveryEnabled").GetBoolean());
         var snapshot = response.Body.GetProperty("snapshot");
@@ -236,6 +238,11 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal(lease.ReportId, replayLease.ReportId);
         Assert.Equal(lease.PayloadJson, replayLease.PayloadJson);
         Assert.True(await reopened.ConfirmClosingReportAsync(replayLease, now));
+        var parentConfirmed = await fixture.Call("GetDeliveryOverview", principal: LifecyclePrincipal());
+        Assert.Equal("Pending", parentConfirmed.Body.GetProperty("snapshot").GetProperty("state").GetString());
+        Assert.Equal(1, parentConfirmed.Body.GetProperty("snapshot").GetProperty("lifecycleReports").GetProperty("pendingCount").GetInt64());
+        var contextLease = Assert.IsType<ClosingLifecycleLease>(await reopened.ClaimClosingLifecycleAsync("BRANCH-01", "context-worker", now, TimeSpan.FromMinutes(1)));
+        Assert.True(await reopened.ConfirmClosingLifecycleAsync(contextLease, now));
         var confirmed = await fixture.Call("GetDeliveryOverview", principal: LifecyclePrincipal());
         Assert.Equal("Current", confirmed.Body.GetProperty("snapshot").GetProperty("state").GetString());
         Assert.Equal(0, confirmed.Body.GetProperty("snapshot").GetProperty("closingReports").GetProperty("pendingCount").GetInt64());
@@ -285,7 +292,8 @@ public sealed partial class BranchOrderingHttpApiTests
         Assert.Equal(expectedReports, value.ReportDeliveryEnabled);
         Assert.Equal("no-store", context.Response.Headers.CacheControl);
         var json = JsonSerializer.SerializeToElement(value);
-        Assert.Equal(4, json.EnumerateObject().Count());
+        Assert.Equal(5, json.EnumerateObject().Count());
+        Assert.False(value.LifecycleDeliveryEnabled);
         Assert.DoesNotContain("PRIVATE", json.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(fixture.Path, json.GetRawText());
         Assert.DoesNotContain("origin", json.GetRawText(), StringComparison.OrdinalIgnoreCase);

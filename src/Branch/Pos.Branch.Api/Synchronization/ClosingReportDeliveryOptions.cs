@@ -8,6 +8,7 @@ public sealed class ClosingReportDeliveryOptions
 {
     public const string SectionName = "ClosingReportDelivery";
     public bool Enabled { get; init; }
+    public bool LifecycleEnabled { get; init; }
     public string BranchId { get; init; } = string.Empty;
     public string CentralOrigin { get; init; } = string.Empty;
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
@@ -22,7 +23,11 @@ public sealed class ClosingReportDeliveryOptionsValidator(IConfiguration configu
 {
     public ValidateOptionsResult Validate(string? name, ClosingReportDeliveryOptions options)
     {
-        if (!options.Enabled) { return ValidateOptionsResult.Success; }
+        if (!options.Enabled)
+        {
+            return options.LifecycleEnabled
+            ? ValidateOptionsResult.Fail("Lifecycle delivery requires base report delivery to be enabled.") : ValidateOptionsResult.Success;
+        }
         var errors = new List<string>();
         if (string.IsNullOrWhiteSpace(options.BranchId) || options.BranchId != options.BranchId.Trim())
         {
@@ -47,6 +52,10 @@ public sealed class ClosingReportDeliveryOptionsValidator(IConfiguration configu
             options.MaximumRetryDelay > TimeSpan.FromHours(1))
         {
             errors.Add("Closing delivery timings must be positive and bounded; lease must exceed request timeout and maximum retry must cover initial retry.");
+        }
+        if (options.LifecycleEnabled && options.LeaseDuration.TotalSeconds <= options.RequestTimeout.TotalSeconds * 3)
+        {
+            errors.Add("Lifecycle delivery lease must exceed three HTTP request deadlines for bounded parent recovery.");
         }
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
@@ -78,7 +87,23 @@ public static class ClosingReportDeliveryServiceCollectionExtensions
         services.AddSingleton(provider => new ClosingReportDeliveryCycle(
             new SqliteTableSessionCommandStore(configuration["BranchOrdering:DatabasePath"]!),
             provider.GetRequiredService<IClosingReportTransport>(), provider.GetRequiredService<TimeProvider>(),
-            provider.GetRequiredService<IOptions<ClosingReportDeliveryOptions>>()));
+            provider.GetRequiredService<IOptions<ClosingReportDeliveryOptions>>(),
+            provider.GetService<ClosingLifecycleDeliveryCycle>()));
+        if (configuration.GetValue<bool>(ClosingReportDeliveryOptions.SectionName + ":LifecycleEnabled"))
+        {
+            services.AddSingleton<IClosingLifecycleTransport>(provider =>
+            {
+                var settings = provider.GetRequiredService<IOptions<ClosingReportDeliveryOptions>>().Value;
+                var endpoint = BranchCloudDeliveryEndpoint.Require(settings.CentralOrigin, HttpClosingLifecycleTransport.Route,
+                    nameof(settings.CentralOrigin), nameof(HttpClosingLifecycleTransport.Route));
+                return new HttpClosingLifecycleTransport(provider.GetRequiredService<IHttpClientFactory>().CreateClient(ClientName),
+                    endpoint, settings.RequestTimeout, provider.GetRequiredService<TimeProvider>());
+            });
+            services.AddSingleton(provider => new ClosingLifecycleDeliveryCycle(
+                new SqliteTableSessionCommandStore(configuration["BranchOrdering:DatabasePath"]!),
+                provider.GetRequiredService<IClosingLifecycleTransport>(), provider.GetRequiredService<IClosingReportTransport>(),
+                provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IOptions<ClosingReportDeliveryOptions>>()));
+        }
         services.AddHostedService<ClosingReportDeliveryWorker>();
         return services;
     }

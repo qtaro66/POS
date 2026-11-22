@@ -48,6 +48,12 @@ public sealed class SqliteBranchDeliveryOverviewQuery
         await using var transaction = connection.BeginTransaction(deferred: true);
         var tables = await ReadChannelAsync(connection, transaction, branchId, now, reports: false, token);
         var reports = await ReadChannelAsync(connection, transaction, branchId, now, reports: true, token);
+        var lifecycle = await ReadChannelAsync(connection, transaction, branchId, now, reports: true, token, lifecycle: true);
+        using var integrity = connection.CreateCommand();
+        integrity.Transaction = transaction;
+        integrity.CommandText = "SELECT EXISTS(SELECT 1 FROM closing_report_lifecycle_snapshots s LEFT JOIN closing_report_context_outbox o ON o.branch_id=s.branch_id AND o.request_id=s.request_id WHERE s.branch_id=$branch AND o.context_id IS NULL) OR EXISTS(SELECT 1 FROM closing_report_context_outbox o LEFT JOIN closing_report_lifecycle_snapshots s ON s.branch_id=o.branch_id AND s.request_id=o.request_id LEFT JOIN closing_report_outbox p ON p.branch_id=o.branch_id AND p.request_id=o.request_id WHERE o.branch_id=$branch AND (s.request_id IS NULL OR p.report_id IS NULL OR o.context_id != 'lifecycle:' || p.report_id));";
+        integrity.Parameters.AddWithValue("$branch", branchId);
+        if (Convert.ToInt64(await integrity.ExecuteScalarAsync(token), CultureInfo.InvariantCulture) != 0) { throw new InvalidDataException("Saved lifecycle delivery is unavailable."); }
         using var replay = connection.CreateCommand();
         replay.Transaction = transaction;
         replay.CommandText = """
@@ -72,19 +78,27 @@ public sealed class SqliteBranchDeliveryOverviewQuery
         }
         if (invalidTimestamp) { throw new InvalidDataException("A saved delivery timestamp is invalid."); }
         await transaction.CommitAsync(token);
-        var pending = tables.PendingCount > 0 || reports.PendingCount > 0 || replayPending > 0;
-        var history = tables.DeliveredCount > 0 || reports.DeliveredCount > 0 || replayCompleted > 0;
-        var last = Latest(tables.LastConfirmedAt, reports.LastConfirmedAt, replayLast);
+        var pending = tables.PendingCount > 0 || reports.PendingCount > 0 || lifecycle.PendingCount > 0 || replayPending > 0;
+        var history = tables.DeliveredCount > 0 || reports.DeliveredCount > 0 || lifecycle.DeliveredCount > 0 || replayCompleted > 0;
+        var last = Latest(tables.LastConfirmedAt, reports.LastConfirmedAt, lifecycle.LastConfirmedAt, replayLast);
         return new(branchId, now, pending ? "Pending" : history ? "Current" : "NoHistory", last,
-            tables, reports, replayPending, replayCompleted, replayLast, replayOldest);
+            tables, reports, replayPending, replayCompleted, replayLast, replayOldest, lifecycle);
     }
 
     private static async Task<DeliveryChannelSummary> ReadChannelAsync(SqliteConnection connection, SqliteTransaction transaction,
-        string branchId, DateTimeOffset now, bool reports, CancellationToken token)
+        string branchId, DateTimeOffset now, bool reports, CancellationToken token, bool lifecycle = false)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        var source = reports ? """
+        var source = lifecycle ? """
+            SELECT delivery_utc_key(created_at) AS created_key,
+                   delivery_utc_key(delivered_at) AS ack_key,
+                   delivery_utc_key(lease_expires_at) AS lease_key,
+                   delivery_utc_key(available_at) AS delay_key,
+                   last_failure IS NOT NULL AND last_failure NOT IN
+                       ('TransportUnavailable','CentralRejected','AcknowledgmentUnavailable','ParentUnavailable') AS unknown
+            FROM closing_report_context_outbox WHERE branch_id=$branch
+            """ : reports ? """
             SELECT delivery_utc_key(created_at) AS created_key,
                    delivery_utc_key(delivered_at) AS ack_key,
                    delivery_utc_key(lease_expires_at) AS lease_key,

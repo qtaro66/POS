@@ -13,14 +13,14 @@ public sealed class PostgresCentralMigrationExecutorTests
 
         var result = await executor.ExecuteAsync();
 
-        Assert.Equal(2, session.Applied.Count);
+        Assert.Equal(3, session.Applied.Count);
         var applied = session.Applied[0];
         Assert.Equal(1, applied.Version);
         Assert.Equal("0001_branch_cloud_events", applied.Name);
         Assert.Equal(1, session.CommitCount);
         Assert.True(session.Disposed);
         Assert.Equal(
-            new PostgresCentralMigrationExecutionResult(0, 2, 2),
+            new PostgresCentralMigrationExecutionResult(0, 3, 3),
             result);
     }
 
@@ -30,7 +30,8 @@ public sealed class PostgresCentralMigrationExecutorTests
         var session = new RecordingSession(
         [
             new PostgresAppliedMigration(1, "0001_branch_cloud_events"),
-            new PostgresAppliedMigration(2, "0002_closing_reports")
+            new PostgresAppliedMigration(2, "0002_closing_reports"),
+            new PostgresAppliedMigration(3, "0003_closing_report_contexts")
         ]);
         var executor = new PostgresCentralMigrationExecutor(
             new RecordingSessionFactory(session));
@@ -41,7 +42,7 @@ public sealed class PostgresCentralMigrationExecutorTests
         Assert.Equal(1, session.CommitCount);
         Assert.True(session.Disposed);
         Assert.Equal(
-            new PostgresCentralMigrationExecutionResult(2, 2, 0),
+            new PostgresCentralMigrationExecutionResult(3, 3, 0),
             result);
     }
 

@@ -6,10 +6,10 @@ export function deliveryChannel(pending = 0, delivered = 0): DeliveryChannel {
     inFlightCount: 0, delayedCount: 0, expiredLeaseCount: 0, unknownCount: 0,
     lastConfirmedAt: delivered ? at : null, oldestPendingAt: pending ? '2026-11-20T03:00:00Z' : null }
 }
-export function deliveryView(tables = 0, reports = 0, replay = 0, delivered = 0): DeliveryOverview {
-  return { schemaVersion: 1, snapshot: { branchId: branch, asOf: at,
-    state: tables || reports || replay ? 'Pending' : delivered ? 'Current' : 'NoHistory',
-    lastConfirmedAt: delivered ? at : null, tableEvents: deliveryChannel(tables, delivered), closingReports: deliveryChannel(reports),
+export function deliveryView(tables = 0, reports = 0, replay = 0, delivered = 0, lifecycle = 0): DeliveryOverview {
+  return { schemaVersion: 2, snapshot: { branchId: branch, asOf: at,
+    state: tables || reports || replay || lifecycle ? 'Pending' : delivered ? 'Current' : 'NoHistory',
+    lastConfirmedAt: delivered ? at : null, tableEvents: deliveryChannel(tables, delivered), closingReports: deliveryChannel(reports), lifecycleReports: deliveryChannel(lifecycle),
     replayPendingCount: replay, replayCompletedCount: 0, replayLastConfirmedAt: null,
-    replayOldestPendingAt: replay ? '2026-11-19T03:00:00Z' : null }, tableDeliveryEnabled: true, reportDeliveryEnabled: true }
+    replayOldestPendingAt: replay ? '2026-11-19T03:00:00Z' : null }, tableDeliveryEnabled: true, reportDeliveryEnabled: true, lifecycleDeliveryEnabled: true }
 }

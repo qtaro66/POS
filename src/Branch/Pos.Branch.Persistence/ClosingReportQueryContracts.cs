@@ -13,4 +13,4 @@ public sealed record ClosingReportSnapshot(int SchemaVersion, string ReportId, s
     string StoreSessionId, string ShiftId, string Operation, DateOnly BusinessDate, ShiftClosing Closing,
     StoreCashSummary? CashSummary);
 public sealed record ClosingReportDetail(string BranchId, ClosingReportListItem Report, ClosingReportSnapshot Snapshot,
-    ClosingReportLifecycleContext? Lifecycle = null);
+    ClosingReportLifecycleContext? Lifecycle = null, ClosingLifecycleDelivery? LifecycleDelivery = null);

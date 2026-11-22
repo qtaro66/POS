@@ -108,7 +108,8 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         }
         await reader.DisposeAsync();
         var lifecycle = await ReadSavedClosingReportLifecycleAsync(branchId, requestId, snapshot, token);
-        return new(branchId, item, snapshot, lifecycle);
+        var lifecycleDelivery = await ReadClosingLifecycleDeliveryAsync(branchId, requestId, now, lifecycle is not null, token);
+        return new(branchId, item, snapshot, lifecycle, lifecycleDelivery);
     }
 
     private static ClosingReportListItem ReadReportItem(SqliteDataReader reader, DateTimeOffset now)

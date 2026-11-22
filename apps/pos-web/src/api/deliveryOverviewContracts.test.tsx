@@ -26,7 +26,7 @@ describe('unified delivery contract', () => {
     expect(() => parseDeliveryOverview(value, branch)).toThrow()
   })
   it.each([
-    ['schema version', (value: ReturnType<typeof deliveryView>) => { value.schemaVersion = 2 as 1 }],
+    ['schema version', (value: ReturnType<typeof deliveryView>) => { value.schemaVersion = 1 as 2 }],
     ['scope', (value: ReturnType<typeof deliveryView>) => { value.snapshot.branchId = 'OTHER' }],
     ['false current', (value: ReturnType<typeof deliveryView>) => { value.snapshot.state = 'Current' }],
     ['unsafe count', (value: ReturnType<typeof deliveryView>) => { value.snapshot.tableEvents.pendingCount = Number.MAX_SAFE_INTEGER + 1 }],

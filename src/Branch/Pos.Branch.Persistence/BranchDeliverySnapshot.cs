@@ -6,4 +6,4 @@ public sealed record DeliveryChannelSummary(long TotalCount, long PendingCount, 
 public sealed record BranchDeliverySnapshot(string BranchId, DateTimeOffset AsOf, string State,
     DateTimeOffset? LastConfirmedAt, DeliveryChannelSummary TableEvents, DeliveryChannelSummary ClosingReports,
     long ReplayPendingCount, long ReplayCompletedCount, DateTimeOffset? ReplayLastConfirmedAt,
-    DateTimeOffset? ReplayOldestPendingAt);
+    DateTimeOffset? ReplayOldestPendingAt, DeliveryChannelSummary? LifecycleReports = null);

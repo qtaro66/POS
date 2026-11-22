@@ -29,6 +29,7 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         write.Parameters.AddWithValue("$shift", command.ShiftId);
         write.Parameters.AddWithValue("$context", JsonSerializer.Serialize(context));
         await write.ExecuteNonQueryAsync(token);
+        await SqliteClosingLifecycleOutboxWriter.EnqueueAsync(_connection, _transaction, branchId, command.RequestId, token);
     }
 
     private async Task<ClosingReportLifecycleContext?> ReadSavedClosingReportLifecycleAsync(string branchId,

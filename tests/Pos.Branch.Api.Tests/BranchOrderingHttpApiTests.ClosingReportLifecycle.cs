@@ -124,6 +124,7 @@ public sealed partial class BranchOrderingHttpApiTests
         await using var fixture = await Fixture.CreateAsync();
         var cycle = await CreateFrozenContextCycle(fixture);
         var before = await fixture.Scalar($"SELECT payload_json FROM closing_report_outbox WHERE request_id='{cycle.Last.RequestId}';");
+        await fixture.Execute($"DELETE FROM closing_report_context_outbox WHERE request_id='{cycle.Last.RequestId}';");
         await fixture.Execute($"DELETE FROM closing_report_lifecycle_snapshots WHERE request_id='{cycle.Last.RequestId}';");
         var result = await fixture.Call("GetClosingReportDetail", routeValue: cycle.Last.RequestId, principal: LifecyclePrincipal());
         Assert.Equal(200, result.Status);

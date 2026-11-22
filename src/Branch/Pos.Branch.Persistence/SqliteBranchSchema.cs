@@ -5,7 +5,7 @@ namespace Pos.Branch.Infrastructure.Sqlite;
 
 internal static class SqliteBranchSchema
 {
-    public const int CurrentVersion = 34;
+    public const int CurrentVersion = 35;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -1587,6 +1587,34 @@ internal static class SqliteBranchSchema
                         REFERENCES closing_report_outbox(branch_id, request_id)
                 );
                 """, cancellationToken);
+        }
+
+        if (storedVersion < 35)
+        {
+            await ExecuteAsync(connection, transaction, """
+                CREATE TABLE IF NOT EXISTS closing_report_context_outbox (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    context_id TEXT NOT NULL UNIQUE,
+                    branch_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+                    created_at TEXT NOT NULL,
+                    available_at TEXT NOT NULL,
+                    lease_id TEXT NULL,
+                    lease_owner TEXT NULL,
+                    lease_expires_at TEXT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+                    delivered_at TEXT NULL,
+                    last_failure TEXT NULL,
+                    UNIQUE (branch_id,request_id),
+                    FOREIGN KEY (branch_id,request_id) REFERENCES closing_report_lifecycle_snapshots(branch_id,request_id),
+                    CHECK ((lease_id IS NULL AND lease_owner IS NULL AND lease_expires_at IS NULL) OR
+                        (lease_id IS NOT NULL AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL))
+                );
+                CREATE INDEX IF NOT EXISTS ix_closing_context_pending
+                    ON closing_report_context_outbox(branch_id,sequence) WHERE delivered_at IS NULL;
+                """, cancellationToken);
+            await SqliteClosingLifecycleOutboxWriter.EnqueueAsync(connection, transaction, null, null, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

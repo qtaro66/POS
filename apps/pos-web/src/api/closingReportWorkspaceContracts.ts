@@ -15,8 +15,11 @@ export interface ClosingReportDelivery { branchId: string; asOf: string; deliver
 export type ClosingReportContext = NonNullable<StoreLifecycleState['closing']>['context']
 export interface ClosingReportShiftContext { shiftId: string; openingCashAmount: number | null; opened: ClosingReportContext; closing: NonNullable<StoreLifecycleState['closing']> }
 export interface ClosingReportLifecycle { schemaVersion: 1; branchId: string; requestId: string; storeSessionId: string; closingShiftId: string; businessDate: string; openingCashAmount: number; opened: ClosingReportContext; closesStore: boolean; shifts: ClosingReportShiftContext[] }
+export type ClosingLifecycleFailure = ClosingReportFailure | 'ParentUnavailable'
+export interface ClosingLifecycleDelivery { contextId: string; deliveryState: ClosingReportState; attemptCount: number; availableAt: string; leaseExpiresAt: string | null; deliveredAt: string | null; lastFailure: ClosingLifecycleFailure | null }
 export interface ClosingReportDetail {
   lifecycle?: ClosingReportLifecycle | null
+  lifecycleDelivery?: ClosingLifecycleDelivery | null
   branchId: string; report: ClosingReportItem
   snapshot: { schemaVersion: 1; branchId: string; reportId: string; requestId: string; storeSessionId: string; shiftId: string
     operation: 'CloseShift' | 'CloseStore'; businessDate: string; closing: NonNullable<StoreLifecycleState['closing']>; cashSummary: StoreCashSummary | null }
@@ -95,7 +98,9 @@ export function parseClosingReportDetail(value: unknown, branchId: string, reque
     if (totals && (!money(totals.appliedCashAmount) || totals.financials && Object.values(totals.financials).some(amount => !money(amount)))) invalid()
   }
   const lifecycle = value.lifecycle === undefined || value.lifecycle === null ? null : parseLifecycle(value.lifecycle, branchId, report, closing)
-  return { branchId, report, lifecycle, snapshot: { schemaVersion: 1, branchId, reportId: report.reportId, requestId,
+  const lifecycleDelivery = value.lifecycleDelivery === undefined || value.lifecycleDelivery === null ? null : parseLifecycleDelivery(value.lifecycleDelivery, report)
+  if (lifecycleDelivery && !lifecycle) invalid()
+  return { branchId, report, lifecycle, lifecycleDelivery, snapshot: { schemaVersion: 1, branchId, reportId: report.reportId, requestId,
     storeSessionId: report.storeSessionId, shiftId: report.shiftId, operation: report.operation, businessDate: report.businessDate, closing, cashSummary } }
 }
 
@@ -140,4 +145,19 @@ function parseLifecycle(value: unknown, branchId: string, report: ClosingReportI
     shifts[0].openingCashAmount !== value.openingCashAmount || !sameContext(shifts[0].opened, opened) || !sameClosing(shifts.at(-1)!.closing, closing)) invalid()
   return { schemaVersion: 1, branchId, requestId: report.requestId, storeSessionId: report.storeSessionId, closingShiftId: report.shiftId,
     businessDate: report.businessDate, openingCashAmount: value.openingCashAmount, opened, closesStore: value.closesStore as boolean, shifts }
+}
+
+function parseLifecycleDelivery(value: unknown, report: ClosingReportItem): ClosingLifecycleDelivery {
+  if (!object(value) || value.contextId !== 'lifecycle:' + report.reportId ||
+    !['Queued', 'InFlight', 'RetryScheduled', 'LeaseExpired', 'Delivered'].includes(value.deliveryState as string) ||
+    !Number.isSafeInteger(value.attemptCount) || (value.attemptCount as number) < 0 ||
+    !isUtcTimestamp(value.availableAt) || !nullableTime(value.leaseExpiresAt) || !nullableTime(value.deliveredAt) ||
+    !(value.lastFailure === null || ['TransportUnavailable', 'CentralRejected', 'AcknowledgmentUnavailable', 'ParentUnavailable'].includes(value.lastFailure as string))) invalid()
+  const leased = value.deliveryState === 'InFlight' || value.deliveryState === 'LeaseExpired'
+  if ((value.deliveryState === 'Delivered') !== (value.deliveredAt !== null) || leased !== (value.leaseExpiresAt !== null) ||
+    ((leased || value.deliveryState === 'Delivered' || value.deliveryState === 'RetryScheduled') && value.attemptCount === 0) ||
+    (value.deliveryState === 'Delivered' && value.lastFailure !== null) || (value.attemptCount === 0 && value.lastFailure !== null) ||
+    ((value.attemptCount as number) > 0 && report.deliveryState !== 'Delivered')) invalid()
+  return { contextId: value.contextId as string, deliveryState: value.deliveryState as ClosingReportState, attemptCount: value.attemptCount as number,
+    availableAt: value.availableAt, leaseExpiresAt: value.leaseExpiresAt, deliveredAt: value.deliveredAt, lastFailure: value.lastFailure as ClosingLifecycleFailure | null }
 }
