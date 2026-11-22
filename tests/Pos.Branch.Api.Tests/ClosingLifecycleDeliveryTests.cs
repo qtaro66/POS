@@ -65,6 +65,8 @@ public sealed class ClosingLifecycleDeliveryTests : IDisposable
     [InlineData("{\"schemaVersion\":1,\"branchId\":\"branch\",\"contextId\":\"lifecycle:report\",\"reportId\":\"wrong\",\"status\":\"Accepted\"}")]
     [InlineData("{\"schemaVersion\":\"1\",\"branchId\":\"branch\",\"contextId\":\"lifecycle:report\",\"reportId\":\"report\",\"status\":\"Accepted\"}")]
     [InlineData("{\"schemaVersion\":1,\"branchId\":\"branch\",\"contextId\":\"lifecycle:report\",\"contextId\":\"lifecycle:report\",\"reportId\":\"report\",\"status\":\"Accepted\"}")]
+    [InlineData("{\"schemaVersion\":1,\"branchId\":\"\\uD800\",\"contextId\":\"lifecycle:report\",\"reportId\":\"report\",\"status\":\"Accepted\"}")]
+    [InlineData("{\"schemaVersion\":1,\"\\uD800\":true,\"branchId\":\"branch\",\"contextId\":\"lifecycle:report\",\"reportId\":\"report\",\"status\":\"Accepted\"}")]
     public async Task Ambiguous_or_parent_only_ack_cannot_confirm_context(string body)
     {
         using var handler = new Handler((_, _) => Task.FromResult(Response(body)));
@@ -103,6 +105,35 @@ public sealed class ClosingLifecycleDeliveryTests : IDisposable
         var parent = Assert.IsType<ClosingReportLease>(await store.ClaimClosingReportAsync("branch", "parent", Now, TimeSpan.FromMinutes(1)));
         await store.ConfirmClosingReportAsync(parent, Now);
         return (store, parent);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Streamed_acknowledgement_reads_at_most_limit_plus_one_even_when_length_is_untrusted(bool declaredShort)
+    {
+        using var stream = new CountedStream(Encoding.UTF8.GetBytes(new string(' ', 20000)));
+        using var handler = new Handler((_, _) =>
+        {
+            var content = new StreamContent(stream);
+            content.Headers.ContentLength = declaredShort ? 2 : null;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        });
+        Assert.Equal(ClosingLifecycleFailure.AcknowledgmentUnavailable, await Transport(handler).SendAsync(Message, default));
+        Assert.Equal(HttpClosingLifecycleTransport.MaximumAcknowledgementBytes + 1, stream.BytesRead);
+    }
+
+    [Fact]
+    public async Task Deadline_applies_to_stalled_response_body_after_headers_arrive()
+    {
+        using var stream = new StalledStream();
+        using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(stream)
+        }));
+        Assert.Equal(ClosingLifecycleFailure.TransportUnavailable,
+            await Transport(handler, TimeSpan.FromSeconds(1)).SendAsync(Message, default));
+        Assert.True(stream.ReadStarted);
     }
     private static IOptions<ClosingReportDeliveryOptions> Settings(bool enabled = true) => Options.Create(new ClosingReportDeliveryOptions
     {
@@ -172,7 +203,62 @@ public sealed class ClosingLifecycleDeliveryTests : IDisposable
         Assert.Equal(0, (await store.ReadClosingReportDetailAsync("branch", "close", Now))!.LifecycleDelivery!.AttemptCount);
     }
 
+    [Fact]
+    public async Task Context_backoff_caps_and_pause_resume_preserves_packet_and_parent_receipt()
+    {
+        var (store, _) = await Closed(); var clock = new Clock(); var bodies = new List<string>();
+        var parent = new ParentTransport((_, _) => throw new InvalidOperationException("No parent repair expected"));
+        var failing = new ContextTransport((lease, _) =>
+        {
+            bodies.Add(lease.PayloadJson);
+            return Task.FromResult<ClosingLifecycleFailure?>(ClosingLifecycleFailure.TransportUnavailable);
+        });
+        var cycle = new ClosingLifecycleDeliveryCycle(store, failing, parent, clock, Settings());
+        foreach (var second in new[] { 0, 10, 30, 50 })
+        {
+            clock.Utc = Now.AddSeconds(second);
+            Assert.True(await cycle.RunOnceAsync());
+            Assert.False(await cycle.RunOnceAsync());
+        }
+        var paused = (await store.ReadClosingReportDetailAsync("branch", "close", clock.Utc))!;
+        Assert.Equal(4, paused.LifecycleDelivery!.AttemptCount);
+        Assert.Equal(Now.AddSeconds(70), paused.LifecycleDelivery.AvailableAt);
+        clock.Utc = Now.AddSeconds(90);
+        Assert.False(await new ClosingLifecycleDeliveryCycle(store, failing, parent, clock, Settings(false)).RunOnceAsync());
+        Assert.Equal("Pending", (await new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", clock.Utc)).State);
+        var reopened = new SqliteTableSessionCommandStore(_path);
+        var accepted = new ContextTransport((lease, _) => { bodies.Add(lease.PayloadJson); return Task.FromResult<ClosingLifecycleFailure?>(null); });
+        Assert.True(await new ClosingLifecycleDeliveryCycle(reopened, accepted, parent, clock, Settings()).RunOnceAsync());
+        var completed = (await reopened.ReadClosingReportDetailAsync("branch", "close", clock.Utc))!;
+        Assert.Equal(paused.Report, completed.Report);
+        Assert.Equal("Delivered", completed.LifecycleDelivery!.DeliveryState);
+        Assert.Equal(5, completed.LifecycleDelivery.AttemptCount);
+        Assert.Null(completed.LifecycleDelivery.LastFailure);
+        Assert.Equal(5, bodies.Count); Assert.Single(bodies.Distinct(StringComparer.Ordinal));
+        Assert.Equal("Current", (await new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", clock.Utc)).State);
+    }
+
     private sealed class Clock : TimeProvider { internal DateTimeOffset Utc { get; set; } = Now; public override DateTimeOffset GetUtcNow() => Utc; }
+    private sealed class CountedStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+        internal int BytesRead { get; private set; }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var count = await base.ReadAsync(buffer, cancellationToken); BytesRead += count; return count;
+        }
+    }
+    private sealed class StalledStream : MemoryStream
+    {
+        public override bool CanSeek => false;
+        internal bool ReadStarted { get; private set; }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ReadStarted = true;
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+    }
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => send(request, token); }
     private sealed class ContextTransport(Func<ClosingLifecycleLease, CancellationToken, Task<ClosingLifecycleFailure?>> send) : IClosingLifecycleTransport

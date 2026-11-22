@@ -39,13 +39,24 @@ public sealed class HttpClosingLifecycleTransport(HttpClient client, Uri endpoin
             }
             if (length > MaximumAcknowledgementBytes) { return ClosingLifecycleFailure.AcknowledgmentUnavailable; }
             if (response.StatusCode is not (HttpStatusCode.OK or HttpStatusCode.Conflict)) { return ClosingLifecycleFailure.CentralRejected; }
-            using var document = JsonDocument.Parse(bytes.AsMemory(0, length));
+            return ReadAcknowledgement(bytes.AsMemory(0, length), report, response.StatusCode);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return ClosingLifecycleFailure.TransportUnavailable; }
+        catch (HttpRequestException) { return ClosingLifecycleFailure.TransportUnavailable; }
+        catch (IOException) { return ClosingLifecycleFailure.TransportUnavailable; }
+        catch (JsonException) { return ClosingLifecycleFailure.AcknowledgmentUnavailable; }
+    }
+    private static ClosingLifecycleFailure? ReadAcknowledgement(ReadOnlyMemory<byte> bytes, ClosingLifecycleLease report, HttpStatusCode statusCode)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(bytes);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != root.EnumerateObject().Count())
             {
                 return ClosingLifecycleFailure.AcknowledgmentUnavailable;
             }
-            if (response.StatusCode == HttpStatusCode.Conflict)
+            if (statusCode == HttpStatusCode.Conflict)
             {
                 return Matches(root, "error", "ClosingReportParentMissing")
                     ? ClosingLifecycleFailure.ParentUnavailable : ClosingLifecycleFailure.CentralRejected;
@@ -59,11 +70,10 @@ public sealed class HttpClosingLifecycleTransport(HttpClient client, Uri endpoin
             }
             return null;
         }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return ClosingLifecycleFailure.TransportUnavailable; }
-        catch (HttpRequestException) { return ClosingLifecycleFailure.TransportUnavailable; }
-        catch (IOException) { return ClosingLifecycleFailure.TransportUnavailable; }
         catch (JsonException) { return ClosingLifecycleFailure.AcknowledgmentUnavailable; }
+        catch (InvalidOperationException) { return ClosingLifecycleFailure.AcknowledgmentUnavailable; }
     }
+
     private static bool Matches(JsonElement root, string name, string value) =>
         root.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String && property.GetString() == value;
 }
