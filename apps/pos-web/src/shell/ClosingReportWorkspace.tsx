@@ -52,6 +52,21 @@ function LifecycleDeliveryDetails({ detail }: { detail: ClosingReportDetail }) {
     </>}
   </section>
 }
+function LifecycleListDelivery({ item }: { item: ClosingReportItem }) {
+  const delivery = item.lifecycleDelivery
+  return <section aria-label="สถานะข้อมูลเปิดร้านและกะของรายการ"><h5>ข้อมูลเปิดร้านและกะของรายงานนี้</h5>
+    {delivery === undefined ? <p>รายการนี้ยังไม่ระบุสถานะส่งข้อมูลเปิดร้านและกะ</p>
+      : delivery === null ? <p>รายงานนี้ไม่มีข้อมูลเปิดร้านและกะที่บันทึกไว้ ไม่ถือว่าได้รับการยืนยันหรือเป็นงานค้างส่ง</p>
+        : <><dl className="store-attribution">
+          <div><dt>สถานะส่งข้อมูลเปิดร้านและกะของรายการ</dt><dd>{states[delivery.deliveryState]}</dd></div>
+          <div><dt>จำนวนครั้งที่เริ่มส่งข้อมูลส่วนนี้ของรายการ</dt><dd>{delivery.attemptCount} ครั้ง</dd></div>
+          {delivery.lastFailure && <div><dt>ผลส่งข้อมูลส่วนนี้ครั้งก่อนของรายการ</dt><dd>{delivery.lastFailure === 'ParentUnavailable' ? 'รอระบบกู้คืนรายงานหลักที่ส่วนกลาง ด้วยข้อมูลเดิม ไม่ต้องปิดร้านซ้ำ' : failures[delivery.lastFailure]}</dd></div>}
+          {delivery.deliveryState === 'RetryScheduled' && <div><dt>ลองส่งข้อมูลส่วนนี้ใหม่ได้หลัง</dt><dd><Time value={delivery.availableAt} /></dd></div>}
+          {delivery.deliveryState === 'LeaseExpired' && <div><dt>การกู้คืนข้อมูลส่วนนี้</dt><dd>รอตัวส่งกู้คืนข้อมูลเดิม ยังไม่ยืนยันผลรับที่ส่วนกลาง</dd></div>}
+          {delivery.deliveredAt && <div><dt>ข้อมูลส่วนนี้ของรายการยืนยันรับเมื่อ</dt><dd><Time value={delivery.deliveredAt} /></dd></div>}
+        </dl>{item.deliveryState !== 'Delivered' && <p>ข้อมูลส่วนนี้รอการยืนยันรายงานหลักก่อนส่ง</p>}</>}
+  </section>
+}
 const financialLabels = { itemGrossAmount: 'ยอดสินค้าก่อนส่วนลด', lineDiscountAmount: 'ส่วนลดรายการ', billDiscountAmount: 'ส่วนลดท้ายบิล', serviceChargeAmount: 'ค่าบริการ', totalBeforeRounding: 'ยอดก่อนปัดเศษ', roundingAdjustment: 'ผลต่างปัดเศษ', amountDue: 'ยอดชำระ', vatInclusiveAmount: 'VAT รวมในราคา', amountBeforeVat: 'ยอดก่อน VAT' }
 function Totals({ value, title }: { value: StoreCashTotals; title: string }) {
   return <section aria-label={title}><h5>{title}</h5><dl className="store-attribution">
@@ -139,7 +154,7 @@ function ReportList({ port, query }: { port: Port; query: ClosingReportQuery }) 
       <p>เริ่มอ่านรายการเมื่อ <Time value={page.asOf} /> · สถานะการส่งอาจเปลี่ยนระหว่างอ่านแต่ละหน้า กดตรวจสอบใหม่เพื่ออ่านล่าสุด</p>
       {page.items.length === 0 ? <p>ไม่พบรายงานตามตัวกรองนี้</p> : <ol className="closing-report-list">{page.items.map(item => <li key={item.requestId}>
         <h4>{item.operation === 'CloseStore' ? 'ปิดร้าน' : 'ปิดกะ'} · {item.businessDate}</h4><p>กะ {item.shiftId} · รอบร้าน {item.storeSessionId}</p><p>บันทึก <Time value={item.createdAt} /></p>
-        <DeliveryDetails item={item} /><button className="refresh-button" onClick={() => setSelection({ reader: read, requestId: item.requestId })} aria-pressed={selected === item.requestId}>ดูรายงานที่บันทึกไว้</button>
+        <DeliveryDetails item={item} /><LifecycleListDelivery item={item} /><button className="refresh-button" onClick={() => setSelection({ reader: read, requestId: item.requestId })} aria-pressed={selected === item.requestId}>ดูรายงานที่บันทึกไว้</button>
       </li>)}</ol>}
       {page.nextCursor && <button onClick={() => { void loadMore() }} disabled={loadingMore}>{loadingMore ? 'กำลังอ่านหน้าถัดไป' : 'อ่านรายงานเพิ่มเติม'}</button>}
       {moreError && <p role="alert">{moreError}</p>}

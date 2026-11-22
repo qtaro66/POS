@@ -63,7 +63,13 @@ public sealed class ClosingLifecycleWireTests : IDisposable
         var pendingCompanions = await store.ReadClosingReportPageAsync("branch", Now,
             new ClosingReportQuery(Status: "Delivered", LifecycleStatus: "Pending"));
         Assert.Equal(2, pendingCompanions.Items.Count);
-        Assert.All(pendingCompanions.Items, item => Assert.Equal("Delivered", item.DeliveryState));
+        Assert.All(pendingCompanions.Items, item =>
+        {
+            Assert.Equal("Delivered", item.DeliveryState);
+            Assert.Equal("lifecycle:" + item.ReportId, item.LifecycleDelivery!.ContextId);
+            Assert.Equal("Queued", item.LifecycleDelivery.DeliveryState);
+            Assert.Null(item.LifecycleDelivery.DeliveredAt);
+        });
         Assert.Empty((await store.ReadClosingReportPageAsync("branch", Now,
             new ClosingReportQuery(LifecycleStatus: "Delivered"))).Items);
         Assert.Empty((await store.ReadClosingReportPageAsync("branch", Now,
@@ -90,6 +96,12 @@ public sealed class ClosingLifecycleWireTests : IDisposable
         var confirmedCompanions = await store.ReadClosingReportPageAsync("branch", clock.Utc,
             new ClosingReportQuery(Status: "Delivered", LifecycleStatus: "Delivered"));
         Assert.Equal(pendingCompanions.Items.Select(item => item.ReportId), confirmedCompanions.Items.Select(item => item.ReportId));
+        Assert.All(confirmedCompanions.Items, item =>
+        {
+            Assert.Equal("Delivered", item.LifecycleDelivery!.DeliveryState);
+            Assert.NotNull(item.LifecycleDelivery.DeliveredAt);
+            Assert.True(item.LifecycleDelivery.AttemptCount > 0);
+        });
         Assert.Equal(2, receiver.Data.Contexts.Count); Assert.Equal(2, receiver.Data.Parents.Count);
         var after = await store.ReadClosingReportDetailAsync("branch", "close", clock.Utc);
         Assert.Equal("Delivered", after!.LifecycleDelivery!.DeliveryState);
@@ -160,7 +172,8 @@ public sealed class ClosingLifecycleWireTests : IDisposable
         var after = (await store.ReadClosingReportDetailAsync("branch", "close", clock.Utc))!;
         Assert.Equal("Delivered", after.LifecycleDelivery!.DeliveryState);
         Assert.Equal(2, after.LifecycleDelivery.AttemptCount);
-        Assert.Equal(before.Report, after.Report);
+        Assert.Equal(before.Report with { LifecycleDelivery = null }, after.Report with { LifecycleDelivery = null });
+        Assert.Equal(after.LifecycleDelivery, after.Report.LifecycleDelivery);
         Assert.Equal(JsonSerializer.Serialize(before.Lifecycle), JsonSerializer.Serialize(after.Lifecycle));
         Assert.Equal("Current", (await new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", clock.Utc)).State);
         Assert.Single(parentBodies);
@@ -213,7 +226,8 @@ public sealed class ClosingLifecycleWireTests : IDisposable
         var after = (await store.ReadClosingReportDetailAsync("branch", "close", Now))!;
         Assert.Equal("RetryScheduled", after.LifecycleDelivery!.DeliveryState);
         Assert.Equal(parentRepairConflict ? "ParentUnavailable" : "CentralRejected", after.LifecycleDelivery.LastFailure);
-        Assert.Equal(before.Report, after.Report);
+        Assert.Equal(before.Report with { LifecycleDelivery = null }, after.Report with { LifecycleDelivery = null });
+        Assert.Equal(after.LifecycleDelivery, after.Report.LifecycleDelivery);
         Assert.Equal(JsonSerializer.Serialize(before.Lifecycle), JsonSerializer.Serialize(after.Lifecycle));
         Assert.Equal("Pending", (await new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", Now)).State);
         Assert.Single(contextBodies);

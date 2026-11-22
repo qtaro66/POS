@@ -39,10 +39,12 @@ would hide that row. Corrupt data in another branch is outside the read scope.
 
 New continuations use cursor version 2 and bind lifecycleStatus together with
 all existing filters, branch, limit and high-water position. Old version-1
-cursors are rejected with 400; refresh starts a new traversal. Response JSON
-and the saved report/context packets do not change. An older Branch API rejects
-the new query parameter instead of silently returning an unfiltered list, so
-deploy the compatible Branch API before the matching POS web client.
+cursors are rejected with 400; refresh starts a new traversal. The saved
+report/context packets do not change. Servers predating lifecycle filtering
+reject the new query parameter instead of silently broadening the list. A
+filter-capable server without per-row metadata cannot satisfy the new client's
+filtered-response validation. Deploy the compatible Branch API before the
+matching POS web client.
 
 Each item contains requestId, reportId, storeSessionId, shiftId, businessDate,
 operation (CloseShift/CloseStore), createdAt, deliveryState, attemptCount,
@@ -50,6 +52,29 @@ availableAt, leaseExpiresAt (nullable), deliveredAt (nullable) and lastFailure
 (nullable). No raw payload, lease owner/token, URL, connection string or server
 exception is returned. Dates/times are normalized to UTC transport timestamps;
 createdAt describes original creation, asOf is the current read time.
+
+Each list item now also includes lifecycleDelivery. It is null only for a
+historical report with no recorded companion or context job. Otherwise it
+contains contextId, deliveryState, attemptCount, availableAt, leaseExpiresAt,
+deliveredAt and lastFailure for the independent companion queue. ContextId must
+equal lifecycle: followed by the item's reportId. The existing item-level
+deliveryState and other delivery fields continue to describe the original
+report; a confirmed original report alone does not confirm the companion.
+
+Companion states use the same five state names below. Companion failures are
+TransportUnavailable, CentralRejected, AcknowledgmentUnavailable and
+ParentUnavailable; unknown stored failures are sanitized to null. ParentUnavailable
+indicates bounded original-parent recovery, never a need to close the store again.
+Each page's metadata is read at its asOf within the existing SQLite transaction.
+Only returned rows receive detailed companion projections; the separate branch
+integrity validation still scans branch context metadata before LIMIT.
+
+For compatibility, web clients treat an absent lifecycleDelivery property from
+an older server as unknown, distinct from explicit null/NotRecorded. A filtered
+lifecycle response without verifiable metadata is rejected rather than accepted
+as matching. For Pending, require a present unconfirmed companion; for Delivered,
+require its independent receipt; for NotRecorded, require explicit null. All
+allows absent historical-server fields but never fabricates confirmation.
 
 | Delivery state | Interpretation |
 | --- | --- |
@@ -76,6 +101,11 @@ not a reconstruction. Nested closing and financial fields use camelCase matching
 the existing store-and-shift read contracts. Legacy missing cash summaries stay
 null; optional saved financial/table totals stay null when absent. Unknown future
 stored fields remain in storage but are not exposed by this v1 typed projection.
+
+Detail also retains its top-level lifecycleDelivery. Its report.lifecycleDelivery
+now matches that projection in the same read transaction. Clients accept the old
+omitted nested field, but reject contradictory nested and top-level companion
+metadata. Neither projection is included in the immutable document snapshot.
 
 A missing report or another Branch's requestId returns JSON 404
 ClosingReportNotFound, preventing cross-Branch existence disclosure.

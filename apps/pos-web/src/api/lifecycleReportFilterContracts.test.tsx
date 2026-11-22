@@ -8,7 +8,13 @@ it('preserves independent context filter and cursor on authenticated report requ
   const session: OrderingSession = { serviceOrigin: 'https://branch.example', branchId: branch, deviceId: 'device', employeeId: 'employee', deviceCredential: 'credential', employeeSessionToken: 'token' }
   const client = createOrderingClient(session, { fetch: (async (url: string | URL | Request) => {
     urls.push(new URL(String(url)))
-    return new Response(JSON.stringify(reportPage([reportItem({ deliveryState: 'Delivered', deliveredAt: '2026-11-21T03:00:00Z', attemptCount: 1 })])), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    const item = reportItem({ deliveryState: 'Delivered', deliveredAt: '2026-11-21T03:00:00Z', attemptCount: 1 })
+    const filter = urls.at(-1)?.searchParams.get('lifecycleStatus')
+    if (filter === 'NotRecorded') item.lifecycleDelivery = null
+    else if (filter !== 'All') item.lifecycleDelivery = { contextId: 'lifecycle:' + item.reportId,
+      deliveryState: filter === 'Delivered' ? 'Delivered' : 'Queued', attemptCount: filter === 'Delivered' ? 1 : 0,
+      availableAt: item.availableAt, leaseExpiresAt: null, deliveredAt: filter === 'Delivered' ? item.deliveredAt : null, lastFailure: null }
+    return new Response(JSON.stringify(reportPage([item])), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }) as typeof fetch })
   for (const lifecycleStatus of ['All', 'Pending', 'Delivered', 'NotRecorded'] as ClosingLifecycleFilter[]) {
     expect((await client.closingReports({ status: 'Delivered', lifecycleStatus, cursor: 'boundcursor' })).kind).toBe('ok')

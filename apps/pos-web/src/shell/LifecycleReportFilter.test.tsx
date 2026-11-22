@@ -2,12 +2,15 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import { ClosingReportWorkspace } from './ClosingReportWorkspace.tsx'
 import { reportDetail, reportItem, reportPage } from '../api/closingReportTestFixtures.ts'
-import type { ClosingReportDetail, ClosingReportPage, ClosingReportQuery } from '../api/closingReportWorkspaceContracts.ts'
+import type { ClosingReportDetail, ClosingReportItem, ClosingReportPage, ClosingReportQuery } from '../api/closingReportWorkspaceContracts.ts'
 import type { QueryResult } from '../api/orderingClient.ts'
 
 const ok = <T,>(value: T): QueryResult<T> => ({ kind: 'ok', value })
 const nextId = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
-const ports = () => ({ closingReports: vi.fn(async (_query: ClosingReportQuery, _signal?: AbortSignal) => ok(reportPage())), closingReportDetail: vi.fn(async (_requestId: string, _signal?: AbortSignal) => ok(reportDetail())) })
+const ports = () => ({ closingReports: vi.fn(async (query: ClosingReportQuery, _signal?: AbortSignal) => ok(reportPage([reportItem(query.lifecycleStatus === 'NotRecorded' ? { lifecycleDelivery: null } : {})]))), closingReportDetail: vi.fn(async (_requestId: string, _signal?: AbortSignal) => ok(reportDetail())) })
+const withPendingContext = (item: ClosingReportItem): ClosingReportItem => ({ ...item, lifecycleDelivery: {
+  contextId: 'lifecycle:' + item.reportId, deliveryState: 'Queued', attemptCount: 0,
+  availableAt: item.availableAt, leaseExpiresAt: null, deliveredAt: null, lastFailure: null } })
 const apply = (value: string) => {
   fireEvent.change(screen.getByLabelText('สถานะข้อมูลเปิดร้านและกะ'), { target: { value } })
   fireEvent.click(screen.getByRole('button', { name: 'ใช้ตัวกรองรายงาน' }))
@@ -15,10 +18,10 @@ const apply = (value: string) => {
 
 it('combines parent receipt and context filters and carries context scope through continuation and refresh', async () => {
   const port = ports()
-  const accepted = reportItem({ deliveryState: 'Delivered', deliveredAt: '2026-11-21T03:00:00Z', attemptCount: 1 })
+  const accepted = withPendingContext(reportItem({ deliveryState: 'Delivered', deliveredAt: '2026-11-21T03:00:00Z', attemptCount: 1 }))
   port.closingReports.mockResolvedValueOnce(ok(reportPage()))
     .mockResolvedValueOnce(ok(reportPage([accepted], 'boundcontext')))
-    .mockResolvedValueOnce(ok(reportPage([reportItem({ requestId: nextId, deliveryState: 'Delivered', deliveredAt: '2026-11-21T03:00:00Z', attemptCount: 1 })])))
+    .mockResolvedValueOnce(ok(reportPage([withPendingContext(reportItem({ requestId: nextId, deliveryState: 'Delivered', deliveredAt: '2026-11-21T03:00:00Z', attemptCount: 1 }))])))
     .mockResolvedValue(ok(reportPage([accepted])))
   render(<ClosingReportWorkspace port={port} scopeKey="branch" refreshKey={0} />)
   await screen.findByRole('button', { name: 'ดูรายงานที่บันทึกไว้' })
@@ -40,7 +43,7 @@ it('distinguishes historical missing context from pending work and resets both i
   render(<ClosingReportWorkspace port={port} scopeKey="branch" refreshKey={0} />)
   await screen.findByRole('button', { name: 'ดูรายงานที่บันทึกไว้' })
   apply('NotRecorded')
-  expect(await screen.findByText(/ไม่ถือว่าได้รับการยืนยันหรือเป็นงานค้างส่ง/)).toBeTruthy()
+  expect(await screen.findByText(/กำลังค้นหารายงานที่ไม่มีข้อมูลเปิดร้านและกะบันทึกไว้/)).toBeTruthy()
   fireEvent.click(await screen.findByRole('button', { name: 'ดูรายงานที่บันทึกไว้' }))
   expect(await screen.findByText('ยังไม่ทราบสถานะส่งข้อมูลเปิดร้านและกะ')).toBeTruthy()
   expect(screen.queryByText('ส่วนกลางยืนยันข้อมูลเปิดร้านและกะแล้ว')).toBeNull()

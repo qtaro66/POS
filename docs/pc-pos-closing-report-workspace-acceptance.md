@@ -21,6 +21,17 @@ pc-pos-central-closing-report-activation.md.
   companion or context job. Distinguish this from pending recorded work. If a
   recorded companion has a missing/corrupt job, show unavailable rather than an
   empty list or a historical NotRecorded result.
+- Read the companion status directly on each list row. A parent marked
+  Delivered may still have a queued, in-flight, expired or retrying companion;
+  require its own receipt before showing companion Delivered. Attempts, last
+  failure and confirmation time are companion metadata, not original amounts.
+- Confirm an older server's omitted companion field appears unknown, while a
+  modern explicit null means NotRecorded. A lifecycle-filtered response with
+  absent or contradicting row metadata is unavailable, never silently accepted
+  as matching. Legacy All queries may still show unknown rows.
+- Open detail and compare list companion metadata with the nested report and
+  top-level detail projection at the same read time. Refresh through retry and
+  delivery transitions: only live metadata changes, never the frozen preview.
 - Change lifecycle filters while detail or a continuation page is delayed.
   Abort or ignore the old request, clear its selection, retain all filters on
   continuation, and start fresh on reset. A version-1 cursor after upgrade is
@@ -57,6 +68,9 @@ pc-pos-central-closing-report-activation.md.
 | Historical companion not captured | NotRecorded; no inferred receipt or fabricated snapshot |
 | Orphan/missing context job or malformed delivery metadata | Unavailable within the authenticated branch even if filters would hide it |
 | Context state changes between continuation pages | Membership may change; no broad-query fallback and refresh begins a new traversal |
+| Lifecycle filter says Delivered but returned companion is unconfirmed | Client rejects the page as unavailable |
+| Parent is Delivered but companion metadata is omitted | Unknown for All; cannot verify a lifecycle-filtered response |
+| Detail nested and top-level companion metadata contradict | Client rejects inconsistent detail |
 
 The automated Central wire tests use real Branch SQLite, the actual sender and
 mapped receiver delegate with simulated Central persistence. They cover both
@@ -66,13 +80,23 @@ pagination, isolation, redaction, financial snapshots and read-only state.
 Frontend client/component tests cover protocol validation, filtered pagination,
 selection/refresh races, legacy display and read failures.
 
+Per-row companion status evidence is covered by SqliteClosingReportStatusTests,
+the mapped Lifecycle_report_status HTTP cases, and ClosingLifecycleWireTests.
+Client contract cases reject false filtered membership, foreign identities,
+invalid state/time combinations and contradictory detail projections. Component
+cases distinguish all five companion states, historical null, old omitted
+metadata, refresh and late responses. These checks use the regular test projects
+and are included in the final tools/verify.ps1 gate; no optional live service is
+needed for automated execution.
+
 ## Deferred boundaries
 
 No manual retry/delete/rewrite/configuration control or physical report printing
 is introduced. Read access does not authorize a payment or printing mutation.
 Back Office notification creation and Central staff report browsing remain
 separate add-on work. Lifecycle query filtering adds no migration beyond the
-existing Branch schema 35 and Central schema 3. D21.3 approval applies to the
-new query/cursor contract. No live PostgreSQL or deployed mTLS evidence is added
+existing Branch schema 35 and Central schema 3. Per-row companion metadata adds
+read response fields without changing cursor version 2 or immutable packets.
+D21.3 approval applies to the read contract. No live PostgreSQL or deployed mTLS evidence is added
 by the simulated Central receiver tests.
 Record the final clean full-gate commit and handoff before Antigravity publishes.
