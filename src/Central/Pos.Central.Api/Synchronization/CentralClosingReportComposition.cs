@@ -41,7 +41,9 @@ public static class CentralClosingReportComposition
         var connectionString = configuration.GetConnectionString(CentralPostgresMigrationServiceCollectionExtensions.ConnectionStringName);
         if (string.IsNullOrWhiteSpace(connectionString)) { throw new InvalidOperationException("Closing reports require the Central database connection configuration."); }
         services.AddPostgresClosingReportIngestion(connectionString);
-        services.AddHealthChecks().AddCheck<CentralClosingReportHealthCheck>("central-closing-reports", tags: ["ready"]);
+        services.AddPostgresClosingReportContexts(connectionString);
+        services.AddHealthChecks().AddCheck<CentralClosingReportHealthCheck>("central-closing-reports", tags: ["ready"])
+            .AddCheck<CentralClosingReportContextHealthCheck>("central-closing-report-contexts", tags: ["ready"]);
         return services;
     }
 

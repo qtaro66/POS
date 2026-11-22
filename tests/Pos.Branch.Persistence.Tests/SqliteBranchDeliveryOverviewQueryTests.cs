@@ -68,7 +68,7 @@ public sealed class SqliteBranchDeliveryOverviewQueryTests : IDisposable
 
     [Theory]
     [MemberData(nameof(SourceStates))]
-    public async Task Three_source_matrix_never_claims_current_while_any_queue_or_replay_is_pending(int table, int report, int replay)
+    public async Task Original_source_matrix_includes_new_pending_lifecycle_jobs(int table, int report, int replay)
     {
         var store = await Store();
         // A replay has a retained original event by its foreign key, even when the table channel was otherwise empty.
@@ -84,16 +84,17 @@ public sealed class SqliteBranchDeliveryOverviewQueryTests : IDisposable
         }
         if (replay > 0) { await Replay(completed: replay == 2 ? Now.ToString("O") : null); }
         var snapshot = await Query().ReadAsync("branch", Now);
-        var pending = table == 1 || report == 1 || replay == 1;
+        var pending = table == 1 || report > 0 || replay == 1;
         var history = table == 2 || report == 2 || replay > 0;
         Assert.Equal(pending ? "Pending" : history ? "Current" : "NoHistory", snapshot.State);
         Assert.Equal(table == 1 ? 1 : 0, snapshot.TableEvents.PendingCount);
         Assert.Equal(report == 1 ? 1 : 0, snapshot.ClosingReports.PendingCount);
+        Assert.Equal(report > 0 ? 1 : 0, snapshot.LifecycleReports!.PendingCount);
         Assert.Equal(replay == 1 ? 1 : 0, snapshot.ReplayPendingCount);
         Assert.Equal(replay == 2 ? 1 : 0, snapshot.ReplayCompletedCount);
         Assert.Equal(Now, snapshot.AsOf);
         Assert.Equal("branch", snapshot.BranchId);
-        foreach (var channel in new[] { snapshot.TableEvents, snapshot.ClosingReports })
+        foreach (var channel in new[] { snapshot.TableEvents, snapshot.ClosingReports, snapshot.LifecycleReports! })
         {
             Assert.Equal(channel.TotalCount, channel.PendingCount + channel.DeliveredCount);
             Assert.Equal(channel.DeliveredCount > 0, channel.LastConfirmedAt is not null);
@@ -121,7 +122,8 @@ public sealed class SqliteBranchDeliveryOverviewQueryTests : IDisposable
         Assert.True(await store.ConfirmClosingReportAsync(lease, Now.AddMinutes(3)));
         var before = await Dump();
         var confirmed = await new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", Now.AddMinutes(4));
-        Assert.Equal("Current", confirmed.State);
+        Assert.Equal("Pending", confirmed.State);
+        Assert.Equal(1, confirmed.LifecycleReports!.PendingCount);
         Assert.Equal(1, confirmed.ClosingReports.DeliveredCount);
         Assert.Equal(Now.AddMinutes(3), confirmed.LastConfirmedAt);
         Assert.Equal(before, await Dump());

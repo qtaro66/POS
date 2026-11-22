@@ -10,7 +10,7 @@ export function DataSentSummary({ reading }: { reading: FreshnessReading }) {
   const view = reading.overview.snapshot
   return <div className={`delivery-summary delivery-${view.state}`}>
     <span role="status">{stateLabels[view.state]}</span>
-    <small>ธุรกรรมโต๊ะรอ {view.tableEvents.pendingCount} · รายงานรอ {view.closingReports.pendingCount} · กู้ลำดับรอ {view.replayPendingCount}</small>
+    <small>ธุรกรรมโต๊ะรอ {view.tableEvents.pendingCount} · รายงานรอ {view.closingReports.pendingCount} · กู้ลำดับรอ {view.replayPendingCount} · บริบทกะรอ {view.lifecycleReports.pendingCount}</small>
     <small>ยืนยันรับล่าสุด <Timestamp value={view.lastConfirmedAt} /></small>
     <small>อ่านคิวเมื่อ <Timestamp value={view.asOf} /></small>
   </div>
@@ -29,7 +29,8 @@ function ConfigurationWarnings({ view }: { view: DeliveryOverview }) {
   return <>
     {!view.tableDeliveryEnabled && (snapshot.tableEvents.pendingCount > 0 || snapshot.replayPendingCount > 0) && <p role="status">มีธุรกรรมหรืองานกู้ลำดับรอยืนยัน แต่ยังไม่ได้ตั้งค่าเปิดส่งจากฐานข้อมูลสาขานี้</p>}
     {!view.reportDeliveryEnabled && snapshot.closingReports.pendingCount > 0 && <p role="status">มีรายงานรอยืนยัน แต่ยังไม่ได้ตั้งค่าเปิดส่งรายงานของสาขานี้</p>}
-    <p>การตั้งค่าตัวส่ง: ธุรกรรมโต๊ะ {view.tableDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} · รายงาน {view.reportDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} — ไม่ใช่การยืนยันว่าส่วนกลางพร้อมใช้งาน</p>
+    {!view.lifecycleDeliveryEnabled && snapshot.lifecycleReports.pendingCount > 0 && <p role="status">มีข้อมูลเปิดร้านและกะรอยืนยัน แต่ยังไม่ได้ตั้งค่าเปิดส่งข้อมูลส่วนนี้</p>}
+    <p>การตั้งค่าตัวส่ง: ธุรกรรมโต๊ะ {view.tableDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} · รายงาน {view.reportDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} · บริบทกะ {view.lifecycleDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} — ไม่ใช่การยืนยันว่าส่วนกลางพร้อมใช้งาน</p>
   </>
 }
 export function DeliveryOverviewPanel({ reading }: { reading: FreshnessReading }) {
@@ -37,13 +38,13 @@ export function DeliveryOverviewPanel({ reading }: { reading: FreshnessReading }
   return <section className="delivery-overview panel" aria-label="สรุปการส่งธุรกรรมและรายงาน">
     <h3>สรุปการส่งธุรกรรมและรายงาน</h3><DataSentSummary reading={reading} />
     {view ? <><ConfigurationWarnings view={view} />
-      <Channel name="ธุรกรรมโต๊ะ" value={view.snapshot.tableEvents} /><Channel name="รายงานปิดกะและปิดร้าน" value={view.snapshot.closingReports} />
+      <Channel name="ธุรกรรมโต๊ะ" value={view.snapshot.tableEvents} /><Channel name="รายงานปิดกะและปิดร้าน" value={view.snapshot.closingReports} /><Channel name="ข้อมูลเปิดร้านและกะ" value={view.snapshot.lifecycleReports} />
       <section aria-label="งานกู้ลำดับข้อมูล"><h4>งานกู้ลำดับข้อมูล</h4><dl className="store-attribution">
         <div><dt>รอยืนยัน / ยืนยันแล้ว</dt><dd>{view.snapshot.replayPendingCount} / {view.snapshot.replayCompletedCount}</dd></div>
         <div><dt>งานรอเก่าสุดสร้างเมื่อ</dt><dd><Timestamp value={view.snapshot.replayOldestPendingAt} /></dd></div>
         <div><dt>ยืนยันรับล่าสุดของงานกู้ลำดับ</dt><dd><Timestamp value={view.snapshot.replayLastConfirmedAt} /></dd></div>
       </dl></section></> : <p>ยังยืนยันภาพรวมทุกคิวไม่ได้ ไม่ใช้เวลาธุรกรรมเดิมแทนจำนวนรายงานที่ค้างอยู่</p>}
     <p>เวลาในรายการเป็นเวลาที่บันทึกไว้ รายการอาจเปลี่ยนหลังอ่านข้อมูล และการรอหรือหมดเวลาส่งไม่ได้พิสูจน์ว่าส่วนกลางยังไม่ได้รับข้อมูล</p>
-    <p>สรุปนี้ครอบคลุมคิวธุรกรรมโต๊ะ รายงานปิดกะ/ปิดร้าน และงานกู้ลำดับเท่านั้น ไม่ใช่สถานะเครือข่ายหรือการซิงก์ข้อมูลทั้งหมด</p>
+    <p>สรุปนี้ครอบคลุมคิวธุรกรรมโต๊ะ รายงานปิดกะ/ปิดร้าน ข้อมูลเปิดร้านและกะ และงานกู้ลำดับเท่านั้น ไม่ใช่สถานะเครือข่ายหรือการซิงก์ข้อมูลทั้งหมด</p>
   </section>
 }

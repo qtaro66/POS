@@ -9,7 +9,7 @@ public sealed record PostgresCentralMigration(
 
 public static class PostgresCentralMigrationCatalog
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private const string Version1Name = "0001_branch_cloud_events";
 
@@ -29,7 +29,9 @@ public static class PostgresCentralMigrationCatalog
                     "Pos.Central.Persistence.Migrations." +
                     $"{Version1Name}.sql")),
             new PostgresCentralMigration(2, "0002_closing_reports",
-                ReadEmbeddedSql("Pos.Central.Persistence.Migrations.0002_closing_reports.sql"))
+                ReadEmbeddedSql("Pos.Central.Persistence.Migrations.0002_closing_reports.sql")),
+            new PostgresCentralMigration(3, "0003_closing_report_contexts",
+                ReadEmbeddedSql("Pos.Central.Persistence.Migrations.0003_closing_report_contexts.sql"))
         ]);
 
     private static string ReadEmbeddedSql(string resourceName)

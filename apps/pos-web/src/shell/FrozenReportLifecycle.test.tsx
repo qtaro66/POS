@@ -32,7 +32,7 @@ it('shows original opening attribution and every captured shift without summing 
   expect(life.getByRole('region', { name: 'กะที่ไม่ได้กระทบยอด' }).querySelectorAll('li')).toHaveLength(1)
   expect(life.getByText(/ไม่บวกเพิ่มเข้ายอดเงินสดตั้งต้น/)).toBeTruthy()
   expect(life.queryByText('700.00 บาท')).toBeNull()
-  expect(life.getByText(/ยังไม่รวมในการส่งไปส่วนกลาง/)).toBeTruthy()
+  expect(life.getByText(/ดูสถานะส่งส่วนนี้แยกจากรายงานหลัก/)).toBeTruthy()
 })
 it('opens a read-only document view with frozen financials and no hardware or download controls', async () => {
   const { port } = await open()

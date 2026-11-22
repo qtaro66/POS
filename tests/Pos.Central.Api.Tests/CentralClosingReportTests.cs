@@ -241,7 +241,8 @@ public sealed class CentralClosingReportTests
                 new ClosingReportQuery(Status: "Delivered"))).Items);
             Assert.Equal(originalReport.ReportId, confirmed.ReportId);
             var recoveredOverview = await new SqliteBranchDeliveryOverviewQuery(path).ReadAsync("branch", clock.Utc);
-            Assert.Equal("Current", recoveredOverview.State);
+            Assert.Equal("Pending", recoveredOverview.State);
+            Assert.Equal(1, recoveredOverview.LifecycleReports!.PendingCount);
             Assert.Equal(0, recoveredOverview.ClosingReports.PendingCount);
             Assert.Equal(1, recoveredOverview.ClosingReports.DeliveredCount);
             Assert.Equal(clock.Utc, recoveredOverview.LastConfirmedAt);

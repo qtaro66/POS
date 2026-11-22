@@ -26,6 +26,6 @@ export function ClosingReportLifecycleView({ value }: { value: ClosingReportLife
         <div><dt>ยอดนับจริง ณ เวลาปิด</dt><dd>{shift.closing.actualCashAmount === null ? 'ไม่ได้กระทบยอด (NotReconciled)' : money(shift.closing.actualCashAmount) + ' บาท'}</dd></div>
         <div><dt>ผลต่าง ณ เวลาปิด</dt><dd>{shift.closing.cashDifference === null ? 'ไม่ได้กระทบยอด' : money(shift.closing.cashDifference) + ' บาท'}</dd></div>
       </dl></section></li>)}</ol>
-    <p>ข้อมูลเปิดร้านและกะส่วนนี้เก็บที่สาขา ยังไม่รวมในการส่งไปส่วนกลาง</p>
+    <p>ข้อมูลเปิดร้านและกะที่บันทึกในสาขา ณ เวลาปิด; ดูสถานะส่งส่วนนี้แยกจากรายงานหลัก</p>
   </section>
 }

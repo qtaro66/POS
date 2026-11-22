@@ -23,9 +23,9 @@ class Host implements FreshnessObservationHost {
 }
 
 describe('unified Data Sent observations', () => {
-  it.each([[0, 1, 0], [0, 0, 1], [1, 0, 0]])('keeps state pending with table/report/replay backlog %j/%j/%j even with a recent acknowledgement', async (table, report, replay) => {
+  it.each([[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])('keeps state pending with table/report/replay/context backlog %j/%j/%j/%j even with a recent acknowledgement', async (table, report, replay, context) => {
     const legacy = vi.fn(async () => ok(at))
-    const controller = createDataFreshness({ dataSentStatus: legacy, deliveryOverview: async () => ok(deliveryView(table, report, replay, 1)) })
+    const controller = createDataFreshness({ dataSentStatus: legacy, deliveryOverview: async () => ok(deliveryView(table, report, replay, 1, context)) })
     await controller.refresh()
     const read = controller.getSnapshot().sent
     expect(read.phase).toBe('ready')

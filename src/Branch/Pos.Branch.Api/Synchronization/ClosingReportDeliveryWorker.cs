@@ -4,7 +4,7 @@ using Pos.Branch.Infrastructure.Sqlite;
 namespace Pos.Branch.Api.Synchronization;
 
 public sealed class ClosingReportDeliveryCycle(SqliteTableSessionCommandStore store, IClosingReportTransport transport,
-    TimeProvider time, IOptions<ClosingReportDeliveryOptions> options)
+    TimeProvider time, IOptions<ClosingReportDeliveryOptions> options, ClosingLifecycleDeliveryCycle? lifecycle = null)
 {
     private readonly string _workerId = $"closing-report-{Environment.ProcessId}-{Guid.NewGuid():N}";
 
@@ -12,7 +12,7 @@ public sealed class ClosingReportDeliveryCycle(SqliteTableSessionCommandStore st
     {
         var settings = options.Value;
         var lease = await store.ClaimClosingReportAsync(settings.BranchId, _workerId, time.GetUtcNow(), settings.LeaseDuration, token);
-        if (lease is null) { return false; }
+        if (lease is null) { return lifecycle is not null && await lifecycle.RunOnceAsync(token); }
         // Cancellation leaves the lease intact so a restarted worker can recover it.
         var failure = await transport.SendAsync(lease, token);
         if (failure is null)

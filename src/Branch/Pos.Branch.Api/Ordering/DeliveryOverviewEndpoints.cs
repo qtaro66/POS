@@ -10,7 +10,7 @@ namespace Pos.Branch.Api.Ordering;
 public static partial class StoreLifecycleEndpoints
 {
     public sealed record DeliveryOverviewResponse(int SchemaVersion, BranchDeliverySnapshot Snapshot,
-        bool TableDeliveryEnabled, bool ReportDeliveryEnabled);
+        bool TableDeliveryEnabled, bool ReportDeliveryEnabled, bool LifecycleDeliveryEnabled);
 
     public static async Task<IResult> DeliveryOverviewAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime,
         HttpContext context, CancellationToken token,
@@ -28,7 +28,7 @@ public static partial class StoreLifecycleEndpoints
             var tableEnabled = table?.Enabled == true && table.BranchId == identity.BranchId &&
                 DeliveryDatabaseMatches(table.DatabasePath, runtime.DatabasePath);
             var reportsEnabled = reports?.Enabled == true && reports.BranchId == identity.BranchId;
-            return TypedResults.Ok(new DeliveryOverviewResponse(1, snapshot, tableEnabled, reportsEnabled));
+            return TypedResults.Ok(new DeliveryOverviewResponse(2, snapshot, tableEnabled, reportsEnabled, reportsEnabled && reports!.LifecycleEnabled));
         }
         catch (InvalidDataException) { return TypedResults.StatusCode(503); }
         catch (FormatException) { return TypedResults.StatusCode(503); }

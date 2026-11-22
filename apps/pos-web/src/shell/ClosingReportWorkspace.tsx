@@ -36,6 +36,22 @@ function DeliveryDetails({ item }: { item: ClosingReportItem }) {
     {item.deliveredAt && <div><dt>ส่วนกลางยืนยันเมื่อ</dt><dd><Time value={item.deliveredAt} /></dd></div>}
   </dl>
 }
+function LifecycleDeliveryDetails({ detail }: { detail: ClosingReportDetail }) {
+  const delivery = detail.lifecycleDelivery
+  return <section aria-label="สถานะส่งข้อมูลเปิดร้านและกะ"><h5>การส่งข้อมูลเปิดร้านและกะ</h5>
+    <p>การยืนยันรับรายงานหลักไม่ได้ยืนยันรับข้อมูลเปิดร้านและกะส่วนนี้</p>
+    {!delivery ? <p>ยังไม่ทราบสถานะส่งข้อมูลเปิดร้านและกะ</p> : <>
+      <p role="status">{delivery.deliveryState === 'Delivered' ? 'ส่วนกลางยืนยันข้อมูลเปิดร้านและกะแล้ว' : 'ข้อมูลเปิดร้านและกะยังรอยืนยันจากส่วนกลาง'}</p>
+      <dl className="store-attribution"><div><dt>สถานะข้อมูลเปิดร้านและกะ</dt><dd>{states[delivery.deliveryState]}</dd></div>
+        <div><dt>จำนวนครั้งที่เริ่มส่งข้อมูลส่วนนี้</dt><dd>{delivery.attemptCount} ครั้ง</dd></div>
+        {delivery.lastFailure && <div><dt>ผลส่งข้อมูลส่วนนี้ครั้งก่อน</dt><dd>{delivery.lastFailure === 'ParentUnavailable' ? 'รอระบบกู้คืนรายงานหลักที่ส่วนกลาง ด้วยข้อมูลเดิม ไม่ต้องปิดร้านซ้ำ' : failures[delivery.lastFailure]}</dd></div>}
+        {delivery.deliveryState === 'RetryScheduled' && <div><dt>ส่งข้อมูลส่วนนี้ใหม่ได้หลัง</dt><dd><Time value={delivery.availableAt} /></dd></div>}
+        {delivery.deliveredAt && <div><dt>ข้อมูลส่วนนี้ยืนยันรับเมื่อ</dt><dd><Time value={delivery.deliveredAt} /></dd></div>}
+      </dl>
+      {detail.report.deliveryState !== 'Delivered' && <p>ข้อมูลส่วนนี้รอการยืนยันรายงานหลักก่อนส่ง</p>}
+    </>}
+  </section>
+}
 const financialLabels = { itemGrossAmount: 'ยอดสินค้าก่อนส่วนลด', lineDiscountAmount: 'ส่วนลดรายการ', billDiscountAmount: 'ส่วนลดท้ายบิล', serviceChargeAmount: 'ค่าบริการ', totalBeforeRounding: 'ยอดก่อนปัดเศษ', roundingAdjustment: 'ผลต่างปัดเศษ', amountDue: 'ยอดชำระ', vatInclusiveAmount: 'VAT รวมในราคา', amountBeforeVat: 'ยอดก่อน VAT' }
 function Totals({ value, title }: { value: StoreCashTotals; title: string }) {
   return <section aria-label={title}><h5>{title}</h5><dl className="store-attribution">
@@ -79,6 +95,7 @@ function Detail({ requestId, read, close }: { requestId: string; read: Port['clo
       </article>
       {preview && <p>ตัวอย่างเอกสารสำหรับอ่านเท่านั้น ยังไม่สั่งพิมพ์หรือส่งออกไฟล์</p>}
       <section aria-label="สถานะส่งล่าสุดของรายงาน"><DeliveryDetails item={current!.value!.report} /></section>
+      <LifecycleDeliveryDetails detail={current!.value!} />
     </>}
   </section>
 }

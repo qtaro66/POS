@@ -47,6 +47,7 @@ app.MapCentralCloudIngestionReadinessEndpointIfEnabled(
     builder.Configuration);
 app.MapBranchCloudEventIngestionEndpointIfEnabled(builder.Configuration);
 app.MapCentralClosingReportsIfEnabled(builder.Configuration);
+app.MapCentralClosingReportContextsIfEnabled(builder.Configuration);
 if (branchMtlsEnabled && builder.Configuration.GetValue<bool>("CentralEmployeePermissions:Enabled"))
 {
     app.MapGet(CentralBranchEmployeePermissions.Route, CentralBranchEmployeePermissions.Read)
