@@ -430,7 +430,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
     async closingReports(query: ClosingReportQuery = {}, signal?: AbortSignal): Promise<QueryResult<ClosingReportPage>> {
       try { validateClosingReportQuery(query) } catch { return { kind: 'unavailable', reason: 'protocol' } }
       const parameters = new URLSearchParams({ status: query.status ?? 'All', limit: String(query.limit ?? 20) })
-      for (const key of ['storeSessionId', 'shiftId', 'businessDate', 'cursor'] as const) if (query[key] !== undefined) parameters.set(key, query[key]!)
+      for (const key of ['lifecycleStatus', 'storeSessionId', 'shiftId', 'businessDate', 'cursor'] as const) if (query[key] !== undefined) parameters.set(key, query[key]!)
       const result = await request('/store-lifecycle/closing-reports?' + parameters.toString(), 'GET', undefined, signal)
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }

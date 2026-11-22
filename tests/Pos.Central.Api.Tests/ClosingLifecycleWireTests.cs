@@ -60,6 +60,14 @@ public sealed class ClosingLifecycleWireTests : IDisposable
         var pending = await new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", Now);
         Assert.Equal("Pending", pending.State);
         Assert.Equal(0, pending.ClosingReports.PendingCount); Assert.Equal(2, pending.LifecycleReports!.PendingCount);
+        var pendingCompanions = await store.ReadClosingReportPageAsync("branch", Now,
+            new ClosingReportQuery(Status: "Delivered", LifecycleStatus: "Pending"));
+        Assert.Equal(2, pendingCompanions.Items.Count);
+        Assert.All(pendingCompanions.Items, item => Assert.Equal("Delivered", item.DeliveryState));
+        Assert.Empty((await store.ReadClosingReportPageAsync("branch", Now,
+            new ClosingReportQuery(LifecycleStatus: "Delivered"))).Items);
+        Assert.Empty((await store.ReadClosingReportPageAsync("branch", Now,
+            new ClosingReportQuery(LifecycleStatus: "NotRecorded"))).Items);
         var before = await store.ReadClosingReportDetailAsync("branch", "close", Now);
         Assert.Equal("Delivered", before!.Report.DeliveryState); Assert.Equal("Queued", before.LifecycleDelivery!.DeliveryState);
         var frozen = JsonSerializer.Serialize(before.Lifecycle);
@@ -77,6 +85,11 @@ public sealed class ClosingLifecycleWireTests : IDisposable
         for (var index = 0; index < 4; index++) { await contextCycle.RunOnceAsync(); }
         var completed = await new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", clock.Utc);
         Assert.Equal("Current", completed.State); Assert.Equal(2, completed.LifecycleReports!.DeliveredCount);
+        Assert.Empty((await store.ReadClosingReportPageAsync("branch", clock.Utc,
+            new ClosingReportQuery(Status: "Delivered", LifecycleStatus: "Pending"))).Items);
+        var confirmedCompanions = await store.ReadClosingReportPageAsync("branch", clock.Utc,
+            new ClosingReportQuery(Status: "Delivered", LifecycleStatus: "Delivered"));
+        Assert.Equal(pendingCompanions.Items.Select(item => item.ReportId), confirmedCompanions.Items.Select(item => item.ReportId));
         Assert.Equal(2, receiver.Data.Contexts.Count); Assert.Equal(2, receiver.Data.Parents.Count);
         var after = await store.ReadClosingReportDetailAsync("branch", "close", clock.Utc);
         Assert.Equal("Delivered", after!.LifecycleDelivery!.DeliveryState);

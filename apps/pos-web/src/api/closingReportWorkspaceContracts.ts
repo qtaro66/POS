@@ -2,7 +2,8 @@ import { isUtcTimestamp } from './printAttentionContracts.ts'
 import { parseStoreCashSummary, type StoreCashSummary, type StoreLifecycleState } from './storeLifecycleContracts.ts'
 
 export type ClosingReportFilter = 'All' | 'Pending' | 'Delivered'
-export interface ClosingReportQuery { status?: ClosingReportFilter; storeSessionId?: string; shiftId?: string; businessDate?: string; limit?: number; cursor?: string }
+export type ClosingLifecycleFilter = 'All' | 'Pending' | 'Delivered' | 'NotRecorded'
+export interface ClosingReportQuery { status?: ClosingReportFilter; lifecycleStatus?: ClosingLifecycleFilter; storeSessionId?: string; shiftId?: string; businessDate?: string; limit?: number; cursor?: string }
 export type ClosingReportState = 'Queued' | 'InFlight' | 'RetryScheduled' | 'LeaseExpired' | 'Delivered'
 export type ClosingReportFailure = 'TransportUnavailable' | 'CentralRejected' | 'AcknowledgmentUnavailable'
 export interface ClosingReportItem {
@@ -42,6 +43,7 @@ function identity(branchId: string, requestId: string) {
 }
 export function validateClosingReportQuery(query: ClosingReportQuery): void {
   if (!['All', 'Pending', 'Delivered'].includes(query.status ?? 'All') ||
+    !['All', 'Pending', 'Delivered', 'NotRecorded'].includes(query.lifecycleStatus === undefined ? 'All' : query.lifecycleStatus) ||
     (query.storeSessionId !== undefined && !isClosingReportId(query.storeSessionId)) ||
     (query.shiftId !== undefined && !isClosingReportId(query.shiftId)) ||
     (query.businessDate !== undefined && !isClosingReportDate(query.businessDate)) ||

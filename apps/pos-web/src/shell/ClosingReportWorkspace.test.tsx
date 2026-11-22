@@ -58,7 +58,7 @@ it('applies date/status/shift filters and resets pagination, then clears filters
   const port = ports()
   render(<ClosingReportWorkspace port={port} scopeKey="branch" refreshKey={0} />)
   await screen.findByRole('button', { name: 'ดูรายงานที่บันทึกไว้' })
-  fireEvent.change(screen.getByLabelText('สถานะรายงาน'), { target: { value: 'Pending' } })
+  fireEvent.change(screen.getByLabelText('สถานะรายงานหลัก'), { target: { value: 'Pending' } })
   fireEvent.change(screen.getByLabelText('วันธุรกิจของรายงาน'), { target: { value: '2026-11-21' } })
   fireEvent.change(screen.getByLabelText('รอบร้านที่ต้องการค้น'), { target: { value: store } })
   fireEvent.change(screen.getByLabelText('กะที่ต้องการค้น'), { target: { value: shift } })
