@@ -121,7 +121,8 @@ public sealed class ClosingDeliverySchedulingTests : IDisposable
         Assert.True(await Cycle(reopened, noReplay, accepted, clock).RunOnceAsync());
         var after = await reopened.ReadClosingReportDetailAsync("branch", request, clock.Utc);
         Assert.Equal("Delivered", after!.LifecycleDelivery!.DeliveryState);
-        Assert.Equal(before.Report, after.Report);
+        Assert.Equal(before.Report with { LifecycleDelivery = null }, after.Report with { LifecycleDelivery = null });
+        Assert.Equal(after.LifecycleDelivery, after.Report.LifecycleDelivery);
         Assert.Equal(snapshot, System.Text.Json.JsonSerializer.Serialize(after.Lifecycle));
         Assert.Equal(bodies[0], bodies[1]);
         Assert.False(await Cycle(reopened, noReplay, accepted, clock).RunOnceAsync());
@@ -152,7 +153,9 @@ public sealed class ClosingDeliverySchedulingTests : IDisposable
         });
         Assert.True(await Cycle(reopened, parent, accepted, clock).RunOnceAsync());
         Assert.False(await reopened.ConfirmClosingLifecycleAsync(interrupted!, clock.Utc));
-        Assert.Equal(pending.Report, (await reopened.ReadClosingReportDetailAsync("branch", request, clock.Utc))!.Report);
+        var recovered = (await reopened.ReadClosingReportDetailAsync("branch", request, clock.Utc))!;
+        Assert.Equal(pending.Report with { LifecycleDelivery = null }, recovered.Report with { LifecycleDelivery = null });
+        Assert.Equal(recovered.LifecycleDelivery, recovered.Report.LifecycleDelivery);
     }
 
     [Fact]

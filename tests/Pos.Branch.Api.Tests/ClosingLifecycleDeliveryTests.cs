@@ -230,7 +230,8 @@ public sealed class ClosingLifecycleDeliveryTests : IDisposable
         var accepted = new ContextTransport((lease, _) => { bodies.Add(lease.PayloadJson); return Task.FromResult<ClosingLifecycleFailure?>(null); });
         Assert.True(await new ClosingLifecycleDeliveryCycle(reopened, accepted, parent, clock, Settings()).RunOnceAsync());
         var completed = (await reopened.ReadClosingReportDetailAsync("branch", "close", clock.Utc))!;
-        Assert.Equal(paused.Report, completed.Report);
+        Assert.Equal(paused.Report with { LifecycleDelivery = null }, completed.Report with { LifecycleDelivery = null });
+        Assert.Equal(completed.LifecycleDelivery, completed.Report.LifecycleDelivery);
         Assert.Equal("Delivered", completed.LifecycleDelivery!.DeliveryState);
         Assert.Equal(5, completed.LifecycleDelivery.AttemptCount);
         Assert.Null(completed.LifecycleDelivery.LastFailure);

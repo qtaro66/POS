@@ -54,8 +54,19 @@ the original report-status filter. All, Pending, Delivered and NotRecorded are
 canonical values. A confirmed base packet does not satisfy lifecycle Delivered;
 NotRecorded means no capture and no job, never an orphan or corrupt queue row.
 The original list item's deliveryState still describes the base packet only.
-The POS labels both filters separately and opens existing detail for the
-companion receipt, without rewriting the saved report or adding browser retry.
+Each row now also projects independent lifecycleDelivery metadata, with null
+reserved for NotRecorded history. The POS labels both receipts separately and
+shows companion queue/lease/retry/confirmation directly in the list. Existing
+detail remains available without rewriting the saved report or adding browser
+retry. The nested report projection and detail's top-level lifecycleDelivery
+are produced from the same read and agree.
+
+The client keeps omitted companion metadata from an older server as unknown.
+It requires explicit verifiable metadata to accept a lifecycle-filtered row;
+neither a parent receipt nor an omitted property is proof of companion delivery.
+All/missing lifecycle filters permit old server responses, while still showing
+unknown status. Late filter, page and selection responses remain cancelled or
+ignored through the existing query-generation boundary.
 
 Cursor version 2 binds the lifecycle predicate as well as existing scope and
 limit. Version-1 continuations require refresh. Each list read validates the
@@ -92,5 +103,6 @@ this slice. Manual privileged retry and physical printing need their own command
 and authorization designs. Central ingestion/notification behavior is unchanged.
 The original workspace introduced no migration. Subsequent companion delivery
 uses Branch schema 35 and Central schema 3; lifecycle list filtering adds no new
-migration or response fields. D21.3 approval applies to the authenticated query
-and cursor contract before merge.
+migration. Per-row lifecycle metadata extends the read response without changing
+saved packets or cursors. D21.3 approval applies to the authenticated read
+contracts before merge.

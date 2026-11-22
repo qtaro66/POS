@@ -7,7 +7,8 @@ public sealed record ClosingReportQuery(string Status = "All", string? StoreSess
     string LifecycleStatus = "All");
 public sealed record ClosingReportListItem(string RequestId, string ReportId, string StoreSessionId, string ShiftId,
     string BusinessDate, string Operation, DateTimeOffset CreatedAt, string DeliveryState, int AttemptCount,
-    DateTimeOffset AvailableAt, DateTimeOffset? LeaseExpiresAt, DateTimeOffset? DeliveredAt, string? LastFailure);
+    DateTimeOffset AvailableAt, DateTimeOffset? LeaseExpiresAt, DateTimeOffset? DeliveredAt, string? LastFailure,
+    ClosingLifecycleDelivery? LifecycleDelivery = null);
 public sealed record ClosingReportPage(string BranchId, DateTimeOffset AsOf,
     IReadOnlyList<ClosingReportListItem> Items, string? NextCursor);
 public sealed record ClosingReportSnapshot(int SchemaVersion, string ReportId, string BranchId, string RequestId,

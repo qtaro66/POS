@@ -54,7 +54,9 @@ internal sealed partial class SqliteTableSessionCommandTransaction
             highWater = Convert.ToInt64(await maximum.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
         }
         using var read = CreateCommand($"""
-            SELECT {ReportColumns} FROM closing_report_outbox
+            SELECT {ReportColumns},EXISTS (SELECT 1 FROM closing_report_lifecycle_snapshots frozen
+                WHERE frozen.branch_id=closing_report_outbox.branch_id AND frozen.request_id=closing_report_outbox.request_id)
+            FROM closing_report_outbox
             WHERE branch_id=$branch AND sequence <= $high AND ($before IS NULL OR sequence < $before)
                 AND ($status='All' OR ($status='Pending' AND delivered_at IS NULL) OR ($status='Delivered' AND delivered_at IS NOT NULL))
                 AND ($lifecycle='All'
@@ -79,10 +81,10 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         read.Parameters.AddWithValue("$shift", (object?)query.ShiftId ?? DBNull.Value);
         read.Parameters.AddWithValue("$day", (object?)query.BusinessDate ?? DBNull.Value);
         read.Parameters.AddWithValue("$limit", query.Limit + 1);
-        var rows = new List<(long Sequence, ClosingReportListItem Item)>();
+        var rows = new List<(long Sequence, ClosingReportListItem Item, bool HasLifecycle)>();
         await using (var reader = await read.ExecuteReaderAsync(token))
         {
-            while (await reader.ReadAsync(token)) { rows.Add((reader.GetInt64(0), ReadReportItem(reader, now))); }
+            while (await reader.ReadAsync(token)) { rows.Add((reader.GetInt64(0), ReadReportItem(reader, now), reader.GetBoolean(14))); }
         }
         string? next = null;
         if (rows.Count > query.Limit)
@@ -91,7 +93,14 @@ internal sealed partial class SqliteTableSessionCommandTransaction
             next = EncodeReportCursor(new(2, branchId, query.Status, query.StoreSessionId, query.ShiftId,
                 query.BusinessDate, query.Limit, highWater, rows[^1].Sequence, query.LifecycleStatus));
         }
-        return new(branchId, now, rows.Select(row => row.Item).ToArray(), next);
+        // Only the returned page gets detailed metadata; all reads share this transaction.
+        var items = new List<ClosingReportListItem>(rows.Count);
+        foreach (var row in rows)
+        {
+            var delivery = await ReadClosingLifecycleDeliveryAsync(branchId, row.Item.RequestId, now, row.HasLifecycle, token);
+            items.Add(row.Item with { LifecycleDelivery = delivery });
+        }
+        return new(branchId, now, items.ToArray(), next);
     }
 
     private async Task RequireConsistentLifecycleReportJobsAsync(string branchId, CancellationToken token)
@@ -170,7 +179,7 @@ internal sealed partial class SqliteTableSessionCommandTransaction
         await reader.DisposeAsync();
         var lifecycle = await ReadSavedClosingReportLifecycleAsync(branchId, requestId, snapshot, token);
         var lifecycleDelivery = await ReadClosingLifecycleDeliveryAsync(branchId, requestId, now, lifecycle is not null, token);
-        return new(branchId, item, snapshot, lifecycle, lifecycleDelivery);
+        return new(branchId, item with { LifecycleDelivery = lifecycleDelivery }, snapshot, lifecycle, lifecycleDelivery);
     }
 
     private static ClosingReportListItem ReadReportItem(SqliteDataReader reader, DateTimeOffset now)

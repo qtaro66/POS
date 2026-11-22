@@ -10,6 +10,7 @@ export interface ClosingReportItem {
   requestId: string; reportId: string; storeSessionId: string; shiftId: string; businessDate: string
   operation: 'CloseShift' | 'CloseStore'; createdAt: string; deliveryState: ClosingReportState; attemptCount: number
   availableAt: string; leaseExpiresAt: string | null; deliveredAt: string | null; lastFailure: ClosingReportFailure | null
+  lifecycleDelivery?: ClosingLifecycleDelivery | null
 }
 export interface ClosingReportPage { branchId: string; asOf: string; items: ClosingReportItem[]; nextCursor: string | null }
 export interface ClosingReportDelivery { branchId: string; asOf: string; deliveryEnabled: boolean }
@@ -66,10 +67,14 @@ export function parseClosingReportItem(value: unknown, branchId: string, asOf?: 
   if (asOf && ((value.deliveryState === 'InFlight' && utcOrder(value.leaseExpiresAt as string) <= utcOrder(asOf)) ||
     (value.deliveryState === 'LeaseExpired' && utcOrder(value.leaseExpiresAt as string) > utcOrder(asOf)) ||
     (value.deliveryState === 'RetryScheduled' && utcOrder(value.availableAt) <= utcOrder(asOf)))) invalid()
-  return { requestId: value.requestId, reportId: value.reportId as string, storeSessionId: value.storeSessionId,
+  const report: ClosingReportItem = { requestId: value.requestId, reportId: value.reportId as string, storeSessionId: value.storeSessionId,
     shiftId: value.shiftId, businessDate: value.businessDate, operation: value.operation as ClosingReportItem['operation'],
     createdAt: value.createdAt, deliveryState: value.deliveryState as ClosingReportState, attemptCount: value.attemptCount as number,
     availableAt: value.availableAt, leaseExpiresAt: value.leaseExpiresAt, deliveredAt: value.deliveredAt, lastFailure: value.lastFailure as ClosingReportFailure | null }
+  if (Object.hasOwn(value, 'lifecycleDelivery')) {
+    report.lifecycleDelivery = value.lifecycleDelivery === null ? null : parseLifecycleDelivery(value.lifecycleDelivery, report, asOf)
+  }
+  return report
 }
 export function parseClosingReportPage(value: unknown, branchId: string, query: ClosingReportQuery): ClosingReportPage {
   validateClosingReportQuery(query)
@@ -79,6 +84,9 @@ export function parseClosingReportPage(value: unknown, branchId: string, query: 
   const items = value.items.map(item => parseClosingReportItem(item, branchId, value.asOf as string))
   if (new Set(items.map(item => item.requestId)).size !== items.length || items.some(item =>
     (query.status === 'Pending' && item.deliveryState === 'Delivered') || (query.status === 'Delivered' && item.deliveryState !== 'Delivered') ||
+    (query.lifecycleStatus === 'Pending' && (!item.lifecycleDelivery || item.lifecycleDelivery.deliveryState === 'Delivered')) ||
+    (query.lifecycleStatus === 'Delivered' && item.lifecycleDelivery?.deliveryState !== 'Delivered') ||
+    (query.lifecycleStatus === 'NotRecorded' && item.lifecycleDelivery !== null) ||
     (query.storeSessionId !== undefined && item.storeSessionId !== query.storeSessionId) ||
     (query.shiftId !== undefined && item.shiftId !== query.shiftId) || (query.businessDate !== undefined && item.businessDate !== query.businessDate))) invalid()
   return { branchId, asOf: value.asOf, items, nextCursor: value.nextCursor }
@@ -102,6 +110,7 @@ export function parseClosingReportDetail(value: unknown, branchId: string, reque
   const lifecycle = value.lifecycle === undefined || value.lifecycle === null ? null : parseLifecycle(value.lifecycle, branchId, report, closing)
   const lifecycleDelivery = value.lifecycleDelivery === undefined || value.lifecycleDelivery === null ? null : parseLifecycleDelivery(value.lifecycleDelivery, report)
   if (lifecycleDelivery && !lifecycle) invalid()
+  if (report.lifecycleDelivery !== undefined && !sameLifecycleDelivery(report.lifecycleDelivery, lifecycleDelivery)) invalid()
   return { branchId, report, lifecycle, lifecycleDelivery, snapshot: { schemaVersion: 1, branchId, reportId: report.reportId, requestId,
     storeSessionId: report.storeSessionId, shiftId: report.shiftId, operation: report.operation, businessDate: report.businessDate, closing, cashSummary } }
 }
@@ -149,7 +158,14 @@ function parseLifecycle(value: unknown, branchId: string, report: ClosingReportI
     businessDate: report.businessDate, openingCashAmount: value.openingCashAmount, opened, closesStore: value.closesStore as boolean, shifts }
 }
 
-function parseLifecycleDelivery(value: unknown, report: ClosingReportItem): ClosingLifecycleDelivery {
+function sameLifecycleDelivery(left: ClosingLifecycleDelivery | null, right: ClosingLifecycleDelivery | null): boolean {
+  if (!left || !right) return left === right
+  const sameTime = (a: string | null, b: string | null) => a === null || b === null ? a === b : utcOrder(a) === utcOrder(b)
+  return left.contextId === right.contextId && left.deliveryState === right.deliveryState && left.attemptCount === right.attemptCount &&
+    utcOrder(left.availableAt) === utcOrder(right.availableAt) && sameTime(left.leaseExpiresAt, right.leaseExpiresAt) &&
+    sameTime(left.deliveredAt, right.deliveredAt) && left.lastFailure === right.lastFailure
+}
+function parseLifecycleDelivery(value: unknown, report: ClosingReportItem, asOf?: string): ClosingLifecycleDelivery {
   if (!object(value) || value.contextId !== 'lifecycle:' + report.reportId ||
     !['Queued', 'InFlight', 'RetryScheduled', 'LeaseExpired', 'Delivered'].includes(value.deliveryState as string) ||
     !Number.isSafeInteger(value.attemptCount) || (value.attemptCount as number) < 0 ||
@@ -160,6 +176,9 @@ function parseLifecycleDelivery(value: unknown, report: ClosingReportItem): Clos
     ((leased || value.deliveryState === 'Delivered' || value.deliveryState === 'RetryScheduled') && value.attemptCount === 0) ||
     (value.deliveryState === 'Delivered' && value.lastFailure !== null) || (value.attemptCount === 0 && value.lastFailure !== null) ||
     ((value.attemptCount as number) > 0 && report.deliveryState !== 'Delivered')) invalid()
+  if (asOf && ((value.deliveryState === 'InFlight' && utcOrder(value.leaseExpiresAt as string) <= utcOrder(asOf)) ||
+    (value.deliveryState === 'LeaseExpired' && utcOrder(value.leaseExpiresAt as string) > utcOrder(asOf)) ||
+    (value.deliveryState === 'RetryScheduled' && utcOrder(value.availableAt) <= utcOrder(asOf)))) invalid()
   return { contextId: value.contextId as string, deliveryState: value.deliveryState as ClosingReportState, attemptCount: value.attemptCount as number,
     availableAt: value.availableAt, leaseExpiresAt: value.leaseExpiresAt, deliveredAt: value.deliveredAt, lastFailure: value.lastFailure as ClosingLifecycleFailure | null }
 }
