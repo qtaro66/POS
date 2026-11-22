@@ -26,6 +26,9 @@ public sealed class ClosingReportDeliveryCycle(SqliteTableSessionCommandStore st
                 settings.RetryDelay.TotalMilliseconds * multiplier));
             await store.RetryClosingReportAsync(lease, time.GetUtcNow(), retry, failure.Value, token);
         }
+        // Give one eligible companion a turn even while base reports keep arriving.
+        // Each send finishes its own lease before the next queue is claimed.
+        if (lifecycle is not null) { await lifecycle.RunOnceAsync(token); }
         return true;
     }
 }

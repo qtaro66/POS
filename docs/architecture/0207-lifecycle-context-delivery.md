@@ -4,7 +4,7 @@ Branch schema 35 adds a durable companion queue to the frozen lifecycle snapshot
 
 Each captured companion is enqueued in the same SQLite transaction as its frozen snapshot. Migration backfills only existing snapshots; historical reports without snapshots remain unknown. A context is eligible only after its parent report has a local confirmed receipt. Claims, retries and acknowledgements use fenced, expiring leases. Confirmation changes delivery metadata, never the frozen preview.
 
-The existing worker drains base reports before context work. Context delivery is opt-in through `ClosingReportDelivery:LifecycleEnabled`, default false; it requires base delivery and a lease longer than three request deadlines. Context requests use the existing mTLS client, HTTPS origin validation and bounded retry delays.
+Each existing worker cycle attempts at most one eligible base report, then at most one eligible context. Each queue claims its own lease only when its turn starts; HTTP requests remain sequential. A sustained base backlog no longer prevents eligible context work. Context delivery is opt-in through `ClosingReportDelivery:LifecycleEnabled`, default false; it requires base delivery and a lease longer than three request deadlines. Context requests use the existing mTLS client, HTTPS origin validation and bounded retry delays.
 
 `POST /api/v1/closing-reports/lifecycle` accepts a version-1 packet with `contextId`, `reportId`, `branchId`, `requestId` and the original frozen `context`. The deterministic context identity is `lifecycle:` followed by the parent report identity. Requests are limited to 1 MiB. Central binds the authenticated branch to the packet, validates the context against its immutable parent and commits storage before returning Accepted or AlreadyAccepted. Changed content conflicts; a missing parent returns ClosingReportParentMissing.
 
@@ -14,4 +14,6 @@ Delivery overview is now schema version 2 with four delivery sources: tableEvent
 
 See [activation and acceptance](../pc-pos-lifecycle-context-delivery-acceptance.md). Back Office, Stock, printing, export and hardware integration are outside this change.
 
-Base reports have priority. A continuously replenished eligible base backlog can delay companion sending; pending context remains visible until the backlog drains.
+Each context still requires its own confirmed parent, regardless of scheduler fairness. A failed base attempt does not prevent an older eligible context from getting its turn; shutdown cancellation propagates and leaves the interrupted lease for expiry recovery. A cycle may include one base request plus up to three context/repair requests, each under its own request deadline and queue-specific lease.
+
+Acknowledgement JSON parsing rejects malformed UTF-16 escapes in property names or bound identifiers as AcknowledgmentUnavailable. Such responses retain durable pending work and use the configured retry schedule, rather than escaping as an unexpected worker exception.

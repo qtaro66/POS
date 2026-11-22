@@ -42,7 +42,19 @@ public sealed class HttpClosingReportTransport(HttpClient client, Uri endpoint, 
                 length += read;
             }
             if (length > MaximumAcknowledgementBytes) { return ClosingReportDeliveryFailure.AcknowledgmentUnavailable; }
-            using var document = JsonDocument.Parse(bytes.AsMemory(0, length));
+            return ReadAcknowledgement(bytes.AsMemory(0, length), report);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return ClosingReportDeliveryFailure.TransportUnavailable; }
+        catch (HttpRequestException) { return ClosingReportDeliveryFailure.TransportUnavailable; }
+        catch (IOException) { return ClosingReportDeliveryFailure.TransportUnavailable; }
+        catch (JsonException) { return ClosingReportDeliveryFailure.AcknowledgmentUnavailable; }
+    }
+
+    private static ClosingReportDeliveryFailure? ReadAcknowledgement(ReadOnlyMemory<byte> bytes, ClosingReportLease report)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(bytes);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object ||
                 root.EnumerateObject().Select(property => property.Name).Distinct(StringComparer.Ordinal).Count() != root.EnumerateObject().Count() ||
@@ -54,10 +66,8 @@ public sealed class HttpClosingReportTransport(HttpClient client, Uri endpoint, 
             }
             return null;
         }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return ClosingReportDeliveryFailure.TransportUnavailable; }
-        catch (HttpRequestException) { return ClosingReportDeliveryFailure.TransportUnavailable; }
-        catch (IOException) { return ClosingReportDeliveryFailure.TransportUnavailable; }
         catch (JsonException) { return ClosingReportDeliveryFailure.AcknowledgmentUnavailable; }
+        catch (InvalidOperationException) { return ClosingReportDeliveryFailure.AcknowledgmentUnavailable; }
     }
 
     private static bool Matches(JsonElement root, string name, string expected) =>

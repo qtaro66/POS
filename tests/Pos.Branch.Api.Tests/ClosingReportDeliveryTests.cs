@@ -53,6 +53,8 @@ public sealed class ClosingReportDeliveryTests : IDisposable
     [InlineData("{\"schemaVersion\":1,\"branchId\":\"branch\",\"reportId\":\"report\",\"status\":\"Queued\"}")]
     [InlineData("{\"schemaVersion\":1,\"branchId\":\"branch\",\"reportId\":\"report\",\"reportId\":\"report\",\"status\":\"Accepted\"}")]
     [InlineData("{\"schemaVersion\":1,\"branchId\":\"branch\",\"reportId\":null,\"status\":\"Accepted\"}")]
+    [InlineData("{\"schemaVersion\":1,\"branchId\":\"\\uD800\",\"reportId\":\"report\",\"status\":\"Accepted\"}")]
+    [InlineData("{\"schemaVersion\":1,\"\\uD800\":true,\"branchId\":\"branch\",\"reportId\":\"report\",\"status\":\"Accepted\"}")]
     public async Task Malformed_foreign_or_ambiguous_acknowledgements_remain_unconfirmed(string body)
     {
         using var handler = new Handler((_, _) => Task.FromResult(Json(body)));
@@ -287,6 +289,57 @@ public sealed class ClosingReportDeliveryTests : IDisposable
         Assert.NotNull(provider.GetRequiredService<ClosingReportDeliveryCycle>());
         Assert.Equal(1, factory.Calls);
     }
+    [Theory]
+    [InlineData(false, 11, true)]
+    [InlineData(true, 29, false)]
+    [InlineData(true, 30, false)]
+    [InlineData(true, 31, true)]
+    public void Lifecycle_repair_requires_lease_budget_for_three_complete_requests(bool lifecycle, int seconds, bool valid)
+    {
+        var values = ValidConfiguration();
+        values["ClosingReportDelivery:LifecycleEnabled"] = lifecycle.ToString();
+        values["ClosingReportDelivery:LeaseDuration"] = TimeSpan.FromSeconds(seconds).ToString();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>(new HandlerFactory());
+        services.AddClosingReportDelivery(configuration);
+        using var provider = services.BuildServiceProvider();
+        if (valid) { Assert.Equal(lifecycle, provider.GetRequiredService<IOptions<ClosingReportDeliveryOptions>>().Value.LifecycleEnabled); }
+        else { Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<ClosingReportDeliveryOptions>>().Value); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Lifecycle_opt_in_reuses_authenticated_client_and_single_worker(bool enabled)
+    {
+        var values = ValidConfiguration();
+        values["ClosingReportDelivery:LifecycleEnabled"] = enabled.ToString();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(configuration);
+        var factory = new HandlerFactory();
+        services.AddSingleton<IBranchCloudDeliveryAuthenticatedHttpHandlerFactory>(factory);
+        services.AddClosingReportDelivery(configuration);
+        using var provider = services.BuildServiceProvider();
+        Assert.Single(provider.GetServices<IHostedService>());
+        Assert.NotNull(provider.GetRequiredService<ClosingReportDeliveryCycle>());
+        if (enabled)
+        {
+            Assert.IsType<HttpClosingLifecycleTransport>(provider.GetRequiredService<IClosingLifecycleTransport>());
+            Assert.NotNull(provider.GetRequiredService<ClosingLifecycleDeliveryCycle>());
+        }
+        else
+        {
+            Assert.Null(provider.GetService<IClosingLifecycleTransport>());
+            Assert.Null(provider.GetService<ClosingLifecycleDeliveryCycle>());
+        }
+        Assert.Equal(1, factory.Calls);
+        Assert.False(File.Exists(_path));
+    }
+
     private Dictionary<string, string?> ValidConfiguration() => new()
     {
         ["ClosingReportDelivery:Enabled"] = "true",
