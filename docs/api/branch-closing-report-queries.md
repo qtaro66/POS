@@ -9,6 +9,7 @@ Branch only, return Cache-Control: no-store and accept no request body.
 | Query | Rule |
 | --- | --- |
 | status | All (default), Pending or Delivered; case sensitive |
+| lifecycleStatus | All (default), Pending, Delivered or NotRecorded; case sensitive |
 | storeSessionId | Optional exact D-format GUID |
 | shiftId | Optional exact D-format GUID |
 | businessDate | Optional valid yyyy-MM-dd |
@@ -19,6 +20,29 @@ Omit unused query values. Empty, duplicate or unknown parameters are invalid.
 A cursor is bound to all filters and limit; changing any of them starts a new
 first-page query. The response contains branchId, asOf, items and nextCursor
 (nullable). Empty results are successful; a storage failure is not an empty page.
+
+`status` filters the original report receipt. `lifecycleStatus` independently
+filters the frozen opening/store/shift companion receipt. All supplied filters
+are combined with AND. In particular, `status=Delivered&lifecycleStatus=Pending`
+finds reports whose original packet is confirmed while their companion is still
+unconfirmed. The list item's deliveryState continues to describe only the
+original report; open detail for independent lifecycle delivery diagnostics.
+
+Lifecycle Pending includes queued work, a live or expired lease, and delayed or
+due retries. It requires a recorded companion and unconfirmed context job.
+Delivered requires a recorded companion and its own confirmed context job.
+NotRecorded selects historical reports with neither a captured companion nor a
+context job; it never infers success or a fabricated zero from an absent field.
+Missing/orphaned/mismatched context jobs and malformed stored delivery metadata
+fail closed as 503 for the authenticated branch, including when another filter
+would hide that row. Corrupt data in another branch is outside the read scope.
+
+New continuations use cursor version 2 and bind lifecycleStatus together with
+all existing filters, branch, limit and high-water position. Old version-1
+cursors are rejected with 400; refresh starts a new traversal. Response JSON
+and the saved report/context packets do not change. An older Branch API rejects
+the new query parameter instead of silently returning an unfiltered list, so
+deploy the compatible Branch API before the matching POS web client.
 
 Each item contains requestId, reportId, storeSessionId, shiftId, businessDate,
 operation (CloseShift/CloseStore), createdAt, deliveryState, attemptCount,
@@ -73,6 +97,6 @@ continues to apply; handler actions do not inspect Request.IsHttps.
 
 Pagination freezes the initial sequence high-water bound, not delivery status.
 Newly appended reports appear after refresh; reports can change Pending/Delivered
-membership during traversal. Clients should clear stale pages on filter/scope
+membership during traversal, independently for both receipt types. Clients should clear stale pages on filter/scope
 changes, validate response identities and fetch detail afresh after delivery
 changes. Reads perform no queue mutations and do not authorize privileged retry.

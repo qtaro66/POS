@@ -206,7 +206,7 @@ public sealed class SqliteClosingReportQueryTests : IDisposable
         var normalized = cursor.Replace('-', '+').Replace('_', '/');
         var text = Encoding.UTF8.GetString(Convert.FromBase64String(normalized.PadRight((normalized.Length + 3) / 4 * 4, '=')));
         static string Encode(string json) => Convert.ToBase64String(Encoding.UTF8.GetBytes(json)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        await Assert.ThrowsAsync<ArgumentException>(() => store.ReadClosingReportPageAsync("branch", Now, new(Limit: 1, Cursor: Encode(text.Replace("\"Version\":1", "\"Version\":1,\"Version\":1")))));
+        await Assert.ThrowsAsync<ArgumentException>(() => store.ReadClosingReportPageAsync("branch", Now, new(Limit: 1, Cursor: Encode(text.Replace("\"Version\":2", "\"Version\":2,\"Version\":2")))));
         await Assert.ThrowsAsync<ArgumentException>(() => store.ReadClosingReportPageAsync("branch", Now, new(Limit: 1, Cursor: Encode(text.Replace("StoreSessionId", "UnknownNullableField")))));
         var parsed = JsonNode.Parse(text)!;
         parsed["Before"] = 0;

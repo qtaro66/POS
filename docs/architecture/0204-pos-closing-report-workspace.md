@@ -49,6 +49,25 @@ business date and limit. Malformed, duplicate/unknown-field or scope-mismatching
 cursors are rejected. Cursor positions are untrusted navigation hints, not
 authorization tokens; fixed Branch predicates apply even to forged positions.
 
+Lifecycle companion filtering adds an independent lifecycleStatus predicate to
+the original report-status filter. All, Pending, Delivered and NotRecorded are
+canonical values. A confirmed base packet does not satisfy lifecycle Delivered;
+NotRecorded means no capture and no job, never an orphan or corrupt queue row.
+The original list item's deliveryState still describes the base packet only.
+The POS labels both filters separately and opens existing detail for the
+companion receipt, without rewriting the saved report or adding browser retry.
+
+Cursor version 2 binds the lifecycle predicate as well as existing scope and
+limit. Version-1 continuations require refresh. Each list read validates the
+authenticated branch's recorded companion/job consistency within its read
+transaction before applying filters. Inconsistency returns unavailable rather
+than hiding damaged jobs behind an empty filtered page. Reads never claim work
+or change attempt counts, leases, retry schedules or receipt timestamps.
+This consistency check scans recorded context metadata for the authenticated
+branch before applying the page limit. Its cost grows with branch history;
+the page limit bounds returned rows, not all validation work. Measure large
+staging histories before rollout; no production-scale latency claim is made.
+
 Delivery state can change between pages. This is a high-water-bounded membership
 traversal, not a frozen transaction spanning browser requests. Keyset positions
 avoid duplicates from ordinary delivery updates, but status-filter membership can
@@ -71,5 +90,7 @@ on the existing system-status page, separately from table-event Data Sent.
 There is no browser Retry, Reprint, export, delete or configuration command in
 this slice. Manual privileged retry and physical printing need their own command
 and authorization designs. Central ingestion/notification behavior is unchanged.
-No migrations: Branch remains schema 33, Central remains schema 2. D21.3 approval
-applies to the new authenticated read contracts before merge.
+The original workspace introduced no migration. Subsequent companion delivery
+uses Branch schema 35 and Central schema 3; lifecycle list filtering adds no new
+migration or response fields. D21.3 approval applies to the authenticated query
+and cursor contract before merge.

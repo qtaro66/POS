@@ -62,18 +62,20 @@ public static partial class StoreLifecycleEndpoints
 
     private static ClosingReportQuery ReadClosingReportQuery(IQueryCollection values)
     {
-        var allowed = new HashSet<string>(["status", "storeSessionId", "shiftId", "businessDate", "limit", "cursor"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["status", "lifecycleStatus", "storeSessionId", "shiftId", "businessDate", "limit", "cursor"], StringComparer.Ordinal);
         if (values.Any(pair => !allowed.Contains(pair.Key) || pair.Value.Count != 1 || string.IsNullOrEmpty(pair.Value[0])))
         {
             throw new ArgumentException("Invalid closing report query.");
         }
         string? Optional(string key) => values.TryGetValue(key, out var value) ? value[0] : null;
         var status = Optional("status") ?? "All";
+        var lifecycleStatus = Optional("lifecycleStatus") ?? "All";
         var store = Optional("storeSessionId");
         var shift = Optional("shiftId");
         var date = Optional("businessDate");
         var limit = 20;
         if (status is not ("All" or "Pending" or "Delivered") ||
+            lifecycleStatus is not ("All" or "Pending" or "Delivered" or "NotRecorded") ||
             (store is not null && !Guid.TryParseExact(store, "D", out _)) ||
             (shift is not null && !Guid.TryParseExact(shift, "D", out _)) ||
             (date is not null && !DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) ||
@@ -81,6 +83,6 @@ public static partial class StoreLifecycleEndpoints
         {
             throw new ArgumentException("Invalid closing report query.");
         }
-        return new(status, store, shift, date, limit, Optional("cursor"));
+        return new(status, store, shift, date, limit, Optional("cursor"), lifecycleStatus);
     }
 }

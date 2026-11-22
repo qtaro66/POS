@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { OrderingReadClient } from '../ordering/readController.ts'
-import type { ClosingReportDelivery, ClosingReportDetail, ClosingReportFailure, ClosingReportFilter, ClosingReportItem, ClosingReportPage, ClosingReportQuery, ClosingReportState } from '../api/closingReportWorkspaceContracts.ts'
+import type { ClosingLifecycleFilter, ClosingReportDelivery, ClosingReportDetail, ClosingReportFailure, ClosingReportFilter, ClosingReportItem, ClosingReportPage, ClosingReportQuery, ClosingReportState } from '../api/closingReportWorkspaceContracts.ts'
 import type { StoreCashTotals } from '../api/storeLifecycleContracts.ts'
 import './ClosingReportWorkspace.css'
 import { ClosingReportLifecycleView } from './ClosingReportLifecycleView.tsx'
@@ -29,11 +29,11 @@ export function ClosingReportDeliveryStatus({ read }: { read: Port['closingRepor
 }
 function DeliveryDetails({ item }: { item: ClosingReportItem }) {
   return <dl className="store-attribution">
-    <div><dt>สถานะการส่ง</dt><dd>{states[item.deliveryState]}</dd></div><div><dt>จำนวนครั้งที่เริ่มส่ง</dt><dd>{item.attemptCount} ครั้ง</dd></div>
-    {item.lastFailure && <div><dt>ผลจากการลองส่งครั้งก่อน</dt><dd>{failures[item.lastFailure]}</dd></div>}
+    <div><dt>สถานะการส่งรายงานหลัก</dt><dd>{states[item.deliveryState]}</dd></div><div><dt>จำนวนครั้งที่เริ่มส่งรายงานหลัก</dt><dd>{item.attemptCount} ครั้ง</dd></div>
+    {item.lastFailure && <div><dt>ผลจากการลองส่งรายงานหลักครั้งก่อน</dt><dd>{failures[item.lastFailure]}</dd></div>}
     {item.deliveryState === 'RetryScheduled' && <div><dt>เริ่มลองใหม่ได้หลัง</dt><dd><Time value={item.availableAt} /></dd></div>}
     {item.deliveryState === 'LeaseExpired' && <div><dt>การดำเนินการ</dt><dd>รอตัวส่งกู้คืนด้วยรายงานเดิม ผลรับที่ส่วนกลางยังไม่ยืนยัน</dd></div>}
-    {item.deliveredAt && <div><dt>ส่วนกลางยืนยันเมื่อ</dt><dd><Time value={item.deliveredAt} /></dd></div>}
+    {item.deliveredAt && <div><dt>รายงานหลักยืนยันรับเมื่อ</dt><dd><Time value={item.deliveredAt} /></dd></div>}
   </dl>
 }
 function LifecycleDeliveryDetails({ detail }: { detail: ClosingReportDetail }) {
@@ -149,6 +149,7 @@ function ReportList({ port, query }: { port: Port; query: ClosingReportQuery }) 
 }
 function Workspace({ port, focus }: { port: Port; focus?: ClosingReportFocus | null }) {
   const [status, setStatus] = useState<ClosingReportFilter>('All')
+  const [lifecycleStatus, setLifecycleStatus] = useState<ClosingLifecycleFilter>('All')
   const [store, setStore] = useState(focus?.storeSessionId ?? '')
   const [shift, setShift] = useState(focus?.shiftId ?? '')
   const [day, setDay] = useState('')
@@ -156,17 +157,20 @@ function Workspace({ port, focus }: { port: Port; focus?: ClosingReportFocus | n
   const [revision, setRevision] = useState(0)
   function apply(event: FormEvent) {
     event.preventDefault()
-    setQuery({ status, limit: 20, ...(store.trim() ? { storeSessionId: store.trim() } : {}), ...(shift.trim() ? { shiftId: shift.trim() } : {}), ...(day ? { businessDate: day } : {}) })
+    setQuery({ status, ...(lifecycleStatus !== 'All' ? { lifecycleStatus } : {}), limit: 20, ...(store.trim() ? { storeSessionId: store.trim() } : {}), ...(shift.trim() ? { shiftId: shift.trim() } : {}), ...(day ? { businessDate: day } : {}) })
     setRevision(value => value + 1)
   }
   return <section className="panel closing-report-workspace" aria-label="ตรวจสอบรายงานปิดกะและปิดร้าน">
     <header className="page-header"><h3>ตรวจสอบรายงานปิดกะและปิดร้าน</h3><button className="refresh-button" onClick={() => setRevision(value => value + 1)}>ตรวจสอบรายการรายงานใหม่</button></header>
     <form className="closing-report-filters" onSubmit={apply}>
-      <label>สถานะรายงาน<select value={status} onChange={event => setStatus(event.target.value as ClosingReportFilter)}><option value="All">ทั้งหมด</option><option value="Pending">ยังไม่ยืนยัน</option><option value="Delivered">ส่วนกลางยืนยันแล้ว</option></select></label>
+      <label>สถานะรายงานหลัก<select value={status} onChange={event => setStatus(event.target.value as ClosingReportFilter)}><option value="All">ทั้งหมด</option><option value="Pending">ยังไม่ยืนยัน</option><option value="Delivered">ส่วนกลางยืนยันแล้ว</option></select></label>
+      <label>สถานะข้อมูลเปิดร้านและกะ<select value={lifecycleStatus} onChange={event => setLifecycleStatus(event.target.value as ClosingLifecycleFilter)}><option value="All">ทั้งหมด</option><option value="Pending">ยังไม่ยืนยัน</option><option value="Delivered">ส่วนกลางยืนยันแล้ว</option><option value="NotRecorded">ไม่มีข้อมูลที่บันทึกไว้</option></select></label>
       <label>วันธุรกิจของรายงาน<input type="date" value={day} onChange={event => setDay(event.target.value)} /></label>
       <label>รอบร้านที่ต้องการค้น<input value={store} onChange={event => setStore(event.target.value)} /></label><label>กะที่ต้องการค้น<input value={shift} onChange={event => setShift(event.target.value)} /></label>
-      <button type="submit">ใช้ตัวกรองรายงาน</button><button type="button" onClick={() => { setStatus('All'); setStore(''); setShift(''); setDay(''); setQuery({ status: 'All', limit: 20 }); setRevision(value => value + 1) }}>ล้างตัวกรองรายงาน</button>
+      <button type="submit">ใช้ตัวกรองรายงาน</button><button type="button" onClick={() => { setStatus('All'); setLifecycleStatus('All'); setStore(''); setShift(''); setDay(''); setQuery({ status: 'All', limit: 20 }); setRevision(value => value + 1) }}>ล้างตัวกรองรายงาน</button>
     </form>
+    <p>รายงานหลักและข้อมูลเปิดร้านและกะมีการยืนยันแยกกัน การยืนยันรายงานหลักไม่ได้หมายความว่าข้อมูลเปิดร้านและกะได้รับการยืนยันแล้ว</p>
+    {query.lifecycleStatus === 'NotRecorded' && <p>กำลังค้นหารายงานที่ไม่มีข้อมูลเปิดร้านและกะบันทึกไว้ ไม่ถือว่าได้รับการยืนยันหรือเป็นงานค้างส่ง</p>}
     <ReportList key={JSON.stringify(query) + ':' + revision} port={port} query={query} />
   </section>
 }
