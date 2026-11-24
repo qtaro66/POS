@@ -1,0 +1,8 @@
+.cash-history-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin-block: 1rem; }
+.cash-history-filters label { display: grid; gap: .35rem; }
+.cash-history-split { display: grid; grid-template-columns: minmax(15rem, 1fr) minmax(20rem, 2fr); gap: 1.5rem; align-items: start; }
+.cash-history-list { list-style: none; padding: 0; display: grid; gap: .6rem; }
+.cash-history-list button { display: grid; text-align: start; gap: .4rem; width: 100%; padding: .8rem; }
+.cash-history-list button[aria-pressed="true"] { outline: 2px solid currentColor; }
+.cash-history-detail { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 850px) { .cash-history-split { grid-template-columns: 1fr; } }

@@ -1,3 +1,4 @@
+import { CashHistoryWorkspace } from '../shell/CashHistoryWorkspace.tsx'
 import { StoreShiftWorkspace } from '../shell/StoreShiftWorkspace.tsx'
 import { ClosingReportWorkspace } from '../shell/ClosingReportWorkspace.tsx'
 import { OpenRegisteredTable } from './OpenRegisteredTable.tsx'
@@ -73,6 +74,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
 }) {
   const [shellOwner, setShellOwner] = useState({ client, revision: 0 })
   if (shellOwner.client !== client) setShellOwner({ client, revision: shellOwner.revision + 1 })
+  const canReadHistory = !preview && !!client.scope && !!client.cashHistory && !!client.cashHistoryDetail
   const canReadReports = !preview && !!client.scope && !!client.closingReports && !!client.closingReportDetail
   const reportScope = JSON.stringify(client.scope) + ':' + shellOwner.revision
   const shiftStorageKey = ordering && 'pos-test-cash-shift:' + JSON.stringify([
@@ -114,6 +116,7 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
       <Totals detail={detail} compact={inSession} /></>}
   </section>
   return <PcPosShell reportScopeKey={reportScope} branchLabel={branchLabel} preview={preview} onLock={onLock}
+    historyPage={canReadHistory ? <CashHistoryWorkspace key={reportScope} port={client} scopeKey={reportScope} /> : undefined}
     reportsPage={canReadReports ? investigation => <ClosingReportWorkspace key={reportScope} port={client}
       scopeKey={reportScope} refreshKey={0} investigation={investigation} /> : undefined}
     storePage={!preview && client.scope && client.storeLifecycleCurrent && client.storeLifecycleCommand ?
