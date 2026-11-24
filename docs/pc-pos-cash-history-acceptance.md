@@ -1,0 +1,73 @@
+# Captured cash history acceptance
+
+Use synthetic settlements in an isolated Branch database. This slice covers
+saved cash settlement history and is not a declaration that all D18.8 history
+or physical receipt requirements are finished.
+
+## Coverage
+
+| Requirement area | This slice | Remaining boundary |
+| --- | --- | --- |
+| D18.8 split view | Cash list and captured detail without a new window | Other transaction sources |
+| Search | Business date, receipt substring, recorded table-session ID, Cash/All and Completed/All | Original table-number labels, order search and other payment/status sources |
+| Original money | Tendered, applied, change and available captured bill totals | Missing legacy financial snapshots stay unavailable |
+| Original attribution | Capture time, business date, store, shift, employee and terminal IDs | Historical display names or item lines not present in the capture |
+| D01.4 branch access | Complete identity and PcPos only, branch from principal, no extra PIN | Cross-branch Back Office remains separate |
+| Offline scope | Read the local Branch database without a Central call | Branch service/LAN must still be reachable |
+| Read-only | No read audit, payment/cancellation/print job or lifecycle mutation | Authorized snapshot reprint is deferred |
+| Receipt state | Original simulation receipt number/state is explicit | No physical print, drawer, tax receipt or delivery proof |
+
+## Functional exercise
+
+1. Open Transaction History with only its read capabilities available. Verify
+   a split list/detail view, a clear read-only label and the effective business
+   date returned by Branch. Blank date defaults consistently with the existing
+   Branch workspace (Asia/Bangkok local date).
+2. Search a saved receipt using a literal substring, then filter by recorded
+   table-session identity, Cash and Completed. Percent/underscore are literal
+   characters. Clear filters and start a new first-page query.
+3. Load continuation pages, append another settlement, and verify it appears
+   only after refresh. Retain all filters and the first effective day on a
+   continuation even if the Branch clock crosses midnight. A changed filter or
+   forged branch scope must not broaden the result.
+4. Select a captured zero-value and ordinary cash settlement. Tendered minus
+   applied must equal change; zero is valid. Compare original financial totals
+   after current catalog, session and bill-preview changes. Never fill missing
+   snapshot values using the current menu or show missing values as zero.
+5. Replace the selected row, query, scope or authenticated client while old
+   responses are delayed. Old pages/details must not restore stale identity or
+   money. Lock the screen and confirm in-flight reads are cancelled.
+6. Capture storage/audit/outbox/print-job fingerprints before and after reading,
+   searching, paging and selecting detail. They must match. Access must remain
+   independent of cash-test write flags and store-open permissions.
+
+## Failure and isolation matrix
+
+| Trigger | Required outcome |
+| --- | --- |
+| No saved capture for the query | Successful empty page, distinct from unavailable |
+| Missing or foreign-branch request | 404 without existence disclosure |
+| Mobile, Kitchen or incomplete identity | 403 before history reads |
+| Duplicate/blank/unknown query or invalid cursor | 400; no broad-query fallback |
+| Corrupt selected identity or settlement equation | Unavailable; no partial invented capture |
+| Missing receipt-job identity/time | Unavailable; no fabricated capture timestamp |
+| Legacy financial snapshot incomplete | Captured cash facts remain visible; financials unavailable |
+| Current print simulation later succeeds/fails | Original captured print state stays an observation at capture |
+| Read failure after an old successful view | Clear stale detail and display unavailable |
+| VACUUM or schema change during traversal | Reject the old cursor and start a fresh first page |
+
+Persistence tests exercise cursor scope, high-water membership, midnight,
+legacy identifiers, zero amounts, corruption and immutable read fingerprints.
+Bundled SQLite tests also verify schema-cookie change and continuation
+invalidation after VACUUM/schema maintenance. Database restore, replacement or
+manual capture deletion requires clearing browsing continuations explicitly.
+Mapped API tests include the existing Open/Submit/RequestPayment/CompleteCashSale
+pipeline followed by history reads, preventing a new read model from rejecting
+previously accepted text IDs. Client/component tests cover protocol validation,
+split view, search, pagination, late responses and scope/lock behavior. All are
+part of the normal tools/verify.ps1 gate.
+
+Before merge, record D21.3 approval for the new authenticated read contracts.
+No database migration, live PostgreSQL, deployed TLS, physical device or
+production evidence is required or claimed by these automated checks. Reprint,
+refund, reversal, cancellation editing and Back Office/Stock remain outside scope.

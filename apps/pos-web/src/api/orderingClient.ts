@@ -1,3 +1,4 @@
+import { isCashHistoryId, validateCashHistoryQuery, parseCashHistoryPage, parseCashHistoryDetail, type CashHistoryQuery, type CashHistoryPage, type CashHistoryDetail } from './cashHistoryContracts.ts'
 import { parseDeliveryOverview, type DeliveryOverview } from './deliveryOverviewContracts.ts'
 import { isClosingReportId, validateClosingReportQuery, parseClosingReportPage, parseClosingReportDetail, parseClosingReportDelivery, type ClosingReportQuery, type ClosingReportPage, type ClosingReportDetail, type ClosingReportDelivery } from './closingReportWorkspaceContracts.ts'
 import { parseClosingReportQueueStatus, type ClosingReportQueueStatus } from './closingReportContracts.ts'
@@ -426,6 +427,25 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
         const response = commandResponse(result.body, requestId, expected)
         return expected === 'NoDurableResult' ? { kind: 'noDurableResult', requestId } : { kind: 'durable', response }
       } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async cashHistory(query: CashHistoryQuery = {}, signal?: AbortSignal): Promise<QueryResult<CashHistoryPage>> {
+      try { validateCashHistoryQuery(query) } catch { return { kind: 'unavailable', reason: 'protocol' } }
+      const parameters = new URLSearchParams({ paymentMethod: query.paymentMethod ?? 'All', status: query.status ?? 'All', limit: String(query.limit ?? 20) })
+      for (const key of ['businessDate', 'receiptNumber', 'tableSessionId', 'cursor'] as const) if (query[key] !== undefined) parameters.set(key, query[key]!)
+      const result = await request('/transaction-history/cash-sales?' + parameters.toString(), 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCashHistoryPage(result.body, session.branchId, query) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async cashHistoryDetail(requestId: string, signal?: AbortSignal): Promise<QueryResult<CashHistoryDetail>> {
+      if (!isCashHistoryId(requestId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/transaction-history/cash-sales/' + encodeURIComponent(requestId), 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCashHistoryDetail(result.body, session.branchId, requestId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     async closingReports(query: ClosingReportQuery = {}, signal?: AbortSignal): Promise<QueryResult<ClosingReportPage>> {
       try { validateClosingReportQuery(query) } catch { return { kind: 'unavailable', reason: 'protocol' } }
