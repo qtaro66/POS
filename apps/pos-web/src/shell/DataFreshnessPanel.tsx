@@ -14,6 +14,7 @@ import { CloudReplayPanel } from './CloudReplayPanel.tsx'
 import type { CloudReplayPort } from './cloudReplayStatus.ts'
 import { PrinterInventoryPanel } from './PrinterInventoryPanel.tsx'
 import type { PrinterInventoryPort } from './printerInventory.ts'
+import type { ReportInvestigationTarget } from './reportInvestigation.ts'
 
 const clock = new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Bangkok' })
 export function FreshnessValue({ reading }: { reading: FreshnessReading }) {
@@ -28,7 +29,7 @@ export function DataFreshnessSidebar({ state }: { state: FreshnessState }) {
   </section>
 }
 
-export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort, printerPort, readinessRead, closingReportPort }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort; printerPort?: PrinterInventoryPort; readinessRead?: OrderingReadClient['branchReadiness']; closingReportPort?: Pick<OrderingReadClient, 'scope' | 'closingReportQueueStatus' | 'closingReportDelivery' | 'deliveryOverview'> }) {
+export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, replayPort, printerPort, readinessRead, closingReportPort, onOpenReports }: { state: FreshnessState; onRefresh: () => void; printPort?: PrintAttentionPort; outboxPort?: CloudOutboxPort; replayPort?: CloudReplayPort; printerPort?: PrinterInventoryPort; readinessRead?: OrderingReadClient['branchReadiness']; closingReportPort?: Pick<OrderingReadClient, 'scope' | 'closingReportQueueStatus' | 'closingReportDelivery' | 'deliveryOverview'>; onOpenReports?: (target: ReportInvestigationTarget) => void }) {
   const [refreshVersion, setRefreshVersion] = useState(0)
   const loading = state.synced.phase === 'loading' || state.sent.phase === 'loading'
   return <section className="system-status panel" aria-labelledby="system-status-title">
@@ -41,7 +42,7 @@ export function DataFreshnessPanel({ state, onRefresh, printPort, outboxPort, re
     <p>แสดงข้อมูลล่าสุดที่อ่านจาก Branch Service ไม่ใช่การยืนยันว่าเชื่อมต่อส่วนกลางอยู่ในขณะนี้</p>
     <dl className="system-readings"><div><dt>Data Synced</dt><dd><FreshnessValue reading={state.synced} /></dd><dd>ครอบคลุมข้อมูลพนักงาน ยังไม่ยืนยันการซิงก์ Master Data ทั้งหมด</dd></div>
       <div><dt>Data Sent</dt><dd><DataSentSummary reading={state.sent} /></dd><dd>เวลายืนยันล่าสุดและคิวรอยืนยันเป็นคนละข้อมูล ไม่ใช่สถานะเครือข่าย</dd></div></dl>
-    <DeliveryOverviewPanel reading={state.sent} />
+    <DeliveryOverviewPanel reading={state.sent} onOpenReports={onOpenReports} />
     <h3>ข้อมูลที่ยังไม่เชื่อมต่อ</h3>
     <ul>{['PrintGateway / สภาพเครื่องพิมพ์', 'Backup / Database Checkpoint / พื้นที่สำรองข้อมูล'].map(label => <li key={label}>{label}: ยังไม่ทราบ</li>)}</ul>
     <p>หน้านี้อ่านอย่างเดียว ไม่มีคำสั่ง Retry, Reprint หรือทดสอบอุปกรณ์</p>

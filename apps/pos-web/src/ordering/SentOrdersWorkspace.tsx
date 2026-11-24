@@ -1,4 +1,5 @@
 import { StoreShiftWorkspace } from '../shell/StoreShiftWorkspace.tsx'
+import { ClosingReportWorkspace } from '../shell/ClosingReportWorkspace.tsx'
 import { OpenRegisteredTable } from './OpenRegisteredTable.tsx'
 import { CashReloadRecovery } from './CashReloadRecovery.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
@@ -70,6 +71,10 @@ function Totals({ detail, compact = false }: { detail: SessionDetail; compact?: 
 export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, recovery, ordering }: {
   client: OrderingReadClient; branchLabel: string; preview: boolean; onLock: () => void; recovery?: RecoveryReadPort; ordering?: OrderingEntryPort
 }) {
+  const [shellOwner, setShellOwner] = useState({ client, revision: 0 })
+  if (shellOwner.client !== client) setShellOwner({ client, revision: shellOwner.revision + 1 })
+  const canReadReports = !preview && !!client.scope && !!client.closingReports && !!client.closingReportDetail
+  const reportScope = JSON.stringify(client.scope) + ':' + shellOwner.revision
   const shiftStorageKey = ordering && 'pos-test-cash-shift:' + JSON.stringify([
     ordering.client.scope.serviceOrigin, ordering.client.scope.branchId,
   ])
@@ -108,14 +113,16 @@ export function SentOrdersWorkspace({ client, branchLabel, preview, onLock, reco
         detail={detail} send={client.cashRecovery?.submit ?? client.cashStep} simulateReceipt={client.simulateReceipt} refresh={() => { void controller.refresh(); void freshness.refresh() }} />}
       <Totals detail={detail} compact={inSession} /></>}
   </section>
-  return <PcPosShell branchLabel={branchLabel} preview={preview} onLock={onLock}
+  return <PcPosShell reportScopeKey={reportScope} branchLabel={branchLabel} preview={preview} onLock={onLock}
+    reportsPage={canReadReports ? investigation => <ClosingReportWorkspace key={reportScope} port={client}
+      scopeKey={reportScope} refreshKey={0} investigation={investigation} /> : undefined}
     storePage={!preview && client.scope && client.storeLifecycleCurrent && client.storeLifecycleCommand ?
       <StoreShiftWorkspace key={JSON.stringify(client.scope)} storageKey={'pos-store-lifecycle:' + JSON.stringify(client.scope)}
         onAccepted={() => { void freshness.refresh() }} port={{ closingReports: client.closingReports, closingReportDetail: client.closingReportDetail, closingReportDelivery: client.closingReportDelivery, closingReportQueueStatus: client.closingReportQueueStatus, storeLifecycleWorkspace: client.storeLifecycleWorkspace, storeShiftClosing: client.storeShiftClosing, storeLifecycleCurrent: client.storeLifecycleCurrent, storeLifecycleCommand: client.storeLifecycleCommand, storeLifecycleRequestStatus: client.storeLifecycleRequestStatus, retireStoreLifecycleRequest: client.retireStoreLifecycleRequest }} /> : undefined}
     sidebarStatus={<DataFreshnessSidebar state={freshnessState} />}
     homePage={(openTables, openSystem) => <HomeDashboard state={state} onRefresh={() => { void controller.refresh(); void freshness.refresh() }}
       openTables={status => { setTableFilter(status); setEntry(null); openTables() }} openSystem={openSystem} client={client} freshness={freshnessState} canAdjust={!preview} />}
-    systemPage={<DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} closingReportPort={client} />}>
+    systemPage={openReports => <DataFreshnessPanel state={freshnessState} onRefresh={() => { void freshness.refresh() }} printPort={client} outboxPort={client} replayPort={client} printerPort={client} readinessRead={client.branchReadiness} closingReportPort={client} onOpenReports={canReadReports ? openReports : undefined} />}>
         <header className={`page-header ${inSession && ordering ? 'entry-page-header' : ''}`}><div><p className="eyebrow">การขาย / โต๊ะ</p><h2 ref={heading} tabIndex={-1}>{inSession ? s.tableWorkspace : s.sent}</h2></div>
           <div className="page-actions">{recovery && <CommandRecoveryPanel port={recovery} />}<button className="refresh-button" onClick={() => { setFloorRefresh(version => version + 1); void controller.refresh(); void freshness.refresh() }} disabled={state.tablesPhase === 'loading'}>{s.refresh}</button></div></header>
         {!preview && (import.meta.env.DEV || import.meta.env.MODE === 'browser-fixture') && shiftStorageKey && client.testCashCycle && <TestCashShift key={shiftStorageKey} storageKey={shiftStorageKey} run={client.testCashCycle} status={client.testCashShiftStatus} />}
