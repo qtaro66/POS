@@ -83,16 +83,16 @@ describe('PC POS read-only sent orders', () => {
     expect(screen.queryByRole('button', { name: s.openTableWorkspace })).toBeNull()
   })
 
-  it('offers only the five confirmed pages without inventing operational data or reads', async () => {
+  it('offers the report page with the existing pages without inventing operational data or reads', async () => {
     const user = userEvent.setup(), base = createPreviewReadClient()
     const activeTables = vi.fn(base.activeTables), sessionDetail = vi.fn(base.sessionDetail)
     render(<App client={{ ...base, activeTables, sessionDetail }} />)
     const navigation = within(screen.getByRole('navigation', { name: 'เมนูหลัก' }))
     expect(navigation.getAllByRole('button').map(button => button.textContent?.slice(1))).toEqual([
-      'หน้าหลัก', 'โต๊ะ', 'ประวัติธุรกรรม', 'ร้านและกะ', 'สถานะระบบ',
+      'หน้าหลัก', 'โต๊ะ', 'ประวัติธุรกรรม', 'ร้านและกะ', 'รายงานปิด', 'สถานะระบบ',
     ])
     await screen.findByRole('button', { name: /A04/ })
-    for (const name of ['หน้าหลัก', 'ประวัติธุรกรรม', 'ร้านและกะ', 'สถานะระบบ']) {
+    for (const name of ['หน้าหลัก', 'ประวัติธุรกรรม', 'ร้านและกะ', 'รายงานปิด', 'สถานะระบบ']) {
       await user.click(navigation.getByRole('button', { name }))
       expect(screen.getByRole('main', { name })).toBe(document.activeElement)
       if (name === 'สถานะระบบ') expect(screen.getByText(/สถานะรวม: ยังไม่ทราบ/)).toBeTruthy()

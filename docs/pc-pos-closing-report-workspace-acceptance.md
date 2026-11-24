@@ -7,6 +7,17 @@ pc-pos-central-closing-report-activation.md.
 
 ## Functional bundle
 
+- Open closing reports directly from the main navigation using authenticated
+  report reads without store-command capabilities. The store-and-shift browser
+  and historical closing links must remain available independently.
+- From a ready system-status overview, inspect pending original reports and
+  pending opening/store/shift data separately. The companion action must use
+  original status All plus lifecycle Pending, so an already confirmed parent
+  remains visible. Disabled sending must not hide investigation of pending work.
+- Loading, unavailable, unsupported or missing overview/read capabilities must
+  not offer stale investigation actions. Queue changes before navigation may
+  legitimately yield an empty fresh list. Repeated entry starts a new read and
+  moves keyboard focus to the report heading.
 - Open the store-and-shift workspace and inspect the saved report list. Confirm
   initial loading, empty and unavailable states are distinct. Create a counted
   CloseStore and an uncounted CloseShift and inspect their original snapshots.
@@ -88,6 +99,13 @@ cases distinguish all five companion states, historical null, old omitted
 metadata, refresh and late responses. These checks use the regular test projects
 and are included in the final tools/verify.ps1 gate; no optional live service is
 needed for automated execution.
+
+Navigation and application integration cases additionally verify system-status
+drilldown, a dedicated read-only page, target mapping, fresh request revisions,
+filter editing/reset, return to table work and cancellation on scope/session
+replacement. Inspect local pending-command storage and mutation spies: browsing
+reports must not change either. Preview and missing-capability states remain
+non-operational. See architecture/0208-pos-report-investigation.md.
 
 ## Deferred boundaries
 

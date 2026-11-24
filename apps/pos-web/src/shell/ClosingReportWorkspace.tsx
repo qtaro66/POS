@@ -4,6 +4,7 @@ import type { ClosingLifecycleFilter, ClosingReportDelivery, ClosingReportDetail
 import type { StoreCashTotals } from '../api/storeLifecycleContracts.ts'
 import './ClosingReportWorkspace.css'
 import { ClosingReportLifecycleView } from './ClosingReportLifecycleView.tsx'
+import { reportInvestigationQuery, type ReportInvestigationRequest } from './reportInvestigation.ts'
 
 type Port = Pick<OrderingReadClient, 'closingReports' | 'closingReportDetail' | 'closingReportDelivery'>
 export interface ClosingReportFocus { storeSessionId: string; shiftId: string; revision: number }
@@ -162,33 +163,37 @@ function ReportList({ port, query }: { port: Port; query: ClosingReportQuery }) 
     {selected && current && <Detail key={selected} requestId={selected} read={port.closingReportDetail} close={() => setSelection(null)} />}
   </>
 }
-function Workspace({ port, focus }: { port: Port; focus?: ClosingReportFocus | null }) {
-  const [status, setStatus] = useState<ClosingReportFilter>('All')
-  const [lifecycleStatus, setLifecycleStatus] = useState<ClosingLifecycleFilter>('All')
+function Workspace({ port, focus, investigation }: { port: Port; focus?: ClosingReportFocus | null; investigation?: ReportInvestigationRequest }) {
+  const initialQuery = reportInvestigationQuery(investigation?.target ?? 'all')
+  const [status, setStatus] = useState<ClosingReportFilter>(initialQuery.status ?? 'All')
+  const [lifecycleStatus, setLifecycleStatus] = useState<ClosingLifecycleFilter>(initialQuery.lifecycleStatus ?? 'All')
+  const [showInvestigation, setShowInvestigation] = useState(investigation?.target !== undefined && investigation.target !== 'all')
   const [store, setStore] = useState(focus?.storeSessionId ?? '')
   const [shift, setShift] = useState(focus?.shiftId ?? '')
   const [day, setDay] = useState('')
-  const [query, setQuery] = useState<ClosingReportQuery>(() => ({ status: 'All', limit: 20, ...(focus ? { storeSessionId: focus.storeSessionId, shiftId: focus.shiftId } : {}) }))
+  const [query, setQuery] = useState<ClosingReportQuery>(() => ({ ...initialQuery, ...(focus ? { storeSessionId: focus.storeSessionId, shiftId: focus.shiftId } : {}) }))
   const [revision, setRevision] = useState(0)
   function apply(event: FormEvent) {
     event.preventDefault()
+    setShowInvestigation(false)
     setQuery({ status, ...(lifecycleStatus !== 'All' ? { lifecycleStatus } : {}), limit: 20, ...(store.trim() ? { storeSessionId: store.trim() } : {}), ...(shift.trim() ? { shiftId: shift.trim() } : {}), ...(day ? { businessDate: day } : {}) })
     setRevision(value => value + 1)
   }
   return <section className="panel closing-report-workspace" aria-label="ตรวจสอบรายงานปิดกะและปิดร้าน">
-    <header className="page-header"><h3>ตรวจสอบรายงานปิดกะและปิดร้าน</h3><button className="refresh-button" onClick={() => setRevision(value => value + 1)}>ตรวจสอบรายการรายงานใหม่</button></header>
+    <header className="page-header"><h3 id="closing-report-workspace-title" tabIndex={-1}>ตรวจสอบรายงานปิดกะและปิดร้าน</h3><button className="refresh-button" onClick={() => setRevision(value => value + 1)}>ตรวจสอบรายการรายงานใหม่</button></header>
+    {showInvestigation && <p role="status">{investigation?.target === 'base-pending' ? 'กำลังตรวจสอบรายงานหลักที่ยังรอยืนยัน' : 'กำลังตรวจสอบข้อมูลเปิดร้านและกะที่ยังรอยืนยัน'} · อ่านรายการล่าสุดจากสาขา จำนวนอาจเปลี่ยนจากหน้าสถานะระบบ</p>}
     <form className="closing-report-filters" onSubmit={apply}>
       <label>สถานะรายงานหลัก<select value={status} onChange={event => setStatus(event.target.value as ClosingReportFilter)}><option value="All">ทั้งหมด</option><option value="Pending">ยังไม่ยืนยัน</option><option value="Delivered">ส่วนกลางยืนยันแล้ว</option></select></label>
       <label>สถานะข้อมูลเปิดร้านและกะ<select value={lifecycleStatus} onChange={event => setLifecycleStatus(event.target.value as ClosingLifecycleFilter)}><option value="All">ทั้งหมด</option><option value="Pending">ยังไม่ยืนยัน</option><option value="Delivered">ส่วนกลางยืนยันแล้ว</option><option value="NotRecorded">ไม่มีข้อมูลที่บันทึกไว้</option></select></label>
       <label>วันธุรกิจของรายงาน<input type="date" value={day} onChange={event => setDay(event.target.value)} /></label>
       <label>รอบร้านที่ต้องการค้น<input value={store} onChange={event => setStore(event.target.value)} /></label><label>กะที่ต้องการค้น<input value={shift} onChange={event => setShift(event.target.value)} /></label>
-      <button type="submit">ใช้ตัวกรองรายงาน</button><button type="button" onClick={() => { setStatus('All'); setLifecycleStatus('All'); setStore(''); setShift(''); setDay(''); setQuery({ status: 'All', limit: 20 }); setRevision(value => value + 1) }}>ล้างตัวกรองรายงาน</button>
+      <button type="submit">ใช้ตัวกรองรายงาน</button><button type="button" onClick={() => { setShowInvestigation(false); setStatus('All'); setLifecycleStatus('All'); setStore(''); setShift(''); setDay(''); setQuery({ status: 'All', limit: 20 }); setRevision(value => value + 1) }}>ล้างตัวกรองรายงาน</button>
     </form>
     <p>รายงานหลักและข้อมูลเปิดร้านและกะมีการยืนยันแยกกัน การยืนยันรายงานหลักไม่ได้หมายความว่าข้อมูลเปิดร้านและกะได้รับการยืนยันแล้ว</p>
     {query.lifecycleStatus === 'NotRecorded' && <p>กำลังค้นหารายงานที่ไม่มีข้อมูลเปิดร้านและกะบันทึกไว้ ไม่ถือว่าได้รับการยืนยันหรือเป็นงานค้างส่ง</p>}
     <ReportList key={JSON.stringify(query) + ':' + revision} port={port} query={query} />
   </section>
 }
-export function ClosingReportWorkspace({ port, scopeKey, refreshKey, focus }: { port: Port; scopeKey: string; refreshKey: number; focus?: ClosingReportFocus | null }) {
-  return <Workspace key={scopeKey + ':' + refreshKey + ':' + (focus?.revision ?? 0)} port={port} focus={focus} />
+export function ClosingReportWorkspace({ port, scopeKey, refreshKey, focus, investigation }: { port: Port; scopeKey: string; refreshKey: number; focus?: ClosingReportFocus | null; investigation?: ReportInvestigationRequest }) {
+  return <Workspace key={JSON.stringify([scopeKey, refreshKey, focus?.storeSessionId, focus?.shiftId, focus?.revision, investigation?.target, investigation?.revision])} port={port} focus={focus} investigation={investigation} />
 }

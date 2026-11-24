@@ -1,5 +1,6 @@
 import type { DeliveryChannel, DeliveryOverview } from '../api/deliveryOverviewContracts.ts'
 import type { FreshnessReading } from './dataFreshness.ts'
+import type { ReportInvestigationTarget } from './reportInvestigation.ts'
 
 const clock = new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Bangkok' })
 function Timestamp({ value }: { value: string | null }) { return value === null ? <>ยังไม่มีบันทึก</> : <time dateTime={value}>{clock.format(new Date(value))}</time> }
@@ -33,12 +34,14 @@ function ConfigurationWarnings({ view }: { view: DeliveryOverview }) {
     <p>การตั้งค่าตัวส่ง: ธุรกรรมโต๊ะ {view.tableDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} · รายงาน {view.reportDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} · บริบทกะ {view.lifecycleDeliveryEnabled ? 'เปิด' : 'ยังไม่เปิด'} — ไม่ใช่การยืนยันว่าส่วนกลางพร้อมใช้งาน</p>
   </>
 }
-export function DeliveryOverviewPanel({ reading }: { reading: FreshnessReading }) {
+export function DeliveryOverviewPanel({ reading, onOpenReports }: { reading: FreshnessReading; onOpenReports?: (target: ReportInvestigationTarget) => void }) {
   const view = reading.phase === 'ready' ? reading.overview : undefined
   return <section className="delivery-overview panel" aria-label="สรุปการส่งธุรกรรมและรายงาน">
     <h3>สรุปการส่งธุรกรรมและรายงาน</h3><DataSentSummary reading={reading} />
     {view ? <><ConfigurationWarnings view={view} />
       <Channel name="ธุรกรรมโต๊ะ" value={view.snapshot.tableEvents} /><Channel name="รายงานปิดกะและปิดร้าน" value={view.snapshot.closingReports} /><Channel name="ข้อมูลเปิดร้านและกะ" value={view.snapshot.lifecycleReports} />
+      {onOpenReports && view.snapshot.closingReports.pendingCount > 0 && <button type="button" onClick={() => onOpenReports('base-pending')}>ตรวจสอบรายงานหลักที่รอยืนยัน</button>}
+      {onOpenReports && view.snapshot.lifecycleReports.pendingCount > 0 && <button type="button" onClick={() => onOpenReports('lifecycle-pending')}>ตรวจสอบข้อมูลเปิดร้านและกะที่รอยืนยัน</button>}
       <section aria-label="งานกู้ลำดับข้อมูล"><h4>งานกู้ลำดับข้อมูล</h4><dl className="store-attribution">
         <div><dt>รอยืนยัน / ยืนยันแล้ว</dt><dd>{view.snapshot.replayPendingCount} / {view.snapshot.replayCompletedCount}</dd></div>
         <div><dt>งานรอเก่าสุดสร้างเมื่อ</dt><dd><Timestamp value={view.snapshot.replayOldestPendingAt} /></dd></div>
