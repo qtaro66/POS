@@ -202,29 +202,44 @@ public sealed class PersistedPrintSpoolWorkerTests
             new MutableConditionProbe(PrinterCondition.Ready),
             heartbeatDelay.DelayAsync);
 
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var cycle = worker.ProcessNextAsync(
             "PRINTER-01",
             "WORKER-01",
-            TimeSpan.FromSeconds(30));
-        await renderer.Entered.WaitAsync(TimeSpan.FromSeconds(5));
-        await heartbeatDelay.FirstDelayEntered.WaitAsync(TimeSpan.FromSeconds(5));
-        await database.ExecuteAsync("""
-            UPDATE print_jobs
-            SET lease_owner = NULL, lease_expires_at = NULL
-            WHERE print_job_id = 'PRINT-01';
-            """);
-        time.Advance(TimeSpan.FromSeconds(10));
-        heartbeatDelay.ReleaseFirstDelay();
+            TimeSpan.FromSeconds(30),
+            stop.Token);
+        try
+        {
+            await renderer.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+            await heartbeatDelay.FirstDelayEntered.WaitAsync(TimeSpan.FromSeconds(30));
+            await database.ExecuteAsync("""
+                UPDATE print_jobs
+                SET lease_owner = NULL, lease_expires_at = NULL
+                WHERE print_job_id = 'PRINT-01';
+                """);
+            time.Advance(TimeSpan.FromSeconds(10));
+            heartbeatDelay.ReleaseFirstDelay();
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cycle.WaitAsync(TimeSpan.FromSeconds(5)));
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                cycle.WaitAsync(TimeSpan.FromSeconds(30)));
 
-        Assert.Contains("heartbeat", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(0, adapter.SendCount);
-        Assert.Equal(0L, await database.ScalarAsync<long>(
-            "SELECT COUNT(*) FROM print_attempts;"));
-        Assert.Equal("PrintQueued", await database.ScalarAsync<string>(
-            "SELECT status FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+            Assert.Contains("heartbeat", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(0, adapter.SendCount);
+            Assert.Equal(0L, await database.ScalarAsync<long>(
+                "SELECT COUNT(*) FROM print_attempts;"));
+            Assert.Equal("PrintQueued", await database.ScalarAsync<string>(
+                "SELECT status FROM print_jobs WHERE print_job_id = 'PRINT-01';"));
+        }
+        finally
+        {
+            // Join the worker before deleting SQLite, including when a coordination wait fails under load.
+            await stop.CancelAsync();
+            renderer.Release();
+            heartbeatDelay.ReleaseFirstDelay();
+            try { await cycle.WaitAsync(TimeSpan.FromSeconds(30)); }
+            catch (OperationCanceledException) { }
+            catch (InvalidOperationException) { }
+        }
     }
 
     [Fact]
