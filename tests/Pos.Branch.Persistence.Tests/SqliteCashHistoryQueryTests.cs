@@ -156,8 +156,8 @@ public sealed class SqliteCashHistoryQueryTests(ITestOutputHelper output) : IDis
         await Assert.ThrowsAsync<ArgumentException>(() => store.ReadCashHistoryPageAsync("other", Now, query with { Cursor = cursor }));
         var normalized = cursor.Replace('-', '+').Replace('_', '/');
         var json = Encoding.UTF8.GetString(Convert.FromBase64String(normalized.PadRight((normalized.Length + 3) / 4 * 4, '=')));
-        foreach (var bad in new[] { json.Replace("\"Version\":1", "\"Version\":2"), json.Replace("\"Version\":1,", ""),
-            json.Replace("\"Version\":1", "\"Version\":1,\"Version\":1"), json.Replace("\"Version\":1", "\"Version\":1,\"Unknown\":1"), "[]" })
+        foreach (var bad in new[] { json.Replace("\"Version\":2", "\"Version\":1"), json.Replace("\"Version\":2,", ""),
+            json.Replace("\"Version\":2", "\"Version\":2,\"Version\":2"), json.Replace("\"Version\":2", "\"Version\":2,\"Unknown\":1"), "[]" })
         {
             var forged = Convert.ToBase64String(Encoding.UTF8.GetBytes(bad)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
             await Assert.ThrowsAsync<ArgumentException>(() => store.ReadCashHistoryPageAsync("branch", Now, query with { Cursor = forged }));

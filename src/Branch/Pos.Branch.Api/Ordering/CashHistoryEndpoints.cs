@@ -54,7 +54,7 @@ public static class CashHistoryEndpoints
 
     private static CashHistoryQuery ReadQuery(IQueryCollection values)
     {
-        var allowed = new HashSet<string>(["businessDate", "receiptNumber", "tableSessionId", "paymentMethod", "status", "limit", "cursor"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["businessDate", "receiptNumber", "tableSessionId", "paymentMethod", "status", "limit", "cursor", "tableId", "orderBatchId"], StringComparer.Ordinal);
         if (values.Any(pair => !allowed.Contains(pair.Key) || pair.Value.Count != 1 || string.IsNullOrEmpty(pair.Value[0])))
         {
             throw new ArgumentException("Invalid cash history query.");
@@ -63,17 +63,20 @@ public static class CashHistoryEndpoints
         var date = Optional("businessDate");
         var receipt = Optional("receiptNumber");
         var session = Optional("tableSessionId");
+        var table = Optional("tableId");
+        var batch = Optional("orderBatchId");
         var method = Optional("paymentMethod") ?? "All";
         var status = Optional("status") ?? "All";
         var limit = 20;
         if ((date is not null && !DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) ||
             (receipt is not null && (string.IsNullOrWhiteSpace(receipt) || receipt != receipt.Trim() || receipt.Length > 128 || receipt.Any(char.IsControl))) ||
-            (session is not null && !Identifier(session)) || method is not ("All" or "Cash") ||
+            (session is not null && !Identifier(session)) || (table is not null && !Identifier(table)) ||
+            (batch is not null && !Identifier(batch)) || method is not ("All" or "Cash") ||
             status is not ("All" or "Completed") ||
             (Optional("limit") is { } text && (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out limit) || limit is < 1 or > 50)))
         {
             throw new ArgumentException("Invalid cash history query.");
         }
-        return new(date, receipt, session, method, status, limit, Optional("cursor"));
+        return new(date, receipt, session, method, status, limit, Optional("cursor"), table, batch);
     }
 }

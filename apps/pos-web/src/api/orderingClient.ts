@@ -431,7 +431,7 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
     async cashHistory(query: CashHistoryQuery = {}, signal?: AbortSignal): Promise<QueryResult<CashHistoryPage>> {
       try { validateCashHistoryQuery(query) } catch { return { kind: 'unavailable', reason: 'protocol' } }
       const parameters = new URLSearchParams({ paymentMethod: query.paymentMethod ?? 'All', status: query.status ?? 'All', limit: String(query.limit ?? 20) })
-      for (const key of ['businessDate', 'receiptNumber', 'tableSessionId', 'cursor'] as const) if (query[key] !== undefined) parameters.set(key, query[key]!)
+      for (const key of ['businessDate', 'receiptNumber', 'tableSessionId', 'tableId', 'orderBatchId', 'cursor'] as const) if (query[key] !== undefined) parameters.set(key, query[key]!)
       const result = await request('/transaction-history/cash-sales?' + parameters.toString(), 'GET', undefined, signal)
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }

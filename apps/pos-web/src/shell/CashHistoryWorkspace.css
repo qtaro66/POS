@@ -5,4 +5,7 @@
 .cash-history-list button { display: grid; text-align: start; gap: .4rem; width: 100%; padding: .8rem; }
 .cash-history-list button[aria-pressed="true"] { outline: 2px solid currentColor; }
 .cash-history-detail { min-width: 0; overflow-wrap: anywhere; }
+.cash-history-recorded-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cash-history-bill > ol { padding-inline-start: 1.25rem; }
+.cash-history-bill > ol > li { padding-block: .6rem; border-block-end: 1px solid currentColor; }
 @media (max-width: 850px) { .cash-history-split { grid-template-columns: 1fr; } }
