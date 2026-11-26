@@ -47,6 +47,10 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryDetail");
         group.MapGet("/transaction-history/cash-sales/{requestId}/events", CashHistoryEndpoints.EventsAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryEvents");
+        group.MapGet("/transaction-history/cash-sales/{requestId}/production-orders", CashHistoryEndpoints.ProductionOrdersAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryProductionOrders");
+        group.MapGet("/transaction-history/cash-sales/{requestId}/production-orders/{snapshotId}", CashHistoryEndpoints.ProductionOrderDetailAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryProductionOrderDetail");
         group.MapGet("/cloud-replay-status", BranchCloudReplayStatusHttpHandler.HandleAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0))
             .Produces<BranchCloudReplayStatusResponse>().Produces<BranchCloudReplayStatusError>(400).Produces<BranchCloudReplayStatusError>(503)

@@ -59,3 +59,8 @@ maintenance/restore traversal boundaries continue to apply.
 Cash item/detail contracts and their cursor version2 do not change. D21.3 approval
 is required for this new read contract before merge. There are no printing,
 refund, reversal or cancellation commands on this route.
+
+For original names, submitted quantities and station references associated with a
+confirmed cancellation line, use the separately scoped production snapshot reads
+in branch-cash-history-production-v1.md. This event response does not fill those
+fields from current order data or change its existing source cursor.
