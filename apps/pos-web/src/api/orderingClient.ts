@@ -1,3 +1,4 @@
+import { validateCashHistoryEventQuery, parseCashHistoryEventPage, type CashHistoryEventQuery, type CashHistoryEventPage } from './cashHistoryEventContracts.ts'
 import { isCashHistoryId, validateCashHistoryQuery, parseCashHistoryPage, parseCashHistoryDetail, type CashHistoryQuery, type CashHistoryPage, type CashHistoryDetail } from './cashHistoryContracts.ts'
 import { parseDeliveryOverview, type DeliveryOverview } from './deliveryOverviewContracts.ts'
 import { isClosingReportId, validateClosingReportQuery, parseClosingReportPage, parseClosingReportDetail, parseClosingReportDelivery, type ClosingReportQuery, type ClosingReportPage, type ClosingReportDetail, type ClosingReportDelivery } from './closingReportWorkspaceContracts.ts'
@@ -436,6 +437,17 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
       try { return { kind: 'ok', value: parseCashHistoryPage(result.body, session.branchId, query) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async cashHistoryEvents(requestId: string, query: CashHistoryEventQuery = {}, signal?: AbortSignal): Promise<QueryResult<CashHistoryEventPage>> {
+      try { if (!isCashHistoryId(requestId)) throw new Error('Invalid identity'); validateCashHistoryEventQuery(query) } catch { return { kind: 'unavailable', reason: 'protocol' } }
+      const parameters = new URLSearchParams({ source: query.source ?? 'Session', limit: String(query.limit ?? 20) })
+      if (query.cursor !== undefined) parameters.set('cursor', query.cursor)
+      const result = await request('/transaction-history/cash-sales/' + encodeURIComponent(requestId) + '/events?' + parameters.toString(), 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCashHistoryEventPage(result.body, session.branchId, requestId, query) } }
       catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     async cashHistoryDetail(requestId: string, signal?: AbortSignal): Promise<QueryResult<CashHistoryDetail>> {

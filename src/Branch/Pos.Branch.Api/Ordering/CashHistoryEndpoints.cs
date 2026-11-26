@@ -9,6 +9,25 @@ namespace Pos.Branch.Api.Ordering;
 
 public static class CashHistoryEndpoints
 {
+    public static async Task<IResult> EventsAsync(ClaimsPrincipal principal, string requestId,
+        BranchOrderingRuntime runtime, HttpContext context, CancellationToken token)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (!TryIdentity(principal, out var identity)) { return TypedResults.StatusCode(403); }
+        if (!Identifier(requestId)) { return TypedResults.BadRequest(new { error = "InvalidCashHistoryIdentity" }); }
+        CashHistoryEventQuery query;
+        try { query = ReadEventQuery(context.Request.Query); }
+        catch (ArgumentException) { return TypedResults.BadRequest(new { error = "InvalidCashHistoryEventQuery" }); }
+        try
+        {
+            var page = await runtime.TableCommands.ReadCashHistoryEventsAsync(identity!.BranchId, requestId,
+                runtime.Time.GetUtcNow(), query, token);
+            return page is null ? TypedResults.NotFound(new { error = "CashHistoryNotFound" }) : TypedResults.Ok(page);
+        }
+        catch (ArgumentException) { return TypedResults.BadRequest(new { error = "InvalidCashHistoryEventQuery" }); }
+        catch (Exception error) when (Unavailable(error)) { return TypedResults.StatusCode(503); }
+    }
+
     public static async Task<IResult> ListAsync(ClaimsPrincipal principal, BranchOrderingRuntime runtime,
         HttpContext context, CancellationToken token)
     {
@@ -78,5 +97,23 @@ public static class CashHistoryEndpoints
             throw new ArgumentException("Invalid cash history query.");
         }
         return new(date, receipt, session, method, status, limit, Optional("cursor"), table, batch);
+    }
+
+    private static CashHistoryEventQuery ReadEventQuery(IQueryCollection values)
+    {
+        var allowed = new HashSet<string>(["source", "limit", "cursor"], StringComparer.Ordinal);
+        if (values.Any(pair => !allowed.Contains(pair.Key) || pair.Value.Count != 1 || string.IsNullOrEmpty(pair.Value[0])))
+        {
+            throw new ArgumentException("Invalid cash history event query.");
+        }
+        string? Optional(string key) => values.TryGetValue(key, out var value) ? value[0] : null;
+        var source = Optional("source") ?? "Session";
+        var limit = 20;
+        if (source is not ("Session" or "Cancellation") ||
+            (Optional("limit") is { } text && (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out limit) || limit is < 1 or > 50)))
+        {
+            throw new ArgumentException("Invalid cash history event query.");
+        }
+        return new(source, limit, Optional("cursor"));
     }
 }

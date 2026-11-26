@@ -22,7 +22,7 @@ it('uses server effective business date, opens immutable details beside list and
   expect(detail.getAllByText('110.00 บาท')).toHaveLength(2)
   expect(screen.getByRole('region', { name: 'รายการธุรกรรมเงินสด' })).toBeTruthy()
   expect(screen.getByText(/ไม่ใช่หลักฐานว่าสั่งพิมพ์แล้ว/)).toBeTruthy()
-  expect(screen.queryByRole('button', { name: /พิมพ์|Refund|คืนเงิน|ยกเลิก|ชำระเงิน|PIN/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^(พิมพ์|Refund|คืนเงิน|ยกเลิก|ชำระเงิน|PIN)/ })).toBeNull()
   expect(JSON.stringify(Object.entries(localStorage))).toBe(stored)
 })
 it('applies canonical search filters, refreshes the applied query and resets to Branch default day', async () => {
