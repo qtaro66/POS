@@ -21,10 +21,12 @@ is valid, matching CashSettlement; tendered minus applied must equal change.
 
 Detail projects the original captured financial totals when complete and
 consistent. Legacy unavailable financials stay null rather than becoming zero.
-Order lines, original table-number labels, transfer, cancellation and price
-override history are not reconstructed from current records. They require their
-own immutable attribution before being added. The initial UI searches a table
-session identifier, not a reconstructed historical table number.
+The first projection did not expose captured bill items. The follow-up now
+projects original bill items, options, discounts and table identity when the
+saved payload contains them. It does not reconstruct original table-number
+labels, transfer, cancellation or price-override events from current records.
+Table-session and original table-identity filters remain separate from any
+unrecorded historical display label.
 
 ## Read API and consistency
 
@@ -75,3 +77,40 @@ Back Office and Stock remain separate add-ons.
 No schema migration, settlement calculation, print job, outbox or lifecycle
 behavior changes in this slice. Branch remains schema 35 and Central schema 3.
 The new authenticated read contracts require D21.3 approval before merge.
+
+## Original bill-item projection
+
+SqliteBillPreviewContentSource already captured the bill's items array and table
+identity in the JSON copied into cash_sales.bill_snapshot_json. History now
+projects this data directly, including original item/option names and prices,
+captured fulfillment/comments, line and bill discounts, master/policy versions
+and the bill's own capture time. PaymentRequestId identifies bill preparation,
+not the later cash settlement request. The two identities must not be equated.
+
+Quantity is the active quantity used for the saved bill, not every originally
+ordered or later-cancelled unit. Fully cancelled items are absent from this
+snapshot. This projection therefore does not complete cancellation history.
+
+Validation checks captured identities, unique line IDs, nonnegative prices,
+quantities, recorded line gross/discount/net and aggregate captured totals. It
+does not rerun BillCalculator, derive gross from unit prices/options or recompute
+requested discounts: the saved policy version is attribution, not a license to
+apply today's rounding rules. Original currency scale and rounding mode are not
+stored in this payload. Repeated option IDs remain valid array entries, matching
+the owning source; recorded order and quantities are preserved.
+
+Legacy payloads without items retain Bill=null and unknown batch metadata.
+Recorded table identity may be available independently; absent identity stays
+unknown rather than reading the current table registry. A present malformed bill
+fails closed instead of becoming a fabricated empty document. Snapshot parsing
+is bounded to 1 MiB; oversized snapshots are unavailable, never truncated or
+overwritten. Other identifier/text bounds are documented in the API contract.
+
+List rows add original TableId and distinct OrderBatchIds summaries. Exact
+tableId/orderBatchId filters combine with existing receipt/session/date filters.
+Cursor version 2 binds them with the existing schema cookie and high-water
+position; version-1 continuations require refresh. No database migration or
+change to captured JSON is introduced. Older unfiltered responses without new
+metadata remain readable as unknown; a filtered result must supply verifiable
+matching metadata. Typed bill detail is kept outside the original monetary
+snapshot rather than written back into it.

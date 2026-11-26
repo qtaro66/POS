@@ -9,9 +9,10 @@ or physical receipt requirements are finished.
 | Requirement area | This slice | Remaining boundary |
 | --- | --- | --- |
 | D18.8 split view | Cash list and captured detail without a new window | Other transaction sources |
-| Search | Business date, receipt substring, recorded table-session ID, Cash/All and Completed/All | Original table-number labels, order search and other payment/status sources |
+| Search | Business date, receipt substring, session ID, original table ID, captured order-batch ID, Cash/All and Completed/All | Unrecorded display labels, human ticket numbering and other payment/status sources |
 | Original money | Tendered, applied, change and available captured bill totals | Missing legacy financial snapshots stay unavailable |
-| Original attribution | Capture time, business date, store, shift, employee and terminal IDs | Historical display names or item lines not present in the capture |
+| Original attribution | Capture time, business date, store, shift, employee/terminal IDs and original bill table/policy IDs | Human table labels not present in the capture |
+| Bill items | Captured item/option names, chargeable quantities, prices, fulfillment, comments and recorded discounts | Legacy payloads without items and separate cancellation/transfer/override events |
 | D01.4 branch access | Complete identity and PcPos only, branch from principal, no extra PIN | Cross-branch Back Office remains separate |
 | Offline scope | Read the local Branch database without a Central call | Branch service/LAN must still be reachable |
 | Read-only | No read audit, payment/cancellation/print job or lifecycle mutation | Authorized snapshot reprint is deferred |
@@ -26,6 +27,9 @@ or physical receipt requirements are finished.
 2. Search a saved receipt using a literal substring, then filter by recorded
    table-session identity, Cash and Completed. Percent/underscore are literal
    characters. Clear filters and start a new first-page query.
+   Combine original table identity and captured order-batch identity. These
+   filters must use saved bill metadata, not current table/order rows, and remain
+   bound in version-2 continuations. Older version-1 cursors require refresh.
 3. Load continuation pages, append another settlement, and verify it appears
    only after refresh. Retain all filters and the first effective day on a
    continuation even if the Branch clock crosses midnight. A changed filter or
@@ -40,6 +44,16 @@ or physical receipt requirements are finished.
 6. Capture storage/audit/outbox/print-job fingerprints before and after reading,
    searching, paging and selecting detail. They must match. Access must remain
    independent of cash-test write flags and store-open permissions.
+7. Open an original provider capture with options, a line discount, bill discount,
+   fulfillment type and multiline comment. Preserve saved item order and repeated
+   option IDs. Display chargeable quantity rather than an invented original or
+   cancelled count. The bill preparation request ID is distinct from the later
+   cash request ID.
+8. Change catalog, current order and table records after capture; reopen detail
+   and compare the entire typed bill and financials. They must remain unchanged.
+   Recorded unit price/requested value 1.005 may coexist with rounded stored
+   gross/requested amount 1.01. Do not recompute with today's rounding policy or
+   hide original precision in the captured detail.
 
 ## Failure and isolation matrix
 
@@ -55,6 +69,11 @@ or physical receipt requirements are finished.
 | Current print simulation later succeeds/fails | Original captured print state stays an observation at capture |
 | Read failure after an old successful view | Clear stale detail and display unavailable |
 | VACUUM or schema change during traversal | Reject the old cursor and start a fresh first page |
+| Legacy payload has no items | Bill and batch metadata remain unknown, not an invented empty bill |
+| Explicit complete zero-item capture | Preserve its recorded empty array and coherent zero totals |
+| New filtered response lacks matching table/batch metadata | Client rejects it as unavailable |
+| Present bill has inconsistent identity, duplicate line IDs or recorded totals | Unavailable, no partial document or source mutation |
+| Snapshot exceeds the 1 MiB read bound | Unavailable, never a truncated bill presented as complete |
 
 Persistence tests exercise cursor scope, high-water membership, midnight,
 legacy identifiers, zero amounts, corruption and immutable read fingerprints.
@@ -66,6 +85,12 @@ pipeline followed by history reads, preventing a new read model from rejecting
 previously accepted text IDs. Client/component tests cover protocol validation,
 split view, search, pagination, late responses and scope/lock behavior. All are
 part of the normal tools/verify.ps1 gate.
+
+Itemized-capture tests additionally use the actual BillPreview provider and cash
+completion path. They compare snapshots after current-data mutation, preserve
+recorded rounded values without rerunning BillCalculator, and exercise original
+table/order filters, branch isolation, malformed/oversized bill handling and
+cursor version-2 scope. Other event histories and reprint remain deferred.
 
 Before merge, record D21.3 approval for the new authenticated read contracts.
 No database migration, live PostgreSQL, deployed TLS, physical device or
