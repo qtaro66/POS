@@ -4,6 +4,9 @@ Related original production evidence is documented in
 branch-cash-history-production-v1.md; its original submitted quantities are
 separate from this captured chargeable bill.
 
+Recorded store/shift operations and receipt simulation evidence are documented in
+branch-cash-history-context-v1.md. Neither changes this captured payment result.
+
 GET /api/v1/ordering/transaction-history/cash-sales lists captured settlements.
 GET /api/v1/ordering/transaction-history/cash-sales/{requestId} opens one capture.
 Both require complete authenticated identity and provisioned PcPos role, accept
