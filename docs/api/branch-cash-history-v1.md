@@ -1,5 +1,9 @@
 # Branch captured cash history v1
 
+Related original production evidence is documented in
+branch-cash-history-production-v1.md; its original submitted quantities are
+separate from this captured chargeable bill.
+
 GET /api/v1/ordering/transaction-history/cash-sales lists captured settlements.
 GET /api/v1/ordering/transaction-history/cash-sales/{requestId} opens one capture.
 Both require complete authenticated identity and provisioned PcPos role, accept

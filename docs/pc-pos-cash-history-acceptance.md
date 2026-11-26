@@ -120,3 +120,33 @@ Before merge, record D21.3 approval for the new authenticated read contracts.
 No database migration, live PostgreSQL, deployed TLS, physical device or
 production evidence is required or claimed by these automated checks. Reprint,
 refund, reversal, cancellation editing and Back Office/Stock remain outside scope.
+
+## Original production snapshot extension
+
+1. Submit station-routed lines with options, comments and both fulfillment types,
+   complete a cash capture, and open its original production evidence. Compare
+   names, submitted quantities, option quantities, table and station with the
+   saved SubmitOrder payload. No current menu or printer configuration supplies
+   replacement data.
+2. Confirm a full cancellation before payment. Find its original line from the
+   cancellation evidence even when it is absent from the final chargeable bill.
+   The detail shows the original station snapshot and clearly distinguishes
+   submitted quantity from chargeable quantity.
+3. Filter exact batch, line and station identities, traverse multiple pages,
+   append another snapshot and refresh. Continuation must exclude later appends
+   and reject another subject, filter, limit or SQLite schema cookie.
+4. Change current product and station configuration. Original evidence remains
+   unchanged. Missing snapshots remain a successful empty result, distinct from
+   corrupt, unsupported, oversized or hash-mismatched evidence, which is
+   unavailable without clearing captured cash/bill detail.
+5. Replace the client, change selection/scope or lock while a page/detail read is
+   pending. Ignore old responses and release their loading state. An older client
+   without these reads shows unconnected capability, not false empty evidence.
+6. Verify branch/session isolation, authenticated PcPos-only reads, no-store,
+   malformed query rejection and unchanged database fingerprints. Viewing or
+   following a line reference must create no print job, audit or business write.
+
+See architecture/0211-pos-cash-history-production.md and
+api/branch-cash-history-production-v1.md. This is captured submission evidence;
+it does not prove physical printing or completed production. Reprint execution,
+its per-command PIN/permission checks and hardware acceptance remain deferred.

@@ -279,7 +279,8 @@ public sealed partial class BranchOrderingHttpApiTests
         }
 
         public async Task<(int Status, JsonElement Body, string CacheControl)> Call(string name, object? body = null,
-            string? routeValue = null, ClaimsPrincipal? principal = null, bool https = true, bool unknownLength = false, string? query = null, string? shiftId = null)
+            string? routeValue = null, ClaimsPrincipal? principal = null, bool https = true, bool unknownLength = false, string? query = null, string? shiftId = null,
+            string? snapshotId = null)
         {
             var endpoint = ((IEndpointRouteBuilder)_app).DataSources.SelectMany(source => source.Endpoints)
                 .Single(candidate => candidate.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == name);
@@ -294,6 +295,7 @@ public sealed partial class BranchOrderingHttpApiTests
             context.Request.RouteValues["requestId"] = routeValue;
             context.Request.RouteValues["cancellationId"] = routeValue;
             context.Request.RouteValues["tableSessionId"] = routeValue;
+            context.Request.RouteValues["snapshotId"] = snapshotId;
             using var requestBody = new MemoryStream(Encoding.UTF8.GetBytes(body is null ? "" : JsonSerializer.Serialize(body)));
             context.Request.Body = requestBody;
             context.Request.ContentLength = unknownLength ? null : requestBody.Length;

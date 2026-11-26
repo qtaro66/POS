@@ -7,7 +7,7 @@ using Pos.Branch.Infrastructure.Sqlite;
 
 namespace Pos.Branch.Api.Ordering;
 
-public static class CashHistoryEndpoints
+public static partial class CashHistoryEndpoints
 {
     public static async Task<IResult> EventsAsync(ClaimsPrincipal principal, string requestId,
         BranchOrderingRuntime runtime, HttpContext context, CancellationToken token)
