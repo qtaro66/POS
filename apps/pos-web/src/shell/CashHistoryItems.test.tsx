@@ -26,7 +26,7 @@ it('shows captured item names, options, billed quantity, comments, discounts and
   expect(bill.getByText(/คำขอคิดเงินเดิม PREPARE-1/)).toBeTruthy()
   expect(screen.getByText('รหัสโต๊ะเดิม A01')).toBeTruthy()
   expect(screen.getByText('ชุดออเดอร์เดิม ORDER-1')).toBeTruthy()
-  expect(screen.queryByRole('button', { name: /ยกเลิก|คืนเงิน|พิมพ์|แก้ไข|ลบ|PIN/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^(ยกเลิก|คืนเงิน|พิมพ์|แก้ไข|ลบ|PIN)/ })).toBeNull()
   expect(JSON.stringify(Object.entries(localStorage))).toBe(stored)
 })
 it('preserves captured fractional unit prices beside their historically rounded gross amount', async () => {

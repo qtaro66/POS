@@ -12,7 +12,8 @@ or physical receipt requirements are finished.
 | Search | Business date, receipt substring, session ID, original table ID, captured order-batch ID, Cash/All and Completed/All | Unrecorded display labels, human ticket numbering and other payment/status sources |
 | Original money | Tendered, applied, change and available captured bill totals | Missing legacy financial snapshots stay unavailable |
 | Original attribution | Capture time, business date, store, shift, employee/terminal IDs and original bill table/policy IDs | Human table labels not present in the capture |
-| Bill items | Captured item/option names, chargeable quantities, prices, fulfillment, comments and recorded discounts | Legacy payloads without items and separate cancellation/transfer/override events |
+| Bill items | Captured item/option names, chargeable quantities, prices, fulfillment, comments and recorded discounts | Legacy payloads without items and event fields not captured by the separate evidence sources |
+| Related evidence | Session status/table-change audit and immutable confirmed-cancellation quantities | Uncaptured cancellation names/value/reason/device, price-override events and other transaction sources |
 | D01.4 branch access | Complete identity and PcPos only, branch from principal, no extra PIN | Cross-branch Back Office remains separate |
 | Offline scope | Read the local Branch database without a Central call | Branch service/LAN must still be reachable |
 | Read-only | No read audit, payment/cancellation/print job or lifecycle mutation | Authorized snapshot reprint is deferred |
@@ -54,6 +55,16 @@ or physical receipt requirements are finished.
    Recorded unit price/requested value 1.005 may coexist with rounded stored
    gross/requested amount 1.01. Do not recompute with today's rounding policy or
    hide original precision in the captured detail.
+9. Open the related-evidence panel and switch between session/table events and
+   cancellation confirmations. Each source starts its own page and retains its
+   own cursor scope. Display captured actors and timestamps, not current names
+   or terminal guesses. A cancellation may include a zero-cancelled line within
+   a partially confirmed event; do not hide that recorded evidence.
+10. Change mutable cancellation request status, current table/order data or
+    policy records, then reread evidence. Immutable recorded counts and captured
+    money remain unchanged. Evidence failure stays within its panel and does not
+    erase the original bill/financial detail. A replaced reader during a pending
+    continuation must cancel the old request and release loading state.
 
 ## Failure and isolation matrix
 
@@ -74,6 +85,10 @@ or physical receipt requirements are finished.
 | New filtered response lacks matching table/batch metadata | Client rejects it as unavailable |
 | Present bill has inconsistent identity, duplicate line IDs or recorded totals | Unavailable, no partial document or source mutation |
 | Snapshot exceeds the 1 MiB read bound | Unavailable, never a truncated bill presented as complete |
+| Evidence source missing on an older client | Unconnected, not an empty successful history |
+| Cancellation evidence has no terminal/name/price snapshot | Unknown fields remain unfilled; no current-data reconstruction |
+| Evidence cursor reused for another cash capture, session or source | 400; no broadened or mixed result |
+| Late evidence response after source/selection/scope change | Ignore it; captured bill and money remain scoped |
 
 Persistence tests exercise cursor scope, high-water membership, midnight,
 legacy identifiers, zero amounts, corruption and immutable read fingerprints.
@@ -91,6 +106,15 @@ completion path. They compare snapshots after current-data mutation, preserve
 recorded rounded values without rerunning BillCalculator, and exercise original
 table/order filters, branch isolation, malformed/oversized bill handling and
 cursor version-2 scope. Other event histories and reprint remain deferred.
+
+The related-evidence extension adds a separately versioned source cursor and
+tests actual session audit plus full/partial confirmed-cancellation flows before
+cash capture. Counts, branch isolation, high-water/maintenance binding and read
+fingerprints are checked independently of the original cash list cursor.
+See architecture/0210-pos-cash-history-evidence.md and
+api/branch-cash-history-events-v1.md. Source streams are not merged into an
+invented global timestamp order, and an empty source page is not proof that an
+operation never occurred.
 
 Before merge, record D21.3 approval for the new authenticated read contracts.
 No database migration, live PostgreSQL, deployed TLS, physical device or

@@ -1,0 +1,4 @@
+.cash-history-event-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+.cash-history-events-list { padding-inline-start: 1.25rem; }
+.cash-history-events-list > li { padding-block: .75rem; border-block-end: 1px solid currentColor; overflow-wrap: anywhere; }
+.cash-history-event-reason { white-space: pre-wrap; }
