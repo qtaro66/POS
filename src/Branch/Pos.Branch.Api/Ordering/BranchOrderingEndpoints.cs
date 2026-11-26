@@ -47,6 +47,10 @@ public static class BranchOrderingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryDetail");
         group.MapGet("/transaction-history/cash-sales/{requestId}/events", CashHistoryEndpoints.EventsAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryEvents");
+        group.MapGet("/transaction-history/cash-sales/{requestId}/shift-context", CashHistoryEndpoints.ShiftContextAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryShiftContext");
+        group.MapGet("/transaction-history/cash-sales/{requestId}/receipt-evidence", CashHistoryEndpoints.ReceiptEvidenceAsync)
+            .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryReceiptEvidence");
         group.MapGet("/transaction-history/cash-sales/{requestId}/production-orders", CashHistoryEndpoints.ProductionOrdersAsync)
             .WithMetadata(new RequestSizeLimitAttribute(0)).WithName("GetCashHistoryProductionOrders");
         group.MapGet("/transaction-history/cash-sales/{requestId}/production-orders/{snapshotId}", CashHistoryEndpoints.ProductionOrderDetailAsync)

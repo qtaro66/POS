@@ -150,3 +150,29 @@ See architecture/0211-pos-cash-history-production.md and
 api/branch-cash-history-production-v1.md. This is captured submission evidence;
 it does not prove physical printing or completed production. Reprint execution,
 its per-command PIN/permission checks and hardware acceptance remain deferred.
+
+## Recorded shift and receipt context extension
+
+1. Open a durable store/shift, capture a real cash sale and close the shift
+   without counting cash. Read its context after another shift and another store
+   become current. Preserve the original identifiers, business date, actor,
+   terminal, expected cash and null actual/difference values. Do not present the
+   later shift/store as belonging to the receipt.
+2. Exercise counted closure, closing-only evidence and an OpenShift whose result
+   retains the previous closing. Display only the selected shift's recorded
+   operations and distinguish missing evidence from a current open/closed state.
+3. Open receipt evidence before any simulation. Confirm that the optional result
+   table is not created and no write occurs. Run existing successful/failed
+   simulation commands as test setup, then read the stored result after changing
+   current menu/order data. Preserve the original plain text or failed/null text;
+   do not render a replacement or claim physical print success.
+4. Verify malformed context, inconsistent totals/status/text, excess operations,
+   oversized source data and foreign identities fail safely. Context errors must
+   leave the selected cash/bill detail and other evidence panels intact.
+5. Refresh or replace readers/selection/scope during pending reads. Hide stale
+   context immediately, abort/ignore late responses and retain independent panel
+   loading/error states. Older clients show unconnected capability.
+
+See architecture/0212-pos-cash-history-context.md and
+api/branch-cash-history-context-v1.md. All evidence remains read-only; no PIN,
+audit, simulation, print, reprint or drawer command is introduced by viewing it.

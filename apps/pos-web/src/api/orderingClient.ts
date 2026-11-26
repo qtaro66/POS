@@ -1,3 +1,4 @@
+import { parseCashHistoryShiftContext, parseCashHistoryReceiptEvidence, type CashHistoryShiftContext, type CashHistoryReceiptEvidence } from './cashHistoryContextContracts.ts'
 import { validateCashHistoryProductionQuery, isProductionSnapshotId, parseCashHistoryProductionPage, parseCashHistoryProductionDetail, type CashHistoryProductionQuery, type CashHistoryProductionPage, type CashHistoryProductionDetail } from './cashHistoryProductionContracts.ts'
 import { validateCashHistoryEventQuery, parseCashHistoryEventPage, type CashHistoryEventQuery, type CashHistoryEventPage } from './cashHistoryEventContracts.ts'
 import { isCashHistoryId, validateCashHistoryQuery, parseCashHistoryPage, parseCashHistoryDetail, type CashHistoryQuery, type CashHistoryPage, type CashHistoryDetail } from './cashHistoryContracts.ts'
@@ -438,6 +439,24 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
       try { return { kind: 'ok', value: parseCashHistoryPage(result.body, session.branchId, query) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async cashHistoryShiftContext(requestId: string, signal?: AbortSignal): Promise<QueryResult<CashHistoryShiftContext>> {
+      if (!isCashHistoryId(requestId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/transaction-history/cash-sales/' + encodeURIComponent(requestId) + '/shift-context', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCashHistoryShiftContext(result.body, session.branchId, requestId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async cashHistoryReceiptEvidence(requestId: string, signal?: AbortSignal): Promise<QueryResult<CashHistoryReceiptEvidence>> {
+      if (!isCashHistoryId(requestId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/transaction-history/cash-sales/' + encodeURIComponent(requestId) + '/receipt-evidence', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCashHistoryReceiptEvidence(result.body, session.branchId, requestId) } }
       catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     async cashHistoryProductionOrders(requestId: string, query: CashHistoryProductionQuery = {}, signal?: AbortSignal): Promise<QueryResult<CashHistoryProductionPage>> {
