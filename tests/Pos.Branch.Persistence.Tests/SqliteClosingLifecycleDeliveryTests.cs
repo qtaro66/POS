@@ -102,7 +102,7 @@ public sealed class SqliteClosingLifecycleDeliveryTests : IDisposable
         var context = await Scalar("SELECT context_json FROM closing_report_lifecycle_snapshots;");
         await Sql("DROP TABLE closing_report_context_outbox; PRAGMA user_version=34;");
         store = await Store(); await Store();
-        Assert.Equal("35", await Scalar("PRAGMA user_version;"));
+        Assert.Equal("36", await Scalar("PRAGMA user_version;"));
         Assert.Equal("1", await Scalar("SELECT count(*) FROM closing_report_context_outbox;"));
         Assert.Equal(parent, await Scalar("SELECT payload_json FROM closing_report_outbox;"));
         Assert.Equal(context, await Scalar("SELECT context_json FROM closing_report_lifecycle_snapshots;"));

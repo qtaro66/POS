@@ -129,7 +129,7 @@ public sealed class SqliteStoreCashSummaryTests : IDisposable
         Assert.Null(saved.CashSummary);
         Assert.Null((await store.ReadStoreLifecycleWorkspaceAsync("branch", Day, Now)).Stores[0].Shifts[0].CashSummary);
         old.CommandText = "PRAGMA user_version;";
-        Assert.Equal(35L, await old.ExecuteScalarAsync());
+        Assert.Equal(36L, await old.ExecuteScalarAsync());
     }
 
     private const string CapturedBill = """

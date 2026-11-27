@@ -38,6 +38,7 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
         {
             PrintDocumentKind.BillPreview => BuildBillPreview(request.Document.ContentJson),
             PrintDocumentKind.KitchenOrder => BuildKitchenOrder(request.Document.ContentJson),
+            PrintDocumentKind.KitchenOrderReprint => BuildKitchenOrder(request.Document.ContentJson, reprint: true),
             PrintDocumentKind.CancellationInspection => BuildCancellationInspection(request.Document.ContentJson),
             _ => throw new InvalidDataException("Unsupported print document kind.")
         };
@@ -191,7 +192,7 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
         return lines;
     }
 
-    private static IReadOnlyList<EscPosTextLine> BuildKitchenOrder(string json)
+    private static IReadOnlyList<EscPosTextLine> BuildKitchenOrder(string json, bool reprint = false)
     {
         var order = Deserialize<KitchenOrderDocument>(json);
         if (order.SchemaVersion != 1)
@@ -212,15 +213,24 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
         {
             throw new InvalidDataException("Kitchen Order must contain at least one item.");
         }
+        if (reprint && order.Lines.Count != 1)
+        {
+            throw new InvalidDataException("A kitchen reprint must contain exactly one original line.");
+        }
 
-        var lines = new List<EscPosTextLine>
+        var lines = new List<EscPosTextLine>();
+        if (reprint)
+        {
+            lines.Add(new("สำเนา / พิมพ์ซ้ำ", FontSize: 42, Bold: true, Alignment: EscPosTextAlignment.Center));
+        }
+        lines.AddRange(new EscPosTextLine[]
         {
             new("ใบสั่งครัว", FontSize: 36, Bold: true, Alignment: EscPosTextAlignment.Center),
             new($"โต๊ะ {order.TableId}", FontSize: 42, Bold: true, Alignment: EscPosTextAlignment.Center),
             new($"สถานี {order.ProductionStationId}", $"{order.SubmittedAt:HH:mm:ss}", 25),
             new($"Batch: {order.OrderBatchId}", FontSize: 22),
             new(new string('=', 34), Alignment: EscPosTextAlignment.Center)
-        };
+        });
         foreach (var item in order.Lines.OrderBy(item => item.LineSequence))
         {
             Validate(item);
@@ -232,7 +242,7 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
                 TopSpacingDots: 8));
             foreach (var option in item.Options ?? [])
             {
-                Require(option.OptionGroupId, "optionGroupId");
+                if (option.OptionGroupId is not null) { Require(option.OptionGroupId, "optionGroupId"); }
                 Require(option.DisplayName, "option displayName");
                 Positive(option.QuantityPerItem, "option quantityPerItem");
                 lines.Add(new EscPosTextLine(
@@ -421,6 +431,14 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
         _ => throw new InvalidDataException("Unsupported fulfillment type.")
     };
 
+    private static string Fulfillment(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Number when value.TryGetInt32(out var legacy) => Fulfillment(legacy),
+        JsonValueKind.String when value.GetString() == "dineIn" => "ทานที่ร้าน",
+        JsonValueKind.String when value.GetString() == "takeaway" => "กลับบ้าน",
+        _ => throw new InvalidDataException("Unsupported fulfillment type.")
+    };
+
     private static string Money(decimal value) => value.ToString("N2", CultureInfo.InvariantCulture);
 
     private static string SignedMoney(decimal value) => value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture);
@@ -490,7 +508,7 @@ public sealed class EscPosRasterPayloadRenderer : IPrintPayloadRenderer
         int LineSequence,
         string? DisplayName,
         int Quantity,
-        int FulfillmentType,
+        JsonElement FulfillmentType,
         string? Comment,
         IReadOnlyList<KitchenOrderOption>? Options);
 

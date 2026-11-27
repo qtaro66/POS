@@ -3,9 +3,9 @@ using Microsoft.Data.Sqlite;
 
 namespace Pos.Branch.Infrastructure.Sqlite;
 
-internal static class SqliteBranchSchema
+internal static partial class SqliteBranchSchema
 {
-    public const int CurrentVersion = 35;
+    public const int CurrentVersion = 36;
 
     private const string SchemaVersion1 = """
         CREATE TABLE IF NOT EXISTS table_sessions (
@@ -451,7 +451,7 @@ internal static class SqliteBranchSchema
                         WHERE snapshot_id = NEW.snapshot_id AND branch_id = NEW.branch_id
                           AND request_id = NEW.request_id AND table_session_id = NEW.table_session_id))
                 THEN RAISE(ABORT, 'Cancellation inspection snapshot not found or station mismatch')
-                WHEN NEW.purpose = 'KitchenOrder' AND NOT EXISTS (
+                WHEN NEW.purpose = 'KitchenOrder' AND NEW.is_reprint = 0 AND NOT EXISTS (
                     SELECT 1 FROM production_order_snapshots
                     WHERE snapshot_id = NEW.snapshot_id
                       AND branch_id = NEW.branch_id
@@ -464,7 +464,7 @@ internal static class SqliteBranchSchema
 
         CREATE TRIGGER IF NOT EXISTS print_jobs_snapshot_update_guard
         BEFORE UPDATE OF snapshot_id, purpose, target_station,
-                         branch_id, request_id, table_session_id ON print_jobs
+                         branch_id, request_id, table_session_id, is_reprint, original_print_job_id ON print_jobs
         BEGIN
             SELECT CASE
                 WHEN NEW.purpose = 'BillPreview' AND NOT EXISTS (
@@ -480,7 +480,7 @@ internal static class SqliteBranchSchema
                         WHERE snapshot_id = NEW.snapshot_id AND branch_id = NEW.branch_id
                           AND request_id = NEW.request_id AND table_session_id = NEW.table_session_id))
                 THEN RAISE(ABORT, 'Cancellation inspection snapshot not found or station mismatch')
-                WHEN NEW.purpose = 'KitchenOrder' AND NOT EXISTS (
+                WHEN NEW.purpose = 'KitchenOrder' AND NEW.is_reprint = 0 AND NOT EXISTS (
                     SELECT 1 FROM production_order_snapshots
                     WHERE snapshot_id = NEW.snapshot_id
                       AND branch_id = NEW.branch_id
@@ -1615,6 +1615,11 @@ internal static class SqliteBranchSchema
                     ON closing_report_context_outbox(branch_id,sequence) WHERE delivered_at IS NULL;
                 """, cancellationToken);
             await SqliteClosingLifecycleOutboxWriter.EnqueueAsync(connection, transaction, null, null, cancellationToken);
+        }
+
+        if (storedVersion < 36)
+        {
+            await MigrateKitchenReprintAsync(connection, transaction, cancellationToken);
         }
 
         if (storedVersion != CurrentVersion)

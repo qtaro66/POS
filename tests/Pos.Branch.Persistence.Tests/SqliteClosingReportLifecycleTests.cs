@@ -92,7 +92,7 @@ public sealed class SqliteClosingReportLifecycleTests : IDisposable
         var payload = await Scalar("SELECT payload_json FROM closing_report_outbox;");
         await Sql("DROP TABLE closing_report_context_outbox; DROP TABLE closing_report_lifecycle_snapshots; PRAGMA user_version=33;");
         var migrated = await Store();
-        Assert.Equal("35", await Scalar("PRAGMA user_version;"));
+        Assert.Equal("36", await Scalar("PRAGMA user_version;"));
         Assert.Equal(payload, await Scalar("SELECT payload_json FROM closing_report_outbox;"));
         Assert.Equal(1, (await migrated.ReadClosingReportOutboxAsync("branch", Now)).DeliveredCount);
         Assert.Null((await migrated.ReadClosingReportDetailAsync("branch", "close", Now))!.Lifecycle);

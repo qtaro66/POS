@@ -16,7 +16,8 @@ const businessTables = ['cash_sales', 'cash_sale_open_shifts', 'simulated_cash_r
   'cancellation_requests', 'cancellation_request_lines', 'cancellation_request_reasons', 'cancellation_confirmations',
   'cancellation_production_checks', 'cancellation_inspection_snapshots', 'printer_profiles', 'printer_profile_audit',
   'store_lifecycle_commands', 'store_lifecycle_sessions', 'store_lifecycle_cash_snapshots', 'cloud_sync_outbox',
-  'closing_report_outbox', 'closing_report_lifecycle_snapshots', 'closing_report_context_outbox']
+  'closing_report_outbox', 'closing_report_lifecycle_snapshots', 'closing_report_context_outbox',
+  'kitchen_reprint_snapshots', 'kitchen_reprint_requests', 'kitchen_reprint_audit']
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 const escaped = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }

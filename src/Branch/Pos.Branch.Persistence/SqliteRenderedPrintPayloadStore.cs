@@ -34,7 +34,7 @@ public sealed class SqliteRenderedPrintPayloadStore
         await using var connection = await _connections.OpenAsync(cancellationToken);
         using var job = connection.CreateCommand();
         job.CommandText = """
-            SELECT purpose
+            SELECT purpose, is_reprint
             FROM print_jobs
             WHERE print_job_id = $printJobId
               AND branch_id = $branchId
@@ -47,10 +47,16 @@ public sealed class SqliteRenderedPrintPayloadStore
             """;
         AddLeaseParameters(job, lease);
         job.Parameters.AddWithValue("$readAt", Timestamp(readAt));
-        var purpose = await job.ExecuteScalarAsync(cancellationToken) as string
-            ?? throw new InvalidOperationException("The print-job lease is not active.");
-
-        var kind = ParseKind(purpose);
+        PrintDocumentKind kind;
+        await using (var jobReader = await job.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await jobReader.ReadAsync(cancellationToken))
+            { throw new InvalidOperationException("The print-job lease is not active."); }
+            var purpose = jobReader.GetString(0);
+            var reprint = jobReader.GetInt64(1);
+            if (reprint is not (0 or 1)) { throw new InvalidOperationException("Invalid print-job copy metadata."); }
+            kind = purpose == "KitchenOrder" && reprint == 1 ? PrintDocumentKind.KitchenOrderReprint : ParseKind(purpose);
+        }
         using var snapshot = connection.CreateCommand();
         snapshot.CommandText = kind switch
         {
@@ -67,6 +73,27 @@ public sealed class SqliteRenderedPrintPayloadStore
                   AND branch_id = $branchId
                   AND production_station_id = $stationId;
                 """,
+            PrintDocumentKind.KitchenOrderReprint => """
+                SELECT copy.content_schema_version, copy.content_json, copy.content_sha256
+                FROM kitchen_reprint_snapshots AS copy
+                JOIN print_jobs AS current ON current.snapshot_id=copy.snapshot_id AND current.branch_id=copy.branch_id
+                JOIN print_jobs AS original ON original.print_job_id=copy.original_print_job_id
+                JOIN production_order_snapshots AS source ON source.snapshot_id=copy.original_snapshot_id
+                WHERE current.print_job_id=$printJobId AND current.branch_id=$branchId
+                  AND current.purpose='KitchenOrder' AND current.is_reprint=1
+                  AND current.request_id=copy.request_id AND current.table_session_id=copy.table_session_id
+                  AND current.original_print_job_id=copy.original_print_job_id
+                  AND current.target_station=copy.production_station_id
+                  AND current.assigned_printer_id=$printerId AND current.lease_owner=$workerId
+                  AND current.lease_expires_at>$readAt AND current.status='PrintQueued'
+                  AND copy.snapshot_id=$snapshotId AND copy.production_station_id=$stationId
+                  AND original.branch_id=copy.branch_id AND original.table_session_id=copy.table_session_id
+                  AND original.snapshot_id=copy.original_snapshot_id AND original.target_station=copy.production_station_id
+                  AND original.purpose='KitchenOrder' AND original.is_reprint=0 AND original.original_print_job_id IS NULL
+                  AND source.branch_id=copy.branch_id AND source.table_session_id=copy.table_session_id
+                  AND original.request_id=source.request_id
+                  AND source.order_batch_id=copy.order_batch_id AND source.production_station_id=copy.production_station_id;
+                """,
             PrintDocumentKind.CancellationInspection => """
                 SELECT content_schema_version, content_json, content_sha256
                 FROM cancellation_inspection_snapshots
@@ -77,6 +104,13 @@ public sealed class SqliteRenderedPrintPayloadStore
         snapshot.Parameters.AddWithValue("$snapshotId", lease.SnapshotId);
         snapshot.Parameters.AddWithValue("$branchId", lease.BranchId);
         snapshot.Parameters.AddWithValue("$stationId", lease.ProductionStationId);
+        if (kind == PrintDocumentKind.KitchenOrderReprint)
+        {
+            snapshot.Parameters.AddWithValue("$printJobId", lease.PrintJobId);
+            snapshot.Parameters.AddWithValue("$printerId", lease.PrinterId);
+            snapshot.Parameters.AddWithValue("$workerId", lease.WorkerId);
+            snapshot.Parameters.AddWithValue("$readAt", Timestamp(readAt));
+        }
         await using var reader = await snapshot.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {

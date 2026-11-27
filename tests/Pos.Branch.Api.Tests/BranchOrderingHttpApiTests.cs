@@ -239,14 +239,15 @@ public sealed partial class BranchOrderingHttpApiTests
         public string Path => System.IO.Path.Combine(_directory, "branch.db");
         private IConfiguration _configuration = null!;
 
-        public static async Task<Fixture> CreateAsync(bool cancellationEnabled = false)
+        public static async Task<Fixture> CreateAsync(bool cancellationEnabled = false,
+            Pos.Application.Security.IBranchEmployeePinValidator? pinValidator = null)
         {
             var fixture = new Fixture();
-            try { await fixture.InitializeAsync(cancellationEnabled); return fixture; }
+            try { await fixture.InitializeAsync(cancellationEnabled, pinValidator); return fixture; }
             catch { await fixture.DisposeAsync(); throw; }
         }
 
-        private async Task InitializeAsync(bool cancellationEnabled)
+        private async Task InitializeAsync(bool cancellationEnabled, Pos.Application.Security.IBranchEmployeePinValidator? pinValidator)
         {
             await new SqliteTableSessionCommandStore(Path).InitializeAsync();
             await Execute($$"""
@@ -269,7 +270,7 @@ public sealed partial class BranchOrderingHttpApiTests
             var builder = WebApplication.CreateBuilder();
             builder.Configuration["BranchOrdering:UntrackedCancellationItems:BRANCH-01:0"] = "ITEM-1";
             builder.Services.AddSingleton(new BranchOrderingRuntime(Path, TimeProvider.System));
-            builder.Services.AddSingleton(new Pos.Application.Security.BranchEmployeePinAuthenticationService(new LifecyclePins()));
+            builder.Services.AddSingleton(new Pos.Application.Security.BranchEmployeePinAuthenticationService(pinValidator ?? new LifecyclePins()));
             var permissions = new Pos.Branch.Api.Synchronization.BranchEmployeePermissionCache("BRANCH-01", System.IO.Path.Combine(_directory, "permissions.json"));
             using var snapshot = new MemoryStream(Encoding.UTF8.GetBytes("""{"schemaVersion":1,"branchId":"BRANCH-01","revision":1,"employees":[{"employeeId":"EMP-2","active":true,"setSoldOut":false,"openStore":true}]}"""));
             await permissions.ApplyAsync(snapshot, CancellationToken.None);
@@ -278,9 +279,13 @@ public sealed partial class BranchOrderingHttpApiTests
             _app.MapBranchOrderingIfEnabled(_configuration);
         }
 
+        public Pos.Branch.Api.Synchronization.BranchEmployeePermissionCache Permissions =>
+            _app.Services.GetRequiredService<Pos.Branch.Api.Synchronization.BranchEmployeePermissionCache>();
+
         public async Task<(int Status, JsonElement Body, string CacheControl)> Call(string name, object? body = null,
             string? routeValue = null, ClaimsPrincipal? principal = null, bool https = true, bool unknownLength = false, string? query = null, string? shiftId = null,
-            string? snapshotId = null, string? printJobId = null)
+            string? snapshotId = null, string? printJobId = null, string? orderLineId = null,
+            string? commandRequestId = null, string? rawJson = null)
         {
             var endpoint = ((IEndpointRouteBuilder)_app).DataSources.SelectMany(source => source.Endpoints)
                 .Single(candidate => candidate.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == name);
@@ -289,7 +294,7 @@ public sealed partial class BranchOrderingHttpApiTests
             context.Request.Scheme = https ? "https" : "http";
             context.Request.Path = BranchOrderingEndpoints.Prefix;
             context.Request.QueryString = new QueryString(query);
-            context.Request.Method = body is null ? "GET" : "POST";
+            context.Request.Method = body is null && rawJson is null ? "GET" : "POST";
             context.Request.RouteValues["storeSessionId"] = routeValue;
             context.Request.RouteValues["shiftId"] = shiftId;
             context.Request.RouteValues["requestId"] = routeValue;
@@ -297,11 +302,13 @@ public sealed partial class BranchOrderingHttpApiTests
             context.Request.RouteValues["tableSessionId"] = routeValue;
             context.Request.RouteValues["snapshotId"] = snapshotId;
             context.Request.RouteValues["printJobId"] = printJobId;
-            using var requestBody = new MemoryStream(Encoding.UTF8.GetBytes(body is null ? "" : JsonSerializer.Serialize(body)));
+            context.Request.RouteValues["orderLineId"] = orderLineId;
+            context.Request.RouteValues["commandRequestId"] = commandRequestId ?? routeValue;
+            using var requestBody = new MemoryStream(Encoding.UTF8.GetBytes(rawJson ?? (body is null ? "" : JsonSerializer.Serialize(body))));
             context.Request.Body = requestBody;
             context.Request.ContentLength = unknownLength ? null : requestBody.Length;
             context.Request.ContentType = "application/json";
-            context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetection(body is not null));
+            context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetection(body is not null || rawJson is not null));
             await using var output = new MemoryStream();
             context.Response.Body = output;
             var application = new ApplicationBuilder(_app.Services);

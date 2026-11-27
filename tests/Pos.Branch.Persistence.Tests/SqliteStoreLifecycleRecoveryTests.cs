@@ -123,7 +123,7 @@ public sealed class SqliteStoreLifecycleRecoveryTests : IDisposable
         store = await Store();
         Assert.Equal(saved, (await store.ReadStoreLifecycleRequestAsync("branch", "device", Target(Open()))).Result);
         old.CommandText = "PRAGMA user_version;";
-        Assert.Equal(35L, await old.ExecuteScalarAsync());
+        Assert.Equal(36L, await old.ExecuteScalarAsync());
     }
 
     public void Dispose()
