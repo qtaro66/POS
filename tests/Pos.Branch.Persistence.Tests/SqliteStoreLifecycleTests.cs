@@ -141,14 +141,14 @@ public sealed class SqliteStoreLifecycleTests : IDisposable
         await using var connection = new SqliteConnection($"Data Source={_path};Pooling=False");
         await connection.OpenAsync();
         using var old = connection.CreateCommand();
-        old.CommandText = """
+        old.CommandText = global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE store_lifecycle_cash_snapshots;
             DROP TABLE store_lifecycle_retirements;
             DROP TABLE store_lifecycle_commands;
             DROP TABLE store_lifecycle_sessions;
             INSERT INTO table_sessions VALUES ('existing','sale','table','Completed',1);
             PRAGMA user_version = 29;
-            """;
+            """);
         await old.ExecuteNonQueryAsync();
         var store = await Store();
         await store.InitializeAsync();

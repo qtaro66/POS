@@ -83,7 +83,7 @@ public sealed class SqliteClosingLifecycleFilterTests : IDisposable
     {
         await Close("legacy", parent: true, legacy: true);
         await Close("recorded", parent: true);
-        await Sql("DROP TABLE closing_report_context_outbox; PRAGMA user_version=34;");
+        await Sql(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("DROP TABLE closing_report_context_outbox; PRAGMA user_version=34;"));
         var upgraded = await Store();
         Assert.Equal("recorded", Assert.Single((await upgraded.ReadClosingReportPageAsync("branch", Now, new(LifecycleStatus: "Pending"))).Items).RequestId);
         Assert.Equal("legacy", Assert.Single((await upgraded.ReadClosingReportPageAsync("branch", Now, new(LifecycleStatus: "NotRecorded"))).Items).RequestId);

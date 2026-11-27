@@ -122,7 +122,7 @@ public sealed class SqliteClosingReportOutboxTests : IDisposable
     public async Task Version_32_backfill_is_idempotent_and_never_recalculates_missing_snapshots(bool missingSnapshot)
     {
         await Closed();
-        await Sql("DROP TABLE closing_report_context_outbox; DROP TABLE closing_report_lifecycle_snapshots; DROP TABLE closing_report_outbox; PRAGMA user_version=32;");
+        await Sql(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("DROP TABLE closing_report_context_outbox; DROP TABLE closing_report_lifecycle_snapshots; DROP TABLE closing_report_outbox; PRAGMA user_version=32;"));
         if (missingSnapshot) { await Sql("DELETE FROM store_lifecycle_cash_snapshots;"); }
         var store = await Store();
         await Store();

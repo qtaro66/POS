@@ -23,12 +23,12 @@ public sealed class SqliteBranchEmployeeStatusReaderTests
     {
         await using var database = new EmployeeStatusDatabase();
         await database.InitializeAsync();
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE branch_employee_status;
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 13;
-            """);
+            """));
 
         await database.InitializeAsync();
 

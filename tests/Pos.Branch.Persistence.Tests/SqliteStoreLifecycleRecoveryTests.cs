@@ -118,7 +118,7 @@ public sealed class SqliteStoreLifecycleRecoveryTests : IDisposable
         await using var connection = new SqliteConnection($"Data Source={_path};Pooling=False");
         await connection.OpenAsync();
         using var old = connection.CreateCommand();
-        old.CommandText = "DROP TABLE store_lifecycle_retirements; PRAGMA user_version=30;";
+        old.CommandText = global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("DROP TABLE store_lifecycle_retirements; PRAGMA user_version=30;");
         await old.ExecuteNonQueryAsync();
         store = await Store();
         Assert.Equal(saved, (await store.ReadStoreLifecycleRequestAsync("branch", "device", Target(Open()))).Result);

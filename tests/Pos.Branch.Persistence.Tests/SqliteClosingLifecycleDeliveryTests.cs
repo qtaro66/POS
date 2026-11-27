@@ -100,7 +100,7 @@ public sealed class SqliteClosingLifecycleDeliveryTests : IDisposable
         var store = await Closed(); await AckParent(store);
         var parent = await Scalar("SELECT payload_json FROM closing_report_outbox;");
         var context = await Scalar("SELECT context_json FROM closing_report_lifecycle_snapshots;");
-        await Sql("DROP TABLE closing_report_context_outbox; PRAGMA user_version=34;");
+        await Sql(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("DROP TABLE closing_report_context_outbox; PRAGMA user_version=34;"));
         store = await Store(); await Store();
         Assert.Equal("36", await Scalar("PRAGMA user_version;"));
         Assert.Equal("1", await Scalar("SELECT count(*) FROM closing_report_context_outbox;"));
@@ -124,7 +124,7 @@ public sealed class SqliteClosingLifecycleDeliveryTests : IDisposable
     public async Task Migration_34_pending_parent_remains_a_prerequisite_for_context_claim()
     {
         var store = await Closed();
-        await Sql("DROP TABLE closing_report_context_outbox; PRAGMA user_version=34;");
+        await Sql(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("DROP TABLE closing_report_context_outbox; PRAGMA user_version=34;"));
         store = await Store();
         Assert.Null(await store.ClaimClosingLifecycleAsync("branch", "context", Now, Duration));
         await AckParent(store);
@@ -138,7 +138,7 @@ public sealed class SqliteClosingLifecycleDeliveryTests : IDisposable
         await Assert.ThrowsAsync<InvalidDataException>(() => new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", Now));
         var store = await Store();
         await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadClosingReportDetailAsync("branch", "close", Now));
-        await Sql("PRAGMA user_version=34;"); await Store();
+        await Sql(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("PRAGMA user_version=34;")); await Store();
         await Sql("UPDATE closing_report_context_outbox SET available_at='private-corrupt-time';");
         await Assert.ThrowsAsync<InvalidDataException>(() => new SqliteBranchDeliveryOverviewQuery(_path).ReadAsync("branch", Now));
     }

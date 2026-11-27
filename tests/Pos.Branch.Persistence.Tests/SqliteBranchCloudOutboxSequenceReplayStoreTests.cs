@@ -131,10 +131,10 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
         await database.SeedAsync(sequence: 6, acknowledged: true);
         await new SqliteBranchCloudOutboxSequenceReplayStore(database.Path)
             .RequestAsync(Request());
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE cloud_sync_sequence_replay_leases;
             PRAGMA user_version = 20;
-            """);
+            """));
 
         await database.InitializeAsync();
         await database.InitializeAsync();
@@ -443,11 +443,11 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
     {
         await using var database = new ReplayDatabase();
         await SeedClaimAsync(database);
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE cloud_sync_sequence_replay_failures;
             DROP INDEX ux_cloud_sync_replay_request_identity;
             PRAGMA user_version = 21;
-            """);
+            """));
 
         await database.InitializeAsync();
         await database.InitializeAsync();
@@ -632,7 +632,7 @@ public sealed class SqliteBranchCloudOutboxSequenceReplayStoreTests
     {
         await using var database = new ReplayDatabase();
         await database.InitializeAsync();
-        await database.ExecuteAsync("PRAGMA user_version = 21;");
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("PRAGMA user_version = 21;"));
 
         var result = new SqliteBranchCloudReplayReadinessProbe().Check(database.Path);
 

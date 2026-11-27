@@ -38,6 +38,9 @@ kitchen_reprint_audit with foreign keys and update/delete guards. Replaces
 print-job reference guards to allow only linked copies of an original job in
 the same Branch/session/station. Existing print_jobs and attempts are not rebuilt.
 The migration is transactional. Schema readiness fixtures move from 35 to 36.
+Legacy migration fixtures remove the new, empty reprint structures before
+restoring an old version marker; their original preservation assertions remain.
+Corruption tests explicitly bypass the new guard only to seed invalid data.
 
 The payload store resolves copies only under an active lease and verifies their
 snapshot hash and source relationships. PrintDocumentKind.KitchenOrderReprint

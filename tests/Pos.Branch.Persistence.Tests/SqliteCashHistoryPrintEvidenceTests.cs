@@ -271,7 +271,7 @@ public sealed class SqliteCashHistoryPrintEvidenceTests : IDisposable
             case "request": await Sql("UPDATE production_order_snapshots SET request_id='WRONG';"); break;
             case "timestamp": await Sql("UPDATE print_jobs SET created_at='2026-11-27';"); break;
             case "snapshot-hash": await Sql("UPDATE production_order_snapshots SET content_sha256=$hash;", ("$hash", new string('0', 64))); break;
-            case "reprint-parent": await Sql("UPDATE print_jobs SET is_reprint=1,original_print_job_id=print_job_id;"); break;
+            case "reprint-parent": await Sql("DROP TRIGGER print_jobs_kitchen_reprint_update_guard; UPDATE print_jobs SET is_reprint=1,original_print_job_id=print_job_id;"); break;
         }
         var before = await File.ReadAllBytesAsync(_path);
         await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadCashHistoryPrintEvidenceAsync("branch", "cash", SnapshotId, Now));

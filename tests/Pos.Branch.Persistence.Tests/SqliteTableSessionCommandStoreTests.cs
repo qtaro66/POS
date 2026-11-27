@@ -88,11 +88,11 @@ public sealed class SqliteTableSessionCommandStoreTests
     {
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE cancellation_request_lines;
             PRAGMA user_version = 23;
             INSERT INTO cancellation_requests VALUES ('BRANCH-01', 'C1', 'TS-1', 'CancellationRequested');
-            """);
+            """));
 
         await store.InitializeAsync();
 
@@ -567,11 +567,11 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
         await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 14;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -604,7 +604,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
         await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE master_data_billing_policy;
             DROP TABLE master_data_packages;
             DROP TABLE order_line_options;
@@ -618,7 +618,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 1;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -644,7 +644,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         var store = await database.CreateStoreAsync();
         await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
         await Service(store).RequestPaymentAsync(PaymentCommand("REQ-2", "TS-1", 1));
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE master_data_billing_policy;
             DROP TABLE master_data_packages;
             DROP TABLE order_line_options;
@@ -656,7 +656,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 2;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -676,7 +676,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
         await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE master_data_billing_policy;
             DROP TABLE master_data_packages;
             ALTER TABLE command_receipts DROP COLUMN error_details_json;
@@ -689,7 +689,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 3;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -710,7 +710,7 @@ public sealed class SqliteTableSessionCommandStoreTests
     {
         await using var database = new TemporaryDatabase();
         await database.CreateStoreAsync();
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE branch_sold_out_audit;
             DROP TABLE branch_sold_out_overrides;
             DROP TABLE master_data_option_group_items;
@@ -726,7 +726,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 4;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -750,7 +750,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         await using var database = new TemporaryDatabase();
         var store = await database.CreateStoreAsync();
         await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             INSERT INTO order_batches (
                 branch_id, order_batch_id, request_id, table_session_id,
                 device_id, employee_id, submitted_at)
@@ -767,7 +767,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 5;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -794,7 +794,7 @@ public sealed class SqliteTableSessionCommandStoreTests
         var store = await database.CreateStoreAsync();
         await Service(store).OpenTableAsync(OpenCommand("REQ-1", "TS-1", "A04"));
         await Service(store).RequestPaymentAsync(PaymentCommand("REQ-2", "TS-1", 1));
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TRIGGER print_jobs_snapshot_insert_guard;
             DROP TRIGGER print_jobs_snapshot_update_guard;
             DROP TABLE production_order_snapshots;
@@ -839,7 +839,7 @@ public sealed class SqliteTableSessionCommandStoreTests
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 6;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -873,13 +873,13 @@ public sealed class SqliteTableSessionCommandStoreTests
     {
         await using var database = new TemporaryDatabase();
         await database.CreateStoreAsync();
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE printer_profile_audit;
             DROP TABLE printer_profiles;
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 7;
-            """);
+            """));
 
         var migratedStore = new SqliteTableSessionCommandStore(
             database.Path,
@@ -1463,14 +1463,14 @@ public sealed class SqliteTableSessionCommandStoreTests
     public async Task Initialize_rejects_newer_schema_without_downgrading_version()
     {
         await using var database = new TemporaryDatabase();
-        await database.ExecuteAsync("PRAGMA user_version = 36;");
+        await database.ExecuteAsync("PRAGMA user_version = 37;");
         var store = new SqliteTableSessionCommandStore(database.Path, new StaticBillPreviewContentSource());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.InitializeAsync());
 
-        Assert.Contains("schema version 36", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(36L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Contains("schema version 37", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(37L, await database.ScalarAsync<long>("PRAGMA user_version;"));
     }
 
     [Fact]

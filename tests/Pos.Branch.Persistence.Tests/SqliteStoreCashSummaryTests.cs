@@ -121,7 +121,7 @@ public sealed class SqliteStoreCashSummaryTests : IDisposable
         await using var connection = new SqliteConnection($"Data Source={_path};Pooling=False");
         await connection.OpenAsync();
         using var old = connection.CreateCommand();
-        old.CommandText = "DROP TABLE store_lifecycle_cash_snapshots; PRAGMA user_version=31;";
+        old.CommandText = global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("DROP TABLE store_lifecycle_cash_snapshots; PRAGMA user_version=31;");
         await old.ExecuteNonQueryAsync();
         store = await Store();
         var saved = await store.ReadStoreShiftClosingAsync("branch", "store", "first");
