@@ -52,6 +52,7 @@ public sealed class CentralEmployeePermissionsMtlsTests
             [source + ":0:Employees:0:EmployeeId"] = "E1",
             [source + ":0:Employees:0:Active"] = "true",
             [source + ":0:Employees:0:SetSoldOut"] = "true",
+            [source + ":0:Employees:0:ReprintKitchenOrder"] = "true",
             [source + ":1:BranchId"] = "B2",
             [source + ":1:Revision"] = "2"
         });
@@ -114,12 +115,15 @@ public sealed class CentralEmployeePermissionsMtlsTests
             Assert.NotNull(snapshot);
             Assert.Equal("B1", snapshot.BranchId);
             Assert.True(Assert.Single(snapshot.Employees).SetSoldOut);
+            Assert.True(Assert.Single(snapshot.Employees).ReprintKitchenOrder);
 
             var clients = new LoopbackClientFactory(handler, url);
             var cache = new BranchEmployeePermissionCache("B1", cachePath);
             using var polling = new BranchEmployeePermissionPollingService(
                 clients, cache, NullLogger<BranchEmployeePermissionPollingService>.Instance);
             Assert.Equal(PermissionRefreshOutcome.Updated, await polling.RefreshAsync(timeout.Token));
+            Assert.True(cache.CanReprintKitchenOrder("B1", "E1"));
+            Assert.False(cache.CanReprintKitchenOrder("B2", "E1"));
             await InitializeBranchAsync(databasePath, timeout.Token);
             var runtime = new BranchOrderingRuntime(databasePath, TimeProvider.System);
             using var registryPolling = new BranchTableRegistryPollingService(
@@ -155,13 +159,16 @@ public sealed class CentralEmployeePermissionsMtlsTests
             using var restartedPolling = new BranchEmployeePermissionPollingService(
                 clients, restoredCache, NullLogger<BranchEmployeePermissionPollingService>.Instance);
             Assert.Equal(PermissionRefreshOutcome.Unavailable, await restartedPolling.RefreshAsync(timeout.Token));
+            Assert.True(restoredCache.CanReprintKitchenOrder("B1", "E1"));
             await AssertAdjustmentAsync(200, new(Guid.NewGuid(), "I1", true, false), restoredCache);
             Assert.Empty((await runtime.SoldOut.ReadAsync("B1", "", 0, timeout.Token)).Items);
 
             app.Configuration[certificate + "Enabled"] = "true";
             app.Configuration[source + ":0:Revision"] = "2";
             app.Configuration[source + ":0:Employees:0:SetSoldOut"] = "false";
+            app.Configuration[source + ":0:Employees:0:ReprintKitchenOrder"] = "false";
             Assert.Equal(PermissionRefreshOutcome.Updated, await restartedPolling.RefreshAsync(timeout.Token));
+            Assert.False(restoredCache.CanReprintKitchenOrder("B1", "E1"));
             await AssertAdjustmentAsync(403, set with { OperationId = Guid.NewGuid() }, restoredCache);
             Assert.Empty((await runtime.SoldOut.ReadAsync("B1", "", 0, timeout.Token)).Items);
             await AssertAuditAsync(databasePath, timeout.Token);

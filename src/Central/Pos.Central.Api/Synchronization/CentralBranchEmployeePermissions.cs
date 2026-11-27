@@ -44,7 +44,12 @@ public static class CentralBranchEmployeePermissions
             {
                 return TypedResults.StatusCode(503);
             }
-            employees.Add(new(id, active, active && setSoldOut, active && openStore));
+            var reprintKitchenOrder = false;
+            if (employee["ReprintKitchenOrder"] is string reprintPermission && !bool.TryParse(reprintPermission, out reprintKitchenOrder))
+            {
+                return TypedResults.StatusCode(503);
+            }
+            employees.Add(new(id, active, active && setSoldOut, active && openStore, active && reprintKitchenOrder));
         }
 
         return TypedResults.Ok(new BranchEmployeePermissionSnapshot(1, identity.BranchId, revision, employees));
