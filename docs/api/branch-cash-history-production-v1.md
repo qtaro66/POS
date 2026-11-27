@@ -50,3 +50,7 @@ related-event cursor version 1 remain independent and unchanged.
 
 These are read-only contracts with no PIN, read audit or print command. D21.3
 approval is required before merge.
+
+Original kitchen print job and paginated send-attempt observations are described
+in branch-cash-history-print-evidence-v1.md. They are separate current evidence
+reads and do not rewrite this original submission snapshot.

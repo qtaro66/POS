@@ -176,3 +176,31 @@ its per-command PIN/permission checks and hardware acceptance remain deferred.
 See architecture/0212-pos-cash-history-context.md and
 api/branch-cash-history-context-v1.md. All evidence remains read-only; no PIN,
 audit, simulation, print, reprint or drawer command is introduced by viewing it.
+
+## Original kitchen print evidence extension
+
+1. Capture a station-routed order and cash sale. Follow a bill line or confirmed
+   cancellation line to its original production detail, then inspect the saved
+   original kitchen job and recorded attempt pages. Preserve original station
+   and submit identity; changing current menu/printer settings must not replace
+   them.
+2. Exercise real dispatch-store transitions with local fake adapters: Connecting,
+   pre-send Failed, Dispatching, PrintDispatched and Unknown. Confirm that the
+   source states/times are readable and an Unknown attempt never enables retry.
+   PrintDispatched must not be presented as confirmed paper output.
+3. Page attempts, append another attempt, update active status and refresh. Freeze
+   page membership at the initial high-water position while allowing newly read
+   job/active-attempt status to change. Reject mixed-subject/limit/schema cursors.
+4. Verify missing job, missing/foreign parent/snapshot/job, corrupt hash/source
+   and unsafe retry flags. Preserve cash/bill/production detail when only print
+   evidence is unavailable. Expose no printer addresses, worker/lease identifiers,
+   raw errors, payload bytes or hashes.
+5. Replace readers, change selected line/subject/scope or lock during a pending
+   evidence/continuation read. Abort or ignore old responses, release loading
+   state and show explicit unconnected capability for older clients. Opening
+   evidence must leave database/schema/audit/print state unchanged.
+
+See architecture/0213-pos-cash-history-print-evidence.md and
+api/branch-cash-history-print-evidence-v1.md. This remains read-only original-job
+evidence; future reprint execution/storage and physical hardware acceptance are
+outside this extension.
