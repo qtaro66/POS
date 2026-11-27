@@ -1,3 +1,4 @@
+import { validateCashHistoryPrintQuery, parseCashHistoryPrintEvidence, parseCashHistoryPrintAttempts, type CashHistoryPrintQuery, type CashHistoryPrintEvidence, type CashHistoryPrintAttemptsPage } from './cashHistoryPrintContracts.ts'
 import { parseCashHistoryShiftContext, parseCashHistoryReceiptEvidence, type CashHistoryShiftContext, type CashHistoryReceiptEvidence } from './cashHistoryContextContracts.ts'
 import { validateCashHistoryProductionQuery, isProductionSnapshotId, parseCashHistoryProductionPage, parseCashHistoryProductionDetail, type CashHistoryProductionQuery, type CashHistoryProductionPage, type CashHistoryProductionDetail } from './cashHistoryProductionContracts.ts'
 import { validateCashHistoryEventQuery, parseCashHistoryEventPage, type CashHistoryEventQuery, type CashHistoryEventPage } from './cashHistoryEventContracts.ts'
@@ -440,6 +441,23 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
       if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
       try { return { kind: 'ok', value: parseCashHistoryPage(result.body, session.branchId, query) } }
       catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async cashHistoryPrintEvidence(requestId: string, snapshotId: string, signal?: AbortSignal): Promise<QueryResult<CashHistoryPrintEvidence>> {
+      if (!isCashHistoryId(requestId) || !isProductionSnapshotId(snapshotId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request('/transaction-history/cash-sales/' + encodeURIComponent(requestId) + '/production-orders/' + encodeURIComponent(snapshotId) + '/print-evidence', 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCashHistoryPrintEvidence(result.body, session.branchId, requestId, snapshotId) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
+    async cashHistoryPrintAttempts(requestId: string, snapshotId: string, printJobId: string, query: CashHistoryPrintQuery = {}, signal?: AbortSignal): Promise<QueryResult<CashHistoryPrintAttemptsPage>> {
+      try { if (!isCashHistoryId(requestId) || !isProductionSnapshotId(snapshotId) || !isProductionSnapshotId(printJobId)) throw new Error('Invalid identity'); validateCashHistoryPrintQuery(query) } catch { return { kind: 'unavailable', reason: 'protocol' } }
+      const parameters = new URLSearchParams({ limit: String(query.limit ?? 20) }); if (query.cursor !== undefined) parameters.set('cursor', query.cursor)
+      const result = await request('/transaction-history/cash-sales/' + encodeURIComponent(requestId) + '/production-orders/' + encodeURIComponent(snapshotId) + '/print-jobs/' + encodeURIComponent(printJobId) + '/attempts?' + parameters.toString(), 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseCashHistoryPrintAttempts(result.body, session.branchId, requestId, snapshotId, printJobId, query) } } catch { return { kind: 'unavailable', reason: 'protocol' } }
     },
     async cashHistoryShiftContext(requestId: string, signal?: AbortSignal): Promise<QueryResult<CashHistoryShiftContext>> {
       if (!isCashHistoryId(requestId)) return { kind: 'unavailable', reason: 'protocol' }

@@ -6,7 +6,7 @@ import type { OrderingReadClient } from '../ordering/readController.ts'
 import type { CashHistoryBill, CashHistoryDetail, CashHistoryDiscount, CashHistoryItem, CashHistoryPage, CashHistoryQuery } from '../api/cashHistoryContracts.ts'
 import './CashHistoryWorkspace.css'
 
-type Port = Pick<OrderingReadClient, 'cashHistory' | 'cashHistoryDetail' | 'cashHistoryEvents' | 'cashHistoryProductionOrders' | 'cashHistoryProductionOrderDetail' | 'cashHistoryShiftContext' | 'cashHistoryReceiptEvidence'>
+type Port = Pick<OrderingReadClient, 'cashHistory' | 'cashHistoryDetail' | 'cashHistoryEvents' | 'cashHistoryProductionOrders' | 'cashHistoryProductionOrderDetail' | 'cashHistoryShiftContext' | 'cashHistoryReceiptEvidence' | 'cashHistoryPrintEvidence' | 'cashHistoryPrintAttempts'>
 const money = (value: number) => value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 const date = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' })
 function Time({ value }: { value: string }) { return <time dateTime={value}>{date.format(new Date(value))}</time> }
@@ -17,14 +17,14 @@ const same = (left: CashHistoryItem, right: CashHistoryItem) => Object.keys(left
 function Discount({ value }: { value: CashHistoryDiscount | null }) {
   return value ? <span>{value.kind === 'Percentage' ? `${value.requestedValue}%` : `${money(value.requestedValue)} บาท`} · ส่วนลดที่บันทึก {money(value.appliedAmount)} บาท</span> : <span>ไม่มีส่วนลดที่บันทึกไว้</span>
 }
-function Bill({ value }: { value: CashHistoryBill }) {
+function Bill({ value, onInspectOrderLine }: { value: CashHistoryBill; onInspectOrderLine?: (lineId: string) => void }) {
   return <section aria-label="รายการสินค้าจากใบคิดเงินเดิม" className="cash-history-bill">
     <h4>รายการสินค้าที่บันทึกไว้</h4>
     <p>รหัสโต๊ะ ณ คิดเงิน {value.tableId} · คำขอคิดเงินเดิม {value.paymentRequestId}</p>
     <p>คิดเงินเมื่อ <Time value={value.capturedAt} /> · ข้อมูลเมนูรุ่น {value.masterDataVersion} · นโยบายคำนวณรุ่น {value.calculationPolicyVersion}</p>
     <p>VAT ที่บันทึก {value.vatRate}% · ค่าบริการที่บันทึก {value.serviceChargeRate}%</p>
     {value.items.length === 0 ? <p>ใบคิดเงินเดิมบันทึกรายการสินค้าเป็นรายการว่าง</p> : <ol>{value.items.map(line => <li key={line.orderLineId}>
-      <h5 className="cash-history-recorded-text">{line.displayName}</h5><p>ชุดออเดอร์ {line.orderBatchId} · รหัสรายการ {line.orderLineId}</p>
+      <h5 className="cash-history-recorded-text">{line.displayName}</h5>{onInspectOrderLine && <button type="button" onClick={() => onInspectOrderLine(line.orderLineId)}>ดูข้อมูลตอนส่งรายการนี้</button>}<p>ชุดออเดอร์ {line.orderBatchId} · รหัสรายการ {line.orderLineId}</p>
       <p>{line.fulfillmentType === 'DineIn' ? 'ทานที่ร้าน' : 'กลับบ้าน'} · จำนวนที่คิดเงิน {line.quantity} · ราคาต่อหน่วยที่บันทึก {money(line.unitPrice)} บาท</p>
       {line.options.length > 0 && <ul aria-label={'ตัวเลือกของ ' + line.orderLineId}>{line.options.map((option, index) => <li key={index} className="cash-history-recorded-text">{option.displayName} ×{option.quantityPerItem} ต่อหน่วย · {money(option.unitPrice)} บาท</li>)}</ul>}
       {line.comment !== null && <p className="cash-history-recorded-text">หมายเหตุ: {line.comment}</p>}
@@ -34,7 +34,7 @@ function Bill({ value }: { value: CashHistoryBill }) {
     <p>ราคาและยอดเป็นข้อมูลที่บันทึกเดิม ไม่คำนวณใหม่ด้วยเมนูหรือนโยบายปัจจุบัน</p>
   </section>
 }
-function Detail({ item, read, eventsRead, productionRead, productionDetailRead, shiftRead, receiptRead }: { shiftRead: Port['cashHistoryShiftContext']; receiptRead: Port['cashHistoryReceiptEvidence']; productionRead: Port['cashHistoryProductionOrders']; productionDetailRead: Port['cashHistoryProductionOrderDetail']; item: CashHistoryItem; read: Port['cashHistoryDetail']; eventsRead: Port['cashHistoryEvents'] }) {
+function Detail({ item, read, eventsRead, productionRead, productionDetailRead, shiftRead, receiptRead, printRead, printAttemptsRead }: { printRead: Port['cashHistoryPrintEvidence']; printAttemptsRead: Port['cashHistoryPrintAttempts']; shiftRead: Port['cashHistoryShiftContext']; receiptRead: Port['cashHistoryReceiptEvidence']; productionRead: Port['cashHistoryProductionOrders']; productionDetailRead: Port['cashHistoryProductionOrderDetail']; item: CashHistoryItem; read: Port['cashHistoryDetail']; eventsRead: Port['cashHistoryEvents'] }) {
   const [focus, setFocus] = useState<{ orderLineId: string; revision: number } | undefined>(undefined)
   const [snapshot, setSnapshot] = useState<{ owner: typeof read; value: CashHistoryDetail | null } | null>(null)
   useEffect(() => {
@@ -61,10 +61,10 @@ function Detail({ item, read, eventsRead, productionRead, productionDetailRead, 
         ['ค่าบริการ', 'serviceChargeAmount'], ['ยอดก่อนปัดเศษ', 'totalBeforeRounding'], ['ปัดเศษ', 'roundingAdjustment'],
         ['ยอดสุทธิ', 'amountDue'], ['VAT รวมในราคา', 'vatInclusiveAmount'], ['ยอดก่อน VAT', 'amountBeforeVat'],
       ] as const).map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{money(detail.financials![key])} บาท</dd></div>)}</dl></section> : <p>รายการเดิมไม่มีรายละเอียดส่วนลด ภาษี และยอดแยกที่บันทึกไว้</p>}
-      {detail.bill ? <Bill value={detail.bill} /> : <p>{detail.bill === null ? 'รายการเดิมไม่ได้บันทึกรายละเอียดสินค้าที่อ่านได้' : 'ยังไม่ทราบรายละเอียดสินค้าเดิมจากบริการสาขารุ่นนี้'} ไม่คำนวณย้อนหลังจากข้อมูลปัจจุบัน</p>}
+      {detail.bill ? <Bill value={detail.bill} onInspectOrderLine={productionRead && productionDetailRead ? orderLineId => setFocus(old => ({ orderLineId, revision: (old?.revision ?? 0) + 1 })) : undefined} /> : <p>{detail.bill === null ? 'รายการเดิมไม่ได้บันทึกรายละเอียดสินค้าที่อ่านได้' : 'ยังไม่ทราบรายละเอียดสินค้าเดิมจากบริการสาขารุ่นนี้'} ไม่คำนวณย้อนหลังจากข้อมูลปัจจุบัน</p>}
       <CashHistoryContextPanels shiftRead={shiftRead} receiptRead={receiptRead} branchId={detail.branchId} item={value} />
       <CashHistoryEvents onInspectOrderLine={productionRead && productionDetailRead ? orderLineId => setFocus(old => ({ orderLineId, revision: (old?.revision ?? 0) + 1 })) : undefined} read={eventsRead} branchId={detail.branchId} requestId={value.requestId} tableSessionId={value.tableSessionId} />
-      <CashHistoryProductionOrders read={productionRead} detailRead={productionDetailRead} branchId={detail.branchId} requestId={value.requestId} tableSessionId={value.tableSessionId} focus={focus} />
+      <CashHistoryProductionOrders printRead={printRead} attemptsRead={printAttemptsRead} read={productionRead} detailRead={productionDetailRead} branchId={detail.branchId} requestId={value.requestId} tableSessionId={value.tableSessionId} focus={focus} />
       <p>หลักฐานนี้ไม่ครอบคลุมเหตุการณ์ปรับราคาหรือมูลค่าการยกเลิกที่ไม่ได้บันทึกไว้</p>
     </>}
   </section>
@@ -111,7 +111,7 @@ function Results({ port, query }: { port: Port; query: CashHistoryQuery }) {
       {page.nextCursor && <button type="button" onClick={() => { void more() }} disabled={moreState.loading}>{moreState.loading ? 'กำลังอ่านหน้าถัดไป' : 'อ่านธุรกรรมเพิ่มเติม'}</button>}
       {moreState.error && <p role="alert">{moreState.error}</p>}
     </>}
-  </section>{selected && page ? <Detail key={selected.requestId} item={selected} read={port.cashHistoryDetail} eventsRead={port.cashHistoryEvents} productionRead={port.cashHistoryProductionOrders} productionDetailRead={port.cashHistoryProductionOrderDetail} shiftRead={port.cashHistoryShiftContext} receiptRead={port.cashHistoryReceiptEvidence} /> : <p className="cash-history-detail">เลือกรายการเพื่อดูรายละเอียดที่บันทึกไว้</p>}</div>
+  </section>{selected && page ? <Detail key={selected.requestId} item={selected} read={port.cashHistoryDetail} eventsRead={port.cashHistoryEvents} productionRead={port.cashHistoryProductionOrders} productionDetailRead={port.cashHistoryProductionOrderDetail} shiftRead={port.cashHistoryShiftContext} receiptRead={port.cashHistoryReceiptEvidence} printRead={port.cashHistoryPrintEvidence} printAttemptsRead={port.cashHistoryPrintAttempts} /> : <p className="cash-history-detail">เลือกรายการเพื่อดูรายละเอียดที่บันทึกไว้</p>}</div>
 }
 function Workspace({ port }: { port: Port }) {
   const [day, setDay] = useState(''), [receipt, setReceipt] = useState(''), [table, setTable] = useState('')

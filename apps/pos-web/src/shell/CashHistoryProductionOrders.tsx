@@ -1,11 +1,12 @@
+import { CashHistoryPrintEvidence } from './CashHistoryPrintEvidence.tsx'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { OrderingReadClient } from '../ordering/readController.ts'
 import { parseCashHistoryProductionPage, parseCashHistoryProductionDetail, type CashHistoryProductionQuery, type CashHistoryProductionPage, type CashHistoryProductionItem, type CashHistoryProductionDetail } from '../api/cashHistoryProductionContracts.ts'
 const dates = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' })
 type Read = OrderingReadClient['cashHistoryProductionOrders']
 type DetailRead = OrderingReadClient['cashHistoryProductionOrderDetail']
-interface Props { read: Read; detailRead: DetailRead; branchId: string; requestId: string; tableSessionId: string; focus?: { orderLineId: string; revision: number } }
-function Detail({ read, item, branchId, requestId, tableSessionId }: { read: DetailRead; item: CashHistoryProductionItem; branchId: string; requestId: string; tableSessionId: string }) {
+interface Props { printRead?: OrderingReadClient['cashHistoryPrintEvidence']; attemptsRead?: OrderingReadClient['cashHistoryPrintAttempts']; read: Read; detailRead: DetailRead; branchId: string; requestId: string; tableSessionId: string; focus?: { orderLineId: string; revision: number } }
+function Detail({ read, item, branchId, requestId, tableSessionId, printRead, attemptsRead }: { printRead?: Props['printRead']; attemptsRead?: Props['attemptsRead']; read: DetailRead; item: CashHistoryProductionItem; branchId: string; requestId: string; tableSessionId: string }) {
   const [state, setState] = useState<{ owner: DetailRead; detail: CashHistoryProductionDetail | null } | null>(null)
   useEffect(() => {
     const abort = new AbortController()
@@ -22,9 +23,10 @@ function Detail({ read, item, branchId, requestId, tableSessionId }: { read: Det
     <p>รหัสโต๊ะตอนส่ง {item.tableId} · สถานีเดิม {item.productionStationId} · ชุดออเดอร์ {item.orderBatchId}</p><p>คำขอส่งเดิม {item.submittedRequestId} · บันทึกเมื่อ <time dateTime={item.submittedAt}>{dates.format(new Date(item.submittedAt))}</time></p>
     <ol>{current.detail.lines.map(line => <li key={line.orderLineId}><h6 className="cash-history-recorded-text">{line.displayName}</h6><p>รหัสรายการ {line.orderLineId} · ลำดับเดิม {line.lineSequence}</p><p>จำนวนตอนส่ง {line.quantity} · {line.fulfillmentType === 'DineIn' ? 'ทานที่ร้าน' : 'กลับบ้าน'}</p>
       {line.options.length > 0 && <ul>{line.options.map((o, index) => <li key={index} className="cash-history-recorded-text">{o.displayName} ×{o.quantityPerItem} ต่อหน่วย</li>)}</ul>}{line.comment !== null && <p className="cash-history-recorded-text">หมายเหตุเดิม: {line.comment}</p>}</li>)}</ol>
+    <CashHistoryPrintEvidence read={printRead} attemptsRead={attemptsRead} branchId={branchId} requestId={requestId} snapshot={item} />
   </>}</section>
 }
-function Results({ read, detailRead, branchId, requestId, tableSessionId, query }: Props & { query: CashHistoryProductionQuery }) {
+function Results({ read, detailRead, branchId, requestId, tableSessionId, query, printRead, attemptsRead }: Props & { query: CashHistoryProductionQuery }) {
   const [state, setState] = useState<{ owner: Read; page: CashHistoryProductionPage | null } | null>(null)
   const [selected, setSelected] = useState<{ owner: Read; item: CashHistoryProductionItem } | null>(null)
   const [moreState, setMoreState] = useState<{ owner: Read; loading: boolean; error: string } | null>(null)
@@ -57,7 +59,7 @@ function Results({ read, detailRead, branchId, requestId, tableSessionId, query 
   return !current ? <p role="status">กำลังอ่านงานผลิตเดิม</p> : !page ? <p role="alert">ยังอ่านงานผลิตเดิมไม่ได้ ยอดชำระที่บันทึกยังคงเดิม</p> : <>
     {page.items.length === 0 ? <p>ไม่พบข้อมูลงานผลิตเดิมตามตัวกรองในข้อมูลสาขาที่อ่านได้ ไม่ได้ยืนยันว่าไม่มีออเดอร์</p> : <ul>{page.items.map(item => <li key={item.snapshotId}><button type="button" aria-pressed={selected?.owner === read && selected?.item.snapshotId === item.snapshotId} onClick={() => setSelected({ owner: read, item })}>ดูงานผลิตเดิม {item.productionStationId} · {item.orderBatchId} · {item.lineCount} รายการ</button></li>)}</ul>}
     {page.nextCursor && <button type="button" disabled={moreLoading} onClick={() => { void more() }}>{moreLoading ? 'กำลังอ่านงานผลิตเดิมเพิ่มเติม' : 'อ่านงานผลิตเดิมเพิ่มเติม'}</button>}{moreState !== null && moreState.owner === read && moreState.error && <p role="alert">{moreState.error}</p>}
-    {selected && selected.owner === read && page.items.some(item => item.snapshotId === selected.item.snapshotId) && <Detail key={selected.item.snapshotId} read={detailRead} item={selected.item} branchId={branchId} requestId={requestId} tableSessionId={tableSessionId} />}
+    {selected && selected.owner === read && page.items.some(item => item.snapshotId === selected.item.snapshotId) && <Detail key={selected.item.snapshotId} printRead={printRead} attemptsRead={attemptsRead} read={detailRead} item={selected.item} branchId={branchId} requestId={requestId} tableSessionId={tableSessionId} />}
   </>
 }
 function Panel(props: Props) {
