@@ -1,5 +1,10 @@
 # Captured cash history acceptance
 
+For consolidated local Edge coverage of the implemented views, see
+architecture/0214-pc-pos-cash-history-browser-acceptance.md and
+pc-pos-cash-history-browser-evidence.md. Generated per-commit reports remain
+ignored local artifacts, separate from this versioned checklist.
+
 Use synthetic settlements in an isolated Branch database. This slice covers
 saved cash settlement history and is not a declaration that all D18.8 history
 or physical receipt requirements are finished.
