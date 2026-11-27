@@ -21,6 +21,7 @@ if (args.Length is < 1 or > 2 || !File.Exists(Path.Combine(args[0], "index.html"
 }
 
 var alternate = Environment.GetEnvironmentVariable("POS_BROWSER_ALTERNATE_BRANCH") == "1";
+var historyFixture = Environment.GetEnvironmentVariable("POS_BROWSER_HISTORY_FIXTURE") == "1";
 var branch = alternate ? "BROWSER-TEST-B" : "BROWSER-TEST";
 var port = alternate ? 17445 : 17443;
 const string SecondEmployee = "TEST-EMPLOYEE-B";
@@ -61,6 +62,7 @@ try
             new TableRegistry(1, branch, "TEST",
                 [new("A01", "Browser table A01", "Test zone", 1), new("A02", "Browser table A02", "Test zone", 2)]),
             CancellationToken.None);
+        if (historyFixture) { await CashHistoryFixture.SeedAsync(database, branch, Employee); }
     }
 
     using var key = RSA.Create(2048);
@@ -102,7 +104,7 @@ try
         await permissions.ApplyAsync(content, CancellationToken.None);
     }
     builder.Services.AddSingleton(permissions);
-    if (persistent)
+    if (persistent && !historyFixture)
     {
         const string delivery = "BranchCloudOutboxDelivery:";
         builder.Configuration[delivery + "Enabled"] = "true";
