@@ -65,4 +65,50 @@ public sealed class CentralBranchEmployeePermissionsTests
             Assert.Equal(permitted, Assert.Single(snapshot.Employees).OpenStore);
         }
     }
+
+    [Theory]
+    [InlineData(null, true, 200, false)]
+    [InlineData("true", true, 200, true)]
+    [InlineData("false", true, 200, false)]
+    [InlineData("true", false, 200, false)]
+    [InlineData("invalid", true, 503, false)]
+    [InlineData("", true, 503, false)]
+    public void Kitchen_reprint_permission_is_optional_scoped_and_suppressed_when_inactive(
+        string? permission, bool active, int expected, bool permitted)
+    {
+        var source = CentralBranchEmployeePermissions.Source;
+        var prefix = source + ":0";
+        var values = new Dictionary<string, string?>
+        {
+            [prefix + ":BranchId"] = "B1",
+            [prefix + ":Revision"] = "2",
+            [prefix + ":Employees:0:EmployeeId"] = "E1",
+            [prefix + ":Employees:0:Active"] = active.ToString(),
+            [prefix + ":Employees:0:SetSoldOut"] = "true",
+            [prefix + ":Employees:0:OpenStore"] = "true",
+            [source + ":1:BranchId"] = "B2",
+            [source + ":1:Revision"] = "99",
+            [source + ":1:Employees:0:EmployeeId"] = "E1",
+            [source + ":1:Employees:0:Active"] = "true",
+            [source + ":1:Employees:0:SetSoldOut"] = "false",
+            [source + ":1:Employees:0:ReprintKitchenOrder"] = "true"
+        };
+        if (permission is not null) { values[prefix + ":Employees:0:ReprintKitchenOrder"] = permission; }
+        var context = new DefaultHttpContext(); context.Request.Scheme = "https";
+        context.Request.QueryString = new QueryString("?branchId=B2");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(CentralCloudClaimTypes.BranchId, "B1")], CentralBranchCertificateAuthentication.SchemeName));
+        var result = CentralBranchEmployeePermissions.Read(context, principal,
+            new ConfigurationBuilder().AddInMemoryCollection(values).Build());
+        Assert.Equal(expected, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal("no-store", context.Response.Headers.CacheControl.ToString());
+        if (expected == 200)
+        {
+            var snapshot = Assert.IsType<BranchEmployeePermissionSnapshot>(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
+            Assert.Equal(1, snapshot.SchemaVersion); Assert.Equal("B1", snapshot.BranchId); Assert.Equal(2, snapshot.Revision);
+            var employee = Assert.Single(snapshot.Employees);
+            Assert.Equal(permitted, employee.ReprintKitchenOrder);
+            Assert.Equal(active, employee.SetSoldOut); Assert.Equal(active, employee.OpenStore);
+        }
+    }
 }

@@ -24,6 +24,11 @@ public sealed class BranchEmployeePermissionCache(string branchId, string path)
         && Volatile.Read(ref _current)?.Employees.Any(entry =>
             entry.Active && entry.OpenStore && string.Equals(entry.EmployeeId, employeeId, StringComparison.Ordinal)) == true;
 
+    public bool CanReprintKitchenOrder(string requestBranchId, string employeeId) =>
+        IsForBranch(requestBranchId)
+        && Volatile.Read(ref _current)?.Employees.Any(entry =>
+            entry.Active && entry.ReprintKitchenOrder && string.Equals(entry.EmployeeId, employeeId, StringComparison.Ordinal)) == true;
+
     // The synchronization worker is the only writer.
     public async Task RestoreAsync(CancellationToken cancellationToken)
     {
@@ -62,6 +67,9 @@ public sealed class BranchEmployeePermissionCache(string branchId, string path)
         var length = await stream.ReadAtLeastAsync(bytes, bytes.Length, false, cancellationToken);
         if (length > MaxBytes) { return null; }
 
+        using var document = JsonDocument.Parse(bytes.AsMemory(0, length));
+        if (!HasUniqueProperties(document.RootElement)) { return null; }
+
         var snapshot = JsonSerializer.Deserialize<BranchEmployeePermissionSnapshot>(bytes.AsSpan(0, length), Json);
         if (snapshot is not { SchemaVersion: 1, Revision: > 0, Employees.Count: <= 10000 }
             || !string.Equals(snapshot.BranchId, branchId, StringComparison.Ordinal)) { return null; }
@@ -70,5 +78,26 @@ public sealed class BranchEmployeePermissionCache(string branchId, string path)
         return snapshot.Employees.All(entry => entry?.EmployeeId is { Length: > 0 and <= 128 } id
             && id == id.Trim() && !id.Any(char.IsControl) && ids.Add(id))
             ? snapshot : null;
+    }
+
+    private static bool HasUniqueProperties(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            // Web deserialization matches names without case sensitivity, so reject aliases too.
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in value.EnumerateObject())
+            {
+                if (!names.Add(property.Name) || !HasUniqueProperties(property.Value)) { return false; }
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+            {
+                if (!HasUniqueProperties(item)) { return false; }
+            }
+        }
+        return true;
     }
 }

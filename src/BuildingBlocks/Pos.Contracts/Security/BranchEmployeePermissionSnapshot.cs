@@ -6,4 +6,5 @@ public sealed record BranchEmployeePermissionSnapshot(
     long Revision,
     IReadOnlyList<BranchEmployeePermissionEntry> Employees);
 
-public sealed record BranchEmployeePermissionEntry(string EmployeeId, bool Active, bool SetSoldOut, bool OpenStore = false);
+public sealed record BranchEmployeePermissionEntry(string EmployeeId, bool Active, bool SetSoldOut,
+    bool OpenStore = false, bool ReprintKitchenOrder = false);
