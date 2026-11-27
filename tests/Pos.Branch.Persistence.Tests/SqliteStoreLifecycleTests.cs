@@ -141,14 +141,14 @@ public sealed class SqliteStoreLifecycleTests : IDisposable
         await using var connection = new SqliteConnection($"Data Source={_path};Pooling=False");
         await connection.OpenAsync();
         using var old = connection.CreateCommand();
-        old.CommandText = """
+        old.CommandText = global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE store_lifecycle_cash_snapshots;
             DROP TABLE store_lifecycle_retirements;
             DROP TABLE store_lifecycle_commands;
             DROP TABLE store_lifecycle_sessions;
             INSERT INTO table_sessions VALUES ('existing','sale','table','Completed',1);
             PRAGMA user_version = 29;
-            """;
+            """);
         await old.ExecuteNonQueryAsync();
         var store = await Store();
         await store.InitializeAsync();
@@ -156,7 +156,7 @@ public sealed class SqliteStoreLifecycleTests : IDisposable
         check.CommandText = "SELECT count(*) FROM table_sessions WHERE branch_id='existing';";
         Assert.Equal(1L, await check.ExecuteScalarAsync());
         check.CommandText = "PRAGMA user_version;";
-        Assert.Equal(35L, await check.ExecuteScalarAsync());
+        Assert.Equal(36L, await check.ExecuteScalarAsync());
         await store.ExecuteStoreLifecycleAsync("branch", Command("open", StoreLifecycleAction.OpenStore, 0));
     }
 

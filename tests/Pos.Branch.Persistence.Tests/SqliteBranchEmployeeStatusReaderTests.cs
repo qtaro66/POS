@@ -11,7 +11,7 @@ public sealed class SqliteBranchEmployeeStatusReaderTests
         await using var database = new EmployeeStatusDatabase();
         await database.InitializeAsync();
 
-        Assert.Equal(35L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(36L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'branch_employee_status';
@@ -23,16 +23,16 @@ public sealed class SqliteBranchEmployeeStatusReaderTests
     {
         await using var database = new EmployeeStatusDatabase();
         await database.InitializeAsync();
-        await database.ExecuteAsync("""
+        await database.ExecuteAsync(global::Pos.Branch.Persistence.Tests.LegacySchemaFixture.WithoutKitchenReprints("""
             DROP TABLE branch_employee_status;
             DROP INDEX ix_cloud_sync_outbox_branch_sent;
             ALTER TABLE cloud_sync_outbox DROP COLUMN successfully_sent_at;
             PRAGMA user_version = 13;
-            """);
+            """));
 
         await database.InitializeAsync();
 
-        Assert.Equal(35L, await database.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(36L, await database.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal(1L, await database.ScalarAsync<long>("""
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name = 'branch_employee_status';
