@@ -1,11 +1,12 @@
+import { KitchenReprintAction } from './KitchenReprintWorkspace.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { OrderingReadClient } from '../ordering/readController.ts'
-import type { CashHistoryProductionItem } from '../api/cashHistoryProductionContracts.ts'
+import type { CashHistoryProductionItem, CashHistoryProductionLine } from '../api/cashHistoryProductionContracts.ts'
 import { parseCashHistoryPrintEvidence, parseCashHistoryPrintAttempts, samePrintJobIdentity, type CashHistoryPrintEvidence as Evidence, type CashHistoryPrintJob, type CashHistoryPrintAttemptsPage } from '../api/cashHistoryPrintContracts.ts'
 
 type Read = OrderingReadClient['cashHistoryPrintEvidence']
 type AttemptsRead = OrderingReadClient['cashHistoryPrintAttempts']
-interface Props { read: Read; attemptsRead: AttemptsRead; branchId: string; requestId: string; snapshot: CashHistoryProductionItem }
+interface Props { lines?: CashHistoryProductionLine[]; read: Read; attemptsRead: AttemptsRead; branchId: string; requestId: string; snapshot: CashHistoryProductionItem }
 const dates = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' })
 function Time({ value }: { value: string }) { return <time dateTime={value}>{dates.format(new Date(value))}</time> }
 const statuses = { PrintQueued: 'รอส่งงานพิมพ์', Connecting: 'กำลังเชื่อมต่อ', Dispatching: 'กำลังส่ง', PrintDispatched: 'ส่งข้อมูลแล้ว', Failed: 'ล้มเหลวก่อนเริ่มส่ง', Unknown: 'ไม่ทราบผล', Completed: 'Completed ตามข้อมูลที่บันทึก' }
@@ -53,7 +54,7 @@ function Attempts({ read, branchId, requestId, snapshot, job }: { read: Attempts
     <p>สถานะอาจเปลี่ยนระหว่างอ่านแต่ละหน้า อ่านใหม่เพื่อดูข้อมูลอีกครั้ง ค่าที่บันทึกไม่ใช่สิทธิ์ส่งซ้ำจากหน้านี้</p>
   </>}</section>
 }
-function Source({ read, attemptsRead, branchId, requestId, snapshot }: Props) {
+function Source({ read, attemptsRead, branchId, requestId, snapshot, lines }: Props) {
   const [revision, setRevision] = useState(0)
   const [state, setState] = useState<{ owner: Read; revision: number; evidence: Evidence | null } | null>(null)
   useEffect(() => {
@@ -69,12 +70,12 @@ function Source({ read, attemptsRead, branchId, requestId, snapshot }: Props) {
   const current = state !== null && state.owner === read && state.revision === revision ? state : null, job = current?.evidence?.job
   return <section aria-label="หลักฐานงานพิมพ์จากข้อมูลตอนส่ง"><h5>งานพิมพ์ที่เกี่ยวข้องกับข้อมูลตอนส่ง</h5>
     {!read ? <p>ยังไม่เชื่อมต่อหลักฐานงานพิมพ์จากบริการสาขารุ่นนี้</p> : <><button type="button" onClick={() => setRevision(v => v + 1)}>อ่านหลักฐานงานพิมพ์ใหม่</button>
-      {!current ? <p role="status">กำลังอ่านหลักฐานงานพิมพ์</p> : !current.evidence ? <p role="alert">ยังอ่านหลักฐานงานพิมพ์ไม่ได้ ข้อมูลรายการและยอดชำระยังคงเดิม</p> : !job ? <p>ไม่พบงานพิมพ์ต้นฉบับที่บันทึกไว้ ไม่ใช่หลักฐานว่าไม่มีการส่งออเดอร์หรือพิมพ์สำเร็จ</p> : <>
+      {!current ? <p role="status">กำลังอ่านหลักฐานงานพิมพ์</p> : !current.evidence ? <p role="alert">ยังอ่านหลักฐานงานพิมพ์ไม่ได้ ข้อมูลรายการและยอดชำระยังคงเดิม</p> : !job ? <p>ไม่พบงานพิมพ์ต้นฉบับที่บันทึกไว้ จึงยังพิมพ์ครัวซ้ำไม่ได้ ไม่ใช่หลักฐานว่าไม่มีการส่งออเดอร์หรือพิมพ์สำเร็จ</p> : <>
         <p>อ่านสถานะงานเมื่อ <Time value={current.evidence.asOf} /></p><p>งานต้นฉบับ {job.printJobId} · สถานีเดิม {job.productionStationId} · สร้างเมื่อ <Time value={job.createdAt} /></p><p>สถานะงานที่อ่าน: <Status value={job.status} /> · จำนวนครั้งที่งานบันทึก {job.attemptCount}</p>
-        <Attempts key={JSON.stringify([job.printJobId, revision])} read={attemptsRead} branchId={branchId} requestId={requestId} snapshot={snapshot} job={job} />
+        {lines && <div aria-label="เลือกพิมพ์สำเนาทีละรายการ">{lines.map(line => <KitchenReprintAction key={line.orderLineId} requestId={requestId} snapshot={snapshot} line={line} job={job} />)}</div>}<Attempts key={JSON.stringify([job.printJobId, revision])} read={attemptsRead} branchId={branchId} requestId={requestId} snapshot={snapshot} job={job} />
       </>}
     </>}
-    <p>หน้าดูข้อมูลเท่านั้น การส่งข้อมูลสำเร็จหรือสถานะ Completed ที่บันทึกไว้ยังไม่ยืนยันว่ากระดาษออกจริง การอ่านไม่ส่งงานพิมพ์หรือพิมพ์ซ้ำ</p>
+    <p>การอ่านหลักฐานไม่สั่งพิมพ์ การส่งข้อมูลสำเร็จหรือสถานะ Completed ที่บันทึกไว้ยังไม่ยืนยันว่ากระดาษออกจริง การอ่านไม่ส่งงานพิมพ์หรือพิมพ์ซ้ำ</p>
   </section>
 }
 export function CashHistoryPrintEvidence(props: Props) { return <Source key={JSON.stringify([props.branchId, props.requestId, props.snapshot])} {...props} /> }

@@ -13,6 +13,7 @@ import { isPrintAttentionCursor, isUtcTimestamp, parsePrintAttentionPage, type P
 import { isOutboxSequence, parseCloudOutboxPage, type CloudOutboxPage } from './cloudOutboxContracts.ts'
 import { parseCloudReplayPage, type CloudReplayPage } from './cloudReplayContracts.ts'
 import { isPrinterId, parsePrinterInventoryPage, type PrinterInventoryPage } from './printerInventoryContracts.ts'
+import { validateKitchenReprintTarget, isKitchenReprintCommandId, isKitchenReprintReason, parseKitchenReprintReceipt, parseKitchenReprintStatus, type KitchenReprintTarget, type KitchenReprintStatus, type KitchenReprintResult } from './kitchenReprintContracts.ts'
 
 export interface OrderingSession {
   readonly serviceOrigin: string
@@ -269,6 +270,31 @@ export function createOrderingClient(session: OrderingSession, options: ClientOp
   }
   return {
     scope,
+    kitchenReprintScope: Object.freeze({ ...scope, employeeId: identity.employeeId }),
+    async kitchenReprint(target: KitchenReprintTarget, commandRequestId: string, reason: string, pin: string, signal?: AbortSignal): Promise<KitchenReprintResult> {
+      let selected: KitchenReprintTarget
+      try {
+        selected = validateKitchenReprintTarget(target)
+        if (!isKitchenReprintCommandId(commandRequestId) || !isKitchenReprintReason(reason) || typeof pin !== 'string' || pin.length < 1 || pin.length > 128) throw new Error('Invalid command.')
+      } catch { return { kind: 'rejected', httpStatus: 400 } }
+      const body = JSON.stringify({ schemaVersion: 1, commandRequestId, originalPrintJobId: selected.originalPrintJobId, reason, pin })
+      if (new TextEncoder().encode(body).byteLength > 64 * 1024) return { kind: 'rejected', httpStatus: 400 }
+      const result = await request(`/transaction-history/cash-sales/${encodeURIComponent(selected.cashRequestId)}/production-orders/${encodeURIComponent(selected.snapshotId)}/lines/${encodeURIComponent(selected.orderLineId)}/reprints`, 'POST', body, signal)
+      if ('reason' in result) return { kind: 'uncertain', reason: result.reason }
+      if ([400, 401, 403, 404, 413].includes(result.status)) return { kind: 'rejected', httpStatus: result.status }
+      if (result.status !== 200) return { kind: 'uncertain', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'queued', receipt: parseKitchenReprintReceipt(result.body, identity.branchId, commandRequestId, selected) } }
+      catch { return { kind: 'uncertain', reason: 'protocol' } }
+    },
+    async kitchenReprintStatus(commandRequestId: string, signal?: AbortSignal): Promise<QueryResult<KitchenReprintStatus>> {
+      if (!isKitchenReprintCommandId(commandRequestId)) return { kind: 'unavailable', reason: 'protocol' }
+      const result = await request(`/transaction-history/kitchen-reprints/${encodeURIComponent(commandRequestId)}`, 'GET', undefined, signal)
+      if ('reason' in result) return { kind: 'unavailable', reason: result.reason }
+      if (result.status === 404) return { kind: 'notFound' }
+      if (result.status !== 200) return { kind: 'unavailable', reason: 'http', httpStatus: result.status }
+      try { return { kind: 'ok', value: parseKitchenReprintStatus(result.body, identity.branchId, commandRequestId) } }
+      catch { return { kind: 'unavailable', reason: 'protocol' } }
+    },
     async refreshEmployeePermissions(signal?: AbortSignal): Promise<'Updated' | 'NoUpdate' | 'Busy' | 'Unavailable'> {
       const result = await request('/employee-permissions/refresh', 'POST', undefined, signal)
       if ('reason' in result || result.status !== 200) return 'Unavailable'

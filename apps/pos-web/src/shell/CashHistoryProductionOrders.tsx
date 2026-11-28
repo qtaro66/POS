@@ -23,7 +23,7 @@ function Detail({ read, item, branchId, requestId, tableSessionId, printRead, at
     <p>รหัสโต๊ะตอนส่ง {item.tableId} · สถานีเดิม {item.productionStationId} · ชุดออเดอร์ {item.orderBatchId}</p><p>คำขอส่งเดิม {item.submittedRequestId} · บันทึกเมื่อ <time dateTime={item.submittedAt}>{dates.format(new Date(item.submittedAt))}</time></p>
     <ol>{current.detail.lines.map(line => <li key={line.orderLineId}><h6 className="cash-history-recorded-text">{line.displayName}</h6><p>รหัสรายการ {line.orderLineId} · ลำดับเดิม {line.lineSequence}</p><p>จำนวนตอนส่ง {line.quantity} · {line.fulfillmentType === 'DineIn' ? 'ทานที่ร้าน' : 'กลับบ้าน'}</p>
       {line.options.length > 0 && <ul>{line.options.map((o, index) => <li key={index} className="cash-history-recorded-text">{o.displayName} ×{o.quantityPerItem} ต่อหน่วย</li>)}</ul>}{line.comment !== null && <p className="cash-history-recorded-text">หมายเหตุเดิม: {line.comment}</p>}</li>)}</ol>
-    <CashHistoryPrintEvidence read={printRead} attemptsRead={attemptsRead} branchId={branchId} requestId={requestId} snapshot={item} />
+    <CashHistoryPrintEvidence read={printRead} attemptsRead={attemptsRead} branchId={branchId} requestId={requestId} snapshot={item} lines={current.detail.lines} />
   </>}</section>
 }
 function Results({ read, detailRead, branchId, requestId, tableSessionId, query, printRead, attemptsRead }: Props & { query: CashHistoryProductionQuery }) {
