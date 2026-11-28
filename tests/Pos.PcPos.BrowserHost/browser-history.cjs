@@ -149,7 +149,8 @@ async function run(dist, caseName) {
     await attempts().locator(':scope > ol > li').nth(19).waitFor()
   }
   async function noCommands() {
-    equal(await history().getByRole('button', { name: /^(พิมพ์|ส่งซ้ำ|ลองส่ง|จำลองใบเสร็จ|เปิดลิ้นชัก|ยกเลิกบิล|คืนเงิน)/ }).count(), 0, 'no mutation actions in history')
+    const actions = await history().getByRole('button', { name: /^(?:🔒\s*)?(พิมพ์|ส่งซ้ำ|ลองส่ง|จำลองใบเสร็จ|เปิดลิ้นชัก|ยกเลิกบิล|คืนเงิน)/ }).allTextContents()
+    check(actions.every(name => name === '🔒 พิมพ์ครัวซ้ำรายการนี้'), 'only explicit PIN-guarded reprint entry is offered')
   }
   async function holdNext(pattern) {
     const entered = deferred(), release = deferred(), done = deferred(); let used = false

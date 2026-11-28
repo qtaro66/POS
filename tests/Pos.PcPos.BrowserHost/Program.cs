@@ -22,6 +22,7 @@ if (args.Length is < 1 or > 2 || !File.Exists(Path.Combine(args[0], "index.html"
 
 var alternate = Environment.GetEnvironmentVariable("POS_BROWSER_ALTERNATE_BRANCH") == "1";
 var historyFixture = Environment.GetEnvironmentVariable("POS_BROWSER_HISTORY_FIXTURE") == "1";
+var reprintFixture = historyFixture && Environment.GetEnvironmentVariable("POS_BROWSER_REPRINT_FIXTURE") == "1";
 var branch = alternate ? "BROWSER-TEST-B" : "BROWSER-TEST";
 var port = alternate ? 17445 : 17443;
 const string SecondEmployee = "TEST-EMPLOYEE-B";
@@ -99,7 +100,7 @@ try
     var permissions = new BranchEmployeePermissionCache(branch, Path.Combine(directory.FullName, "fixture-permissions.json"));
     using (var content = new MemoryStream(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
         new Pos.Contracts.Security.BranchEmployeePermissionSnapshot(1, branch, 1,
-            [new(Employee, true, false, true), new(SecondEmployee, true, false, false)]))))
+            [new(Employee, true, false, true, reprintFixture), new(SecondEmployee, true, false, false)]))))
     {
         await permissions.ApplyAsync(content, CancellationToken.None);
     }

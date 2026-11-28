@@ -1,3 +1,4 @@
+import { KitchenReprintWorkspace, type KitchenReprintPort } from './KitchenReprintWorkspace.tsx'
 import { CashHistoryContextPanels } from './CashHistoryContextPanels.tsx'
 import { CashHistoryProductionOrders } from './CashHistoryProductionOrders.tsx'
 import { CashHistoryEvents } from './CashHistoryEvents.tsx'
@@ -6,7 +7,7 @@ import type { OrderingReadClient } from '../ordering/readController.ts'
 import type { CashHistoryBill, CashHistoryDetail, CashHistoryDiscount, CashHistoryItem, CashHistoryPage, CashHistoryQuery } from '../api/cashHistoryContracts.ts'
 import './CashHistoryWorkspace.css'
 
-type Port = Pick<OrderingReadClient, 'cashHistory' | 'cashHistoryDetail' | 'cashHistoryEvents' | 'cashHistoryProductionOrders' | 'cashHistoryProductionOrderDetail' | 'cashHistoryShiftContext' | 'cashHistoryReceiptEvidence' | 'cashHistoryPrintEvidence' | 'cashHistoryPrintAttempts'>
+type Port = Pick<OrderingReadClient, 'kitchenReprintScope' | 'kitchenReprint' | 'kitchenReprintStatus' | 'cashHistory' | 'cashHistoryDetail' | 'cashHistoryEvents' | 'cashHistoryProductionOrders' | 'cashHistoryProductionOrderDetail' | 'cashHistoryShiftContext' | 'cashHistoryReceiptEvidence' | 'cashHistoryPrintEvidence' | 'cashHistoryPrintAttempts'>
 const money = (value: number) => value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 20 })
 const date = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' })
 function Time({ value }: { value: string }) { return <time dateTime={value}>{date.format(new Date(value))}</time> }
@@ -140,4 +141,4 @@ function Workspace({ port }: { port: Port }) {
     <Results key={JSON.stringify(query) + ':' + revision} port={port} query={query} />
   </section>
 }
-export function CashHistoryWorkspace({ port, scopeKey }: { port: Port; scopeKey: string }) { return <Workspace key={scopeKey} port={port} /> }
+export function CashHistoryWorkspace({ port, scopeKey }: { port: Port; scopeKey: string }) { return <KitchenReprintWorkspace key={scopeKey} port={port.kitchenReprintScope && port.kitchenReprint && port.kitchenReprintStatus ? port as KitchenReprintPort : undefined}><Workspace port={port} /></KitchenReprintWorkspace> }

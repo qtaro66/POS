@@ -62,5 +62,7 @@ with different target/actor/reason: 409 KitchenReprintConflict. Corrupt or
 unavailable authorization/storage evidence: generic 503 without raw records,
 PIN, payload, lease or internal exception details.
 
-D21.3 explicit approval is required before merge. UI submission and physical
-printer acceptance are separate work; this contract does not enable a UI button.
+D21.3 explicit approval is required before merge. PC POS submission and PIN-free
+status recovery are documented in architecture/0217-pc-pos-kitchen-reprint-workspace.md.
+The client persists intent before sending and never automatically replays a POST.
+Physical printer acceptance remains separate and requires operator confirmation.

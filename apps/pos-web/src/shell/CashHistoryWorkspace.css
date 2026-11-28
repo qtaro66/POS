@@ -9,3 +9,7 @@
 .cash-history-bill > ol { padding-inline-start: 1.25rem; }
 .cash-history-bill > ol > li { padding-block: .6rem; border-block-end: 1px solid currentColor; }
 @media (max-width: 850px) { .cash-history-split { grid-template-columns: 1fr; } }
+.cash-history-reprint-status:has(> :first-child) { padding: 1rem; border: 1px solid var(--border-color, #64748b); border-radius: .5rem; margin-block: 1rem; }
+.cash-history-reprint-confirmation { display: grid; gap: .75rem; max-width: 44rem; }
+.cash-history-reprint-confirmation label { display: grid; gap: .25rem; }
+.cash-history-reprint-confirmation textarea { min-height: 5rem; resize: vertical; }
